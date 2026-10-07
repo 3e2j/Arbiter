@@ -9,11 +9,11 @@ license = "MIT"
 
 [workspace.dependencies]
 # The crate map is in crates/README.md.
-diag = { package = "arbiter-diag", path = "crates/diag" }
-formats = { package = "arbiter-formats", path = "crates/formats" }
-pack = { package = "arbiter-pack", path = "crates/pack" }
-game = { package = "arbiter-game", path = "crates/game" }
-project = { package = "arbiter-project", path = "crates/project" }
+arbiter-diag = { path = "crates/diag" }
+arbiter-formats = { path = "crates/formats" }
+arbiter-pack = { path = "crates/pack" }
+arbiter-game = { path = "crates/game" }
+arbiter-project = { path = "crates/project" }
 
 thiserror = "2"
 tracing = "0.1"

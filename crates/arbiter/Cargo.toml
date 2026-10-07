@@ -6,8 +6,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-diag.workspace = true
-project.workspace = true
+arbiter-diag.workspace = true
+arbiter-project.workspace = true
 
 [lints]
 workspace = true
