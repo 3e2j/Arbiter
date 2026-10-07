@@ -1,4 +1,5 @@
 avoid-breaking-exported-api = false
+doc-valid-idents = ["GameCube", ".."]
 
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true

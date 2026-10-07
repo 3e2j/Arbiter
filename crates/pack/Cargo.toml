@@ -11,6 +11,9 @@ name = "pack"
 [dependencies]
 arbiter-diag.workspace = true
 arbiter-formats.workspace = true
+nod.workspace = true
+thiserror.workspace = true
+
 
 [lints]
 workspace = true
