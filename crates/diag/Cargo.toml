@@ -1,0 +1,11 @@
+[package]
+name = "arbiter-diag"
+description = "Diagnostics every crate reports into: Diagnostic, Code, and the Diagnostics sink."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

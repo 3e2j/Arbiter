@@ -1,0 +1,13 @@
+[package]
+name = "arbiter"
+description = "A editor for viewing, editing, and building mods for GameCube and Wii games."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+diag.workspace = true
+project.workspace = true
+
+[lints]
+workspace = true

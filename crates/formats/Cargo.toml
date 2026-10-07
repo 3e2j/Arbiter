@@ -1,0 +1,12 @@
+[package]
+name = "arbiter-formats"
+description = "The game's file formats as plain structures, and the byte cursors and traits they share."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+diag.workspace = true
+
+[lints]
+workspace = true

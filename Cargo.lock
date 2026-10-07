@@ -5,3 +5,44 @@ version = 4
 [[package]]
 name = "arbiter"
 version = "0.1.0"
+dependencies = [
+ "arbiter-diag",
+ "arbiter-project",
+]
+
+[[package]]
+name = "arbiter-diag"
+version = "0.1.0"
+
+[[package]]
+name = "arbiter-formats"
+version = "0.1.0"
+dependencies = [
+ "arbiter-diag",
+]
+
+[[package]]
+name = "arbiter-game"
+version = "0.1.0"
+dependencies = [
+ "arbiter-diag",
+ "arbiter-formats",
+]
+
+[[package]]
+name = "arbiter-pack"
+version = "0.1.0"
+dependencies = [
+ "arbiter-diag",
+ "arbiter-formats",
+]
+
+[[package]]
+name = "arbiter-project"
+version = "0.1.0"
+dependencies = [
+ "arbiter-diag",
+ "arbiter-formats",
+ "arbiter-game",
+ "arbiter-pack",
+]

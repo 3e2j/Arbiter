@@ -1,0 +1,13 @@
+[package]
+name = "arbiter-pack"
+description = "Unpacking a disc into files, and turning documents into a build target (packing)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+diag.workspace = true
+formats.workspace = true
+
+[lints]
+workspace = true

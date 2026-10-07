@@ -1,0 +1,13 @@
+[package]
+name = "arbiter-game"
+description = "What the game's raw values mean, and the checks that need those tables."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+diag.workspace = true
+formats.workspace = true
+
+[lints]
+workspace = true

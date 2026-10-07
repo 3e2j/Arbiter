@@ -1,7 +1,54 @@
-[package]
-name = "arbiter"
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
 
-[dependencies]
+[workspace.dependencies]
+# The crate map is in crates/README.md.
+diag = { package = "arbiter-diag", path = "crates/diag" }
+formats = { package = "arbiter-formats", path = "crates/formats" }
+pack = { package = "arbiter-pack", path = "crates/pack" }
+game = { package = "arbiter-game", path = "crates/game" }
+project = { package = "arbiter-project", path = "crates/project" }
+
+thiserror = "2"
+tracing = "0.1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+annotate-snippets = "0.12"
+xxhash-rust = { version = "0.8", features = ["xxh3", "xxh64"] }
+# Pinned: 2.0 is still in alpha and its API moves between releases.
+nod = "=2.0.0-alpha.9"
+
+[workspace.lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+# Deny all panics
+unwrap_used = "deny"
+expect_used = "deny"
+unreachable = "deny"
+string_slice = "deny"
+panic = "deny"
+panic_in_result_fn = "deny"
+exit = "deny"
+unchecked_time_subtraction = "deny"
+# Warn on incompletes
+unimplemented = "warn"
+todo = "warn"
+# Each crate's clippy.toml lists its own. formats bans native-endian bytes.
+disallowed_methods = "deny"
+
+# Nothing here is worth running unoptimized, and the round-trip tests chew
+# through real game files.
+[profile.dev]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+# Offset arithmetic should trap rather than wrap into a bogus seek.
+overflow-checks = true
