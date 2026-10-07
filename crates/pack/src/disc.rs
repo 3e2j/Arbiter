@@ -2,8 +2,8 @@
 //! WBFS, GCZ, TGC). Files stream one at a time, so a disc never loads whole.
 
 use std::{
-    io::{self, BufRead},
-    path::Path,
+    io::{self, BufRead, Read},
+    path::{Component, Path},
 };
 
 use nod::{
@@ -20,6 +20,8 @@ pub enum Error {
     Fst(&'static str),
     #[error("game id {0:?} isn't six ASCII letters and digits")]
     Id([u8; 6]),
+    #[error("the disc names a file {0:?}, which isn't a plain relative path")]
+    Path(String),
 }
 
 /// The data partition of an opened disc. A Wii disc's other partitions
@@ -29,7 +31,8 @@ pub struct Disc {
     /// it's safe in a file name.
     pub id: String,
     pub revision: u8,
-    /// Files only, in file system order.
+    /// Files only, in file system order. Every path is plain and relative, so
+    /// joining one to a directory can't escape it.
     pub files: Vec<File>,
     pub reader: Reader,
 }
@@ -46,8 +49,8 @@ pub struct Reader(Box<dyn PartitionReader>);
 impl Disc {
     /// # Errors
     ///
-    /// If nod can't read the image or its data partition, or the game id or
-    /// file system table is malformed.
+    /// If nod can't read the image or its data partition, the game id or file
+    /// system table is malformed, or a file's path isn't plain and relative.
     pub fn open(path: &Path) -> Result<Self, Error> {
         let disc = DiscReader::new(path, &DiscOptions::default())?;
         let header = disc.header();
@@ -62,11 +65,14 @@ impl Disc {
             disc.open_partition_kind(PartitionKind::Data, &PartitionOptions::default())?;
         let meta = partition.meta()?;
         let fst = meta.fst().map_err(Error::Fst)?;
-        let files = fst
+        let files: Vec<File> = fst
             .iter()
             .filter(|(_, node, _)| node.is_file())
             .map(|(_, node, path)| File { path, node })
             .collect();
+        if let Some(file) = files.iter().find(|f| !is_plain(&f.path)) {
+            return Err(Error::Path(file.path.clone()));
+        }
 
         Ok(Self {
             id,
@@ -91,13 +97,38 @@ impl Reader {
     pub fn open(&mut self, file: &File) -> io::Result<impl BufRead + '_> {
         self.0.open_file(file.node)
     }
+
+    /// Replaces `buf` with the file's bytes, reusing its allocation.
+    ///
+    /// # Errors
+    ///
+    /// If seeking to or reading the file fails.
+    pub fn read(&mut self, file: &File, buf: &mut Vec<u8>) -> io::Result<()> {
+        buf.clear();
+        self.open(file)?.read_to_end(buf)?;
+        Ok(())
+    }
+}
+
+// Here to avoid any discs from writing where they shouldn't be.
+fn is_plain(path: &str) -> bool {
+    let path = Path::new(path);
+    path.components().next().is_some()
+        && path.components().all(|c| matches!(c, Component::Normal(_)))
 }
 
 #[cfg(test)]
 mod tests {
-    use std::io::Read;
-
     use super::*;
+
+    #[test]
+    fn only_plain_relative_paths() {
+        assert!(is_plain("res/Msgus/bmgres.arc"));
+        assert!(!is_plain(""));
+        assert!(!is_plain("/etc/passwd"));
+        assert!(!is_plain("res/../../x"));
+        assert!(!is_plain("./res"));
+    }
 
     #[test]
     #[ignore = "needs a retail disc at dev/fixtures/NA.ciso"]
@@ -113,11 +144,7 @@ mod tests {
             .find(|f| f.path == "res/Msgus/bmgres.arc")
             .unwrap();
         let mut bytes = Vec::new();
-        disc.reader
-            .open(file)
-            .unwrap()
-            .read_to_end(&mut bytes)
-            .unwrap();
+        disc.reader.read(file, &mut bytes).unwrap();
         assert_eq!(bytes.len(), usize::try_from(file.size()).unwrap());
         assert_eq!(&bytes[..4], b"Yaz0");
     }

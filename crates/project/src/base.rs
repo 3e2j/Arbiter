@@ -1,0 +1,268 @@
+//! `base/`, the unpacked read-only editions a mod is made against. Never committed.
+//!
+//! ```text
+//! base/
+//! ├─ GZ2E01/          the disc's own tree, every file read-only
+//! ├─ GZ2E01.toml      each path and its hash
+//! ├─ GZ2P01/
+//! └─ GZ2P01.toml
+//! ```
+//!
+//! Files sit at their disc paths so any program can open them.
+//! Read-only keeps them from being edited by accident: changes go in `changes/`.
+
+use std::{
+    collections::BTreeMap,
+    fs::{self, File},
+    io::{self, Write},
+    path::{Path, PathBuf},
+};
+
+use pack::disc::{self, Disc};
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    config::{Config, Recorded},
+    hash::Hash,
+};
+
+pub const DIR: &str = "base";
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    Disc(#[from] disc::Error),
+    #[error("{path}: {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("{path}: {source}")]
+    Toml {
+        path: PathBuf,
+        #[source]
+        source: toml::ser::Error,
+    },
+}
+
+/// One edition's files. Sorted by path, so the files digest doesn't depend on
+/// disc order. The revision isn't here: `arbiter.toml` is its one home.
+///
+/// The hashes are kept to catch a modified base. Read-only can be undone, so a
+/// base file can still be edited, deleted or added to. Any file that no longer
+/// matches its hash is a hard error until it's unpacked again from the disc.
+///
+/// TODO: verify and repair.
+/// - Record the disc's last known location (absolute, so local only) and the
+///   unpack time here.
+/// - Verify on open by rehashing only files whose mtime is after the unpack,
+///   and everything on `arbiter check`. A changed, missing or extra file is a
+///   `base/modified` error that blocks builds.
+/// - Its fix re-reads just those files from the disc's last known location. If
+///   the disc moved, ask for `arbiter unpack <disc>`, which updates it.
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(transparent)]
+pub struct Manifest {
+    pub files: BTreeMap<String, Hash>,
+}
+
+impl Manifest {
+    #[must_use]
+    pub fn files_digest(&self) -> Hash {
+        let mut bytes = Vec::new();
+        for (path, hash) in &self.files {
+            bytes.extend_from_slice(path.as_bytes());
+            bytes.push(0);
+            bytes.extend_from_slice(&hash.0.to_be_bytes());
+        }
+        Hash::of(&bytes)
+    }
+}
+
+/// A disc unpacked to `base/.<id>.partial/`, not yet in place. Either
+/// `commit` it or `discard` it.
+#[derive(Debug)]
+pub struct Staged {
+    pub id: String,
+    pub revision: u8,
+    pub manifest: Manifest,
+    pub bytes: u64,
+    /// Decided against `arbiter.toml` as it was when staged.
+    pub outcome: Recorded,
+    pub(crate) tree: PathBuf,
+}
+
+/// Unpacks a disc beside the edition's current tree, so the current one stays
+/// whole until `Staged::commit` swaps them.
+///
+/// # Errors
+///
+/// If the disc can't be read or a file can't be written.
+pub fn stage(base: &Path, disc: &Path, config: &Config) -> Result<Staged, Error> {
+    let mut disc = Disc::open(disc)?;
+    let tree = base.join(format!(".{}.partial", disc.id));
+    remove_tree(&tree)?;
+
+    let mut files = BTreeMap::new();
+    let mut bytes = 0;
+    let mut buf = Vec::new();
+    let mut made_dir = None;
+    for file in &disc.files {
+        disc.reader
+            .read(file, &mut buf)
+            .map_err(io_err(Path::new(&file.path)))?;
+        let dest = tree.join(&file.path);
+        // Files come in file system order, so siblings share a parent.
+        let parent = dest.parent().unwrap_or(&tree);
+        if made_dir.as_deref() != Some(parent) {
+            fs::create_dir_all(parent).map_err(io_err(parent))?;
+            made_dir = Some(parent.to_path_buf());
+        }
+        write_readonly(&dest, &buf)?;
+        bytes += buf.len() as u64;
+        files.insert(file.path.clone(), Hash::of(&buf));
+    }
+
+    let manifest = Manifest { files };
+    let outcome = config.record(&disc.id, disc.revision, manifest.files_digest());
+    Ok(Staged {
+        id: disc.id,
+        revision: disc.revision,
+        manifest,
+        bytes,
+        outcome,
+        tree,
+    })
+}
+
+impl Staged {
+    /// The unpacked files, for checks that need the new base before it's in place.
+    #[must_use]
+    pub fn tree(&self) -> &Path {
+        &self.tree
+    }
+
+    /// Replaces `base/<id>/` with the staged tree, then writes the manifest.
+    pub(crate) fn commit(&self, base: &Path) -> Result<(), Error> {
+        let dest = base.join(&self.id);
+        remove_tree(&dest)?;
+        fs::rename(&self.tree, &dest).map_err(io_err(&dest))?;
+
+        let path = base.join(format!("{}.toml", self.id));
+        let text = toml::to_string(&self.manifest).map_err(|source| Error::Toml {
+            path: path.clone(),
+            source,
+        })?;
+        write_atomic(&path, text.as_bytes())
+    }
+
+    /// # Errors
+    ///
+    /// If the staged tree can't be removed.
+    pub fn discard(self) -> Result<(), Error> {
+        remove_tree(&self.tree)
+    }
+}
+
+fn write_readonly(path: &Path, bytes: &[u8]) -> Result<(), Error> {
+    let err = io_err(path);
+    let mut file = File::create(path).map_err(err)?;
+    file.write_all(bytes).map_err(io_err(path))?;
+    let mut perms = file.metadata().map_err(io_err(path))?.permissions();
+    perms.set_readonly(true);
+    file.set_permissions(perms).map_err(io_err(path))
+}
+
+/// Removes a tree of read-only files. A missing tree is fine.
+pub(crate) fn remove_tree(path: &Path) -> Result<(), Error> {
+    // Unix only needs the directories writable. Windows refuses to delete a
+    // read-only file, so the flag comes off first.
+    #[cfg(windows)]
+    clear_readonly(path)?;
+    match fs::remove_dir_all(path) {
+        Err(err) if err.kind() != io::ErrorKind::NotFound => Err(io_err(path)(err)),
+        _ => Ok(()),
+    }
+}
+
+#[cfg(windows)]
+fn clear_readonly(path: &Path) -> Result<(), Error> {
+    let entries = match fs::read_dir(path) {
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
+        entries => entries.map_err(io_err(path))?,
+    };
+    for entry in entries {
+        let path = entry.map_err(io_err(path))?.path();
+        let meta = fs::symlink_metadata(&path).map_err(io_err(&path))?;
+        if meta.is_dir() {
+            clear_readonly(&path)?;
+        } else {
+            let mut perms = meta.permissions();
+            perms.set_readonly(false);
+            fs::set_permissions(&path, perms).map_err(io_err(&path))?;
+        }
+    }
+    Ok(())
+}
+
+/// Written beside its destination and renamed over it, so the path never
+/// holds half a file.
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), Error> {
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    fs::write(&tmp, bytes).map_err(io_err(&tmp))?;
+    fs::rename(&tmp, path).map_err(io_err(path))
+}
+
+pub(crate) fn io_err(path: &Path) -> impl FnOnce(io::Error) -> Error + '_ {
+    |source| Error::Io {
+        path: path.to_path_buf(),
+        source,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn base_files_are_readonly_and_removable() {
+        let dir = tempfile::tempdir().unwrap();
+        let tree = dir.path().join("GZ2E01");
+        fs::create_dir_all(tree.join("res")).unwrap();
+        let file = tree.join("res/al.bmd");
+        write_readonly(&file, b"al.bmd").unwrap();
+
+        assert!(fs::metadata(&file).unwrap().permissions().readonly());
+        assert!(fs::write(&file, b"edited").is_err());
+
+        remove_tree(&tree).unwrap();
+        assert!(!tree.exists());
+        remove_tree(&tree).unwrap();
+    }
+
+    #[test]
+    fn files_digest_follows_paths_and_contents() {
+        let manifest = |files: &[(&str, u128)]| Manifest {
+            files: files
+                .iter()
+                .map(|&(p, h)| (p.to_owned(), Hash(h)))
+                .collect(),
+        };
+        let a = manifest(&[("a", 1), ("b", 2)]);
+        assert_eq!(
+            a.files_digest(),
+            manifest(&[("b", 2), ("a", 1)]).files_digest()
+        );
+        assert_ne!(
+            a.files_digest(),
+            manifest(&[("a", 2), ("b", 1)]).files_digest()
+        );
+        assert_ne!(
+            a.files_digest(),
+            manifest(&[("ab", 1), ("", 2)]).files_digest()
+        );
+    }
+}

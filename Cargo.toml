@@ -24,6 +24,7 @@ annotate-snippets = "0.12"
 xxhash-rust = { version = "0.8", features = ["xxh3", "xxh64"] }
 # Pinned: 2.0 is still in alpha and its API moves between releases.
 nod = "=2.0.0-alpha.9"
+tempfile = "3"
 
 [workspace.lints.clippy]
 pedantic = { level = "deny", priority = -1 }

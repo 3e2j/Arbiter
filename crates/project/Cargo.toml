@@ -13,6 +13,13 @@ arbiter-diag.workspace = true
 arbiter-formats.workspace = true
 arbiter-pack.workspace = true
 arbiter-game.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+xxhash-rust.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true
