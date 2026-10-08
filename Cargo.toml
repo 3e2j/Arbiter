@@ -35,7 +35,7 @@ bytemuck = { version = "1", features = ["derive"] }
 skrifa = "0.44"
 zeno = "0.3"
 resvg = { version = "0.48", default-features = false }
-fontique = "0.11"
+fontique = { version = "0.11", features = ["fontconfig-dlopen"] }
 unicode-script = "0.5"
 harfrust = "0.12"
 

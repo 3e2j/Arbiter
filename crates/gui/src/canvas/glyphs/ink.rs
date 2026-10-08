@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use resvg::{tiny_skia, usvg};
 use skrifa::GlyphId;
 
-use super::atlas::{Atlas, Spot};
+use super::atlas::{Atlas, AtlasUpdate, Format, Spot};
 use super::fonts::Fonts;
 use super::{FontId, IconId};
 
@@ -23,46 +23,60 @@ pub(super) enum Key {
 pub(super) enum Ink {
     /// Such as a space.
     Blank,
-    Mask(Mask),
+    Packed(Packed),
     /// Drawn as an empty box in the text's colour.
     Missing,
 }
 
+/// A glyph or icon in an atlas.
 #[derive(Clone, Copy)]
-pub(super) struct Mask {
+pub(super) struct Packed {
+    /// Which atlas.
+    pub format: Format,
     pub page: u16,
     /// `x, y, width, height` in texels on `page`.
     pub texels: [u16; 4],
-    /// From the pen position on the baseline to the mask's top left corner,
+    /// From the pen position on the baseline to the image's top left corner,
     /// `y` growing up.
     pub left: i16,
     pub top: i16,
 }
 
-/// Coverage filled for a glyph or icon, before it's packed.
+/// A glyph or icon filled in, before it's packed.
 pub(super) struct Bitmap {
+    pub format: Format,
     pub width: u16,
     pub height: u16,
-    /// As [`Mask::left`] and [`Mask::top`].
+    /// As [`Packed::left`] and [`Packed::top`].
     pub left: i16,
     pub top: i16,
-    /// `height` rows of `width` bytes.
-    pub coverage: Vec<u8>,
+    /// `height` rows of `width` texels in `format`.
+    pub texels: Vec<u8>,
 }
 
-#[derive(Default)]
 pub(super) struct Inks {
     cache: HashMap<Key, Ink>,
-    pub atlas: Atlas,
+    pub coverage: Atlas,
+    pub color: Atlas,
+}
+
+impl Default for Inks {
+    fn default() -> Self {
+        Self {
+            cache: HashMap::new(),
+            coverage: Atlas::new(Format::Coverage),
+            color: Atlas::new(Format::Color),
+        }
+    }
 }
 
 impl Inks {
-    /// Marks the page under a cached mask as drawn this frame, so it isn't
+    /// Marks the page under a cached image as drawn this frame, so it isn't
     /// evicted while its quads are on screen.
     pub fn get(&mut self, fonts: &mut Fonts, icons: &[usvg::Tree], key: Key) -> Ink {
         if let Some(&ink) = self.cache.get(&key) {
-            if let Ink::Mask(mask) = ink {
-                self.atlas.touch(mask.page);
+            if let Ink::Packed(packed) = ink {
+                self.atlas(packed.format).touch(packed.page);
             }
             return ink;
         }
@@ -83,13 +97,28 @@ impl Inks {
     }
 
     pub fn next_frame(&mut self) {
-        self.atlas.next_frame();
+        self.coverage.next_frame();
+        self.color.next_frame();
     }
 
-    /// Forgets every mask, for a new scale.
+    /// Forgets every image, for a new scale.
     pub fn clear(&mut self) {
         self.cache.clear();
-        self.atlas.clear();
+        self.coverage.clear();
+        self.color.clear();
+    }
+
+    /// Makes the next updates hold every page, for a GPU whose copy is gone.
+    pub fn reupload(&mut self) {
+        self.coverage.reupload();
+        self.color.reupload();
+    }
+
+    /// What changed in either atlas since the last call.
+    pub fn take_updates(&mut self) -> impl Iterator<Item = AtlasUpdate<'_>> {
+        [self.coverage.take_update(), self.color.take_update()]
+            .into_iter()
+            .flatten()
     }
 
     #[cfg(test)]
@@ -97,15 +126,23 @@ impl Inks {
         self.cache.keys().copied()
     }
 
-    /// [`Ink::Missing`] for a mask bigger than a page, and `None` when no
-    /// page has room and every page was drawn this frame.
+    fn atlas(&mut self, format: Format) -> &mut Atlas {
+        match format {
+            Format::Coverage => &mut self.coverage,
+            Format::Color => &mut self.color,
+        }
+    }
+
+    /// [`Ink::Missing`] for an image bigger than a page, and `None` when no
+    /// page of its atlas has room and every one was drawn this frame.
     fn pack(&mut self, bitmap: &Bitmap) -> Option<Ink> {
         let Bitmap {
+            format,
             width,
             height,
             left,
             top,
-            ref coverage,
+            ref texels,
         } = *bitmap;
         if width == 0 || height == 0 {
             return Some(Ink::Blank);
@@ -114,17 +151,19 @@ impl Inks {
             return Some(Ink::Missing);
         }
         loop {
-            if let Some(Spot { page, x, y }) = self.atlas.insert(width, height, coverage) {
-                return Some(Ink::Mask(Mask {
+            if let Some(Spot { page, x, y }) = self.atlas(format).insert(width, height, texels) {
+                return Some(Ink::Packed(Packed {
+                    format,
                     page,
                     texels: [x, y, width, height],
                     left,
                     top,
                 }));
             }
-            let evicted = self.atlas.evict()?;
-            self.cache
-                .retain(|_, ink| !matches!(ink, Ink::Mask(mask) if mask.page == evicted));
+            let evicted = self.atlas(format).evict()?;
+            self.cache.retain(|_, ink| {
+                !matches!(ink, Ink::Packed(packed) if packed.format == format && packed.page == evicted)
+            });
         }
     }
 }
@@ -137,12 +176,13 @@ fn rasterize_icon(tree: &usvg::Tree, pixels: u16) -> Option<Bitmap> {
     let transform = tiny_skia::Transform::from_scale(side / units.width(), side / units.height());
     resvg::render(tree, transform, &mut pixmap.as_mut());
     Some(Bitmap {
+        format: Format::Coverage,
         width: pixels,
         height: pixels,
         left: 0,
         top: 0,
         // Premultiplied, so alpha alone is the coverage.
-        coverage: pixmap.pixels().iter().map(|pixel| pixel.alpha()).collect(),
+        texels: pixmap.pixels().iter().map(|pixel| pixel.alpha()).collect(),
     })
 }
 
@@ -161,15 +201,17 @@ mod tests {
         inks.get(&mut fonts, &icons, old);
         let full = PAGE_SIZE - 1;
         // Fills the rest of the first page, under the old icon's shelf.
-        inks.atlas.insert(full, PAGE_SIZE - 18, &[]).unwrap();
-        while inks.atlas.insert(full, full, &[]).is_some() {}
+        inks.coverage.insert(full, PAGE_SIZE - 18, &[]).unwrap();
+        while inks.coverage.insert(full, full, &[]).is_some() {}
         inks.next_frame();
         for page in 1..MAX_PAGES {
-            inks.atlas.touch(page);
+            inks.coverage.touch(page);
         }
         inks.next_frame();
         let new = Key::Icon(IconId(0), 32);
-        assert!(matches!(inks.get(&mut fonts, &icons, new), Ink::Mask(mask) if mask.page == 0));
+        assert!(
+            matches!(inks.get(&mut fonts, &icons, new), Ink::Packed(packed) if packed.page == 0)
+        );
         assert_eq!(inks.keys().collect::<Vec<_>>(), [new]);
     }
 
@@ -180,11 +222,11 @@ mod tests {
         let mut fonts = Fonts::default();
         let mut inks = Inks::default();
         let full = PAGE_SIZE - 1;
-        while inks.atlas.insert(full, full, &[]).is_some() {}
+        while inks.coverage.insert(full, full, &[]).is_some() {}
         let key = Key::Icon(IconId(0), 16);
         assert!(matches!(inks.get(&mut fonts, &icons, key), Ink::Missing));
         assert_eq!(inks.keys().count(), 0);
         inks.next_frame();
-        assert!(matches!(inks.get(&mut fonts, &icons, key), Ink::Mask(_)));
+        assert!(matches!(inks.get(&mut fonts, &icons, key), Ink::Packed(_)));
     }
 }

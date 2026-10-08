@@ -2,13 +2,14 @@
 //!
 //! Every quad is one instance of a 4-vertex strip, and a new draw call starts
 //! only where the clip changes. Text and icons read the atlas pages, layers
-//! of one texture array that take only the rows that changed each frame.
+//! of a texture array per atlas that take only the rows that changed each
+//! frame.
 
 use std::ops::Range;
 
 use wgpu::{CurrentSurfaceTexture, SurfaceTarget};
 
-use crate::canvas::{AtlasUpdate, Canvas, Quad, Rect};
+use crate::canvas::{AtlasUpdate, Canvas, Format, Quad, Rect};
 use crate::cast::{narrow, pixel};
 
 const QUAD_SIZE: wgpu::BufferAddress = size_of::<Quad>() as wgpu::BufferAddress;
@@ -49,11 +50,12 @@ pub struct Gpu {
     atlas: Atlas,
 }
 
-/// The atlas pages and the bind group that reads them, both replaced when a
-/// page is added.
+/// Each atlas's pages, indexed by [`Format`], and the bind group that reads
+/// them. An atlas's texture is replaced when a page is added, and the bind
+/// group with it.
 struct Atlas {
     layout: wgpu::BindGroupLayout,
-    texture: wgpu::Texture,
+    textures: [wgpu::Texture; 2],
     bind_group: wgpu::BindGroup,
 }
 
@@ -153,25 +155,25 @@ impl Gpu {
         self.write_viewport();
     }
 
-    /// Uploads what changed in the atlas, then clears the surface to the
+    /// Uploads what changed in the atlases, then clears the surface to the
     /// canvas's background and draws its quads, calling `before_present` right
     /// before the frame goes out.
     ///
     /// Skips the frame, without calling it, when the surface isn't ready, such
-    /// as while it's hidden, but still takes the atlas update, since it won't
-    /// come again.
+    /// as while it's hidden, but still takes the atlas updates, since they
+    /// won't come again.
     ///
     /// # Errors
     ///
     /// [`Error::Lost`] when the surface is gone and needs a new [`Gpu`], and
     /// [`Error::TooManyQuads`] when the canvas can't fit in one buffer.
-    pub fn draw(
+    pub fn draw<'a>(
         &mut self,
         canvas: &Canvas,
-        atlas: Option<AtlasUpdate>,
+        atlas: impl IntoIterator<Item = AtlasUpdate<'a>>,
         before_present: impl FnOnce(),
     ) -> Result<(), Error> {
-        if let Some(update) = atlas {
+        for update in atlas {
             self.atlas.write(&self.device, &self.queue, &update);
         }
         let (frame, suboptimal) = match self.surface.get_current_texture() {
@@ -304,7 +306,7 @@ fn quad_pipeline(
                 step_mode: wgpu::VertexStepMode::Instance,
                 attributes: &wgpu::vertex_attr_array![
                     0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4,
-                    4 => Float32x4, 5 => Float32, 6 => Uint32,
+                    4 => Float32x4, 5 => Float32, 6 => Uint16x2,
                 ],
             })],
         },
@@ -330,25 +332,28 @@ fn quad_pipeline(
 }
 
 impl Atlas {
-    /// One 1 by 1 page until the first update.
+    /// One 1 by 1 page each until the first update.
     fn new(device: &wgpu::Device) -> Self {
+        let entry = |binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                view_dimension: wgpu::TextureViewDimension::D2Array,
+                multisampled: false,
+            },
+            count: None,
+        };
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("atlas"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                    view_dimension: wgpu::TextureViewDimension::D2Array,
-                    multisampled: false,
-                },
-                count: None,
-            }],
+            entries: &[entry(0), entry(1)],
         });
-        let (texture, bind_group) = atlas_texture(device, &layout, 1, 1);
+        let textures =
+            [Format::Coverage, Format::Color].map(|format| atlas_texture(device, format, 1, 1));
+        let bind_group = atlas_bind_group(device, &layout, &textures);
         Self {
             layout,
-            texture,
+            textures,
             bind_group,
         }
     }
@@ -356,13 +361,17 @@ impl Atlas {
     fn write(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, update: &AtlasUpdate) {
         let size = u32::from(update.size);
         let pages = u32::from(update.pages);
-        if self.texture.width() != size || self.texture.depth_or_array_layers() != pages {
-            (self.texture, self.bind_group) = atlas_texture(device, &self.layout, size, pages);
+        let at = usize::from(update.format as u16);
+        if self.textures[at].width() != size || self.textures[at].depth_or_array_layers() != pages {
+            self.textures[at] = atlas_texture(device, update.format, size, pages);
+            self.bind_group = atlas_bind_group(device, &self.layout, &self.textures);
         }
+        let texture = &self.textures[at];
+        let bytes_per_row = u32::try_from(usize::from(update.size) * update.format.bytes()).ok();
         for write in &update.writes {
             queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
-                    texture: &self.texture,
+                    texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d {
                         x: 0,
@@ -374,7 +383,7 @@ impl Atlas {
                 write.pixels,
                 wgpu::TexelCopyBufferLayout {
                     offset: 0,
-                    bytes_per_row: Some(size),
+                    bytes_per_row,
                     rows_per_image: None,
                 },
                 wgpu::Extent3d {
@@ -387,13 +396,8 @@ impl Atlas {
     }
 }
 
-fn atlas_texture(
-    device: &wgpu::Device,
-    layout: &wgpu::BindGroupLayout,
-    size: u32,
-    pages: u32,
-) -> (wgpu::Texture, wgpu::BindGroup) {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
+fn atlas_texture(device: &wgpu::Device, format: Format, size: u32, pages: u32) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
         label: Some("atlas"),
         size: wgpu::Extent3d {
             width: size,
@@ -403,22 +407,41 @@ fn atlas_texture(
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::R8Unorm,
+        // Colour reads back linear, as the fill and the blending are.
+        format: match format {
+            Format::Coverage => wgpu::TextureFormat::R8Unorm,
+            Format::Color => wgpu::TextureFormat::Rgba8UnormSrgb,
+        },
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
-    });
+    })
+}
+
+fn atlas_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    textures: &[wgpu::Texture; 2],
+) -> wgpu::BindGroup {
     // Said outright, since a texture with one layer views as 2D by default.
-    let view = texture.create_view(&wgpu::TextureViewDescriptor {
-        dimension: Some(wgpu::TextureViewDimension::D2Array),
-        ..Default::default()
+    let views = textures.each_ref().map(|texture| {
+        texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        })
     });
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+    let [coverage, color] = &views;
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("atlas"),
         layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::TextureView(&view),
-        }],
-    });
-    (texture, bind_group)
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(coverage),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(color),
+            },
+        ],
+    })
 }

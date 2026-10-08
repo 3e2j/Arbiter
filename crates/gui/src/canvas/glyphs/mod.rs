@@ -1,5 +1,7 @@
-//! Text and icons, rasterized into the atlas the first time each is drawn at
-//! a size.
+//! Text and icons, rasterized into the atlases the first time each is drawn
+//! at a size. Outlines and icons are coverage, tinted by the colour they're
+//! drawn in, and glyphs a font stores as colour images, such as emoji, keep
+//! their own colours and take only the alpha.
 //!
 //! The app hands in its fonts and icons at startup and keeps the ids it gets
 //! back, so nothing here knows which fonts or icons exist.
@@ -11,6 +13,7 @@
 //! has is an empty box.
 
 mod atlas;
+mod color;
 mod fonts;
 mod ink;
 mod shape;
@@ -20,7 +23,7 @@ use resvg::usvg;
 use skrifa::MetadataProvider;
 use skrifa::instance::Size;
 
-pub use atlas::{AtlasUpdate, PageWrite};
+pub use atlas::{AtlasUpdate, Format, PageWrite};
 use fonts::Fonts;
 use ink::{Ink, Inks, Key};
 use shape::Lines;
@@ -71,7 +74,7 @@ pub struct LineMetrics {
     pub descent: f32,
 }
 
-/// Draws text and icons as quads sampling the atlas. Masks are placed on
+/// Draws text and icons as quads sampling the atlases. Images are placed on
 /// whole physical pixels, so text stays sharp when the position it's drawn at
 /// is on one too.
 pub struct Glyphs {
@@ -160,14 +163,15 @@ impl Glyphs {
         self.inks.next_frame();
     }
 
-    /// Makes the next update hold the whole atlas, for a GPU that starts empty.
+    /// Makes the next updates hold the whole atlases, for a GPU that starts
+    /// empty.
     pub(crate) fn reupload(&mut self) {
-        self.inks.atlas.reupload();
+        self.inks.reupload();
     }
 
     /// The atlas changes since the last call, for the GPU to upload.
-    pub(crate) fn take_update(&mut self) -> Option<AtlasUpdate<'_>> {
-        self.inks.atlas.take_update()
+    pub(crate) fn take_updates(&mut self) -> impl Iterator<Item = AtlasUpdate<'_>> {
+        self.inks.take_updates()
     }
 
     /// How `font` sits on its baseline at `size`. An em above the baseline
@@ -278,14 +282,21 @@ fn place(
     };
     match ink {
         Ink::Blank => {}
-        // The pen keeps its fraction so advances don't drift, but each mask
+        // The pen keeps its fraction so advances don't drift, but each image
         // lands on a whole pixel, where its texels map one to one.
-        Ink::Mask(mask) => {
-            let [u, v, width, height] = mask.texels.map(f32::from);
-            let x = (pen[0] + f32::from(mask.left)).round();
-            let y = pen[1].round() - f32::from(mask.top);
+        Ink::Packed(packed) => {
+            let [u, v, width, height] = packed.texels.map(f32::from);
+            let x = (pen[0] + f32::from(packed.left)).round();
+            let y = pen[1].round() - f32::from(packed.top);
             let rect = logical([x, y, width, height]);
-            canvas.quad(Quad::sampled(rect, mask.page, [u, v, width, height], color));
+            let texels = [u, v, width, height];
+            canvas.quad(Quad::sampled(
+                rect,
+                packed.format,
+                packed.page,
+                texels,
+                color,
+            ));
         }
         Ink::Missing => {
             let rect = logical(missing);
@@ -471,6 +482,26 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs a system font with colour emoji"]
+    fn emoji_are_drawn_from_the_colour_atlas() {
+        let Loaded {
+            mut glyphs, sans, ..
+        } = loaded(1.);
+        glyphs.set_system_fallback(sans, true);
+        let mut canvas = canvas();
+        glyphs.text(&mut canvas, sans, [0., 20.], 16., "a🦀", WHITE);
+        let [a, crab] = canvas.quads() else {
+            panic!("two quads")
+        };
+        assert_eq!((a.atlas, crab.atlas), (0, 1));
+        // Noto Color Emoji is drawn a little over an em wide.
+        assert!((16. ..=22.).contains(&crab.rect[2]), "{:?}", crab.rect);
+        assert!(crab.rect[1] < 20. - 10. && crab.rect[1] + crab.rect[3] > 20.);
+        let updates: Vec<_> = glyphs.take_updates().map(|update| update.format).collect();
+        assert_eq!(updates, [Format::Coverage, Format::Color]);
+    }
+
+    #[test]
     fn an_icon_that_isnt_loaded_is_a_box() {
         let mut glyphs = Glyphs::default();
         let mut canvas = canvas();
@@ -493,9 +524,9 @@ mod tests {
             mut glyphs, sans, ..
         } = loaded(1.);
         glyphs.text_width(sans, 14., "a");
-        glyphs.take_update();
-        assert!(glyphs.take_update().is_none());
+        glyphs.take_updates().for_each(drop);
+        assert_eq!(glyphs.take_updates().count(), 0);
         glyphs.set_scale(2.);
-        assert!(glyphs.take_update().is_some());
+        assert_eq!(glyphs.take_updates().count(), 2);
     }
 }

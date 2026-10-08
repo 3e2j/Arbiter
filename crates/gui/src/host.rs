@@ -70,15 +70,15 @@ impl<A: App> Host<A> {
         self.app.ui(rect, canvas, &mut self.glyphs);
     }
 
-    /// Makes the next [`Self::take_atlas_update`] hold the whole atlas, for a
-    /// new GPU that has none of it.
+    /// Makes the next [`Self::take_atlas_updates`] hold the whole atlases, for a
+    /// new GPU that has none of them.
     pub fn reupload_atlas(&mut self) {
         self.glyphs.reupload();
     }
 
-    /// What the passes since the last call added to the atlas, for the GPU.
-    pub fn take_atlas_update(&mut self) -> Option<AtlasUpdate<'_>> {
-        self.glyphs.take_update()
+    /// What the passes since the last call added to the atlases, for the GPU.
+    pub fn take_atlas_updates(&mut self) -> impl Iterator<Item = AtlasUpdate<'_>> {
+        self.glyphs.take_updates()
     }
 
     pub fn close(&mut self) {

@@ -138,7 +138,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
                     .resize([size.width, size.height], open.window.scale_factor());
                 let scale = narrow(open.window.scale_factor());
                 self.host.draw(open.rect(), scale, &mut self.canvas);
-                let atlas = self.host.take_atlas_update();
+                let atlas = self.host.take_atlas_updates();
                 // Without this, Wayland gets a frame per event and shows them all in turn.
                 let window = &open.window;
                 match open

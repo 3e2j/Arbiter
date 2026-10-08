@@ -1,5 +1,5 @@
-//! The loaded fonts, which of them draws each character, and their outlines
-//! filled into coverage.
+//! The loaded fonts, which of them draws each character, and their glyphs
+//! filled in: outlines into coverage, or a colour image when the font has one.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -12,8 +12,10 @@ use skrifa::outline::{
     Target,
 };
 use skrifa::{FontRef, GlyphId, MetadataProvider, Tag};
-use zeno::{Command, Format, Mask as Coverage, Origin, Vector};
+use zeno::{Command, Mask as Coverage, Origin, Vector};
 
+use super::atlas::Format;
+use super::color;
 use super::ink::Bitmap;
 use super::system::SystemFonts;
 use super::{Error, FontFile, FontId};
@@ -103,7 +105,7 @@ impl Fonts {
         self.fallback(c, font).unwrap_or(font)
     }
 
-    /// The coverage of glyph `id` in `font` at `pixels` per em. `None` for
+    /// Glyph `id` in `font` at `pixels` per em. `None` for
     /// the font's own missing glyph too, so every font's missing characters
     /// look the same.
     pub fn rasterize(&mut self, font: FontId, id: GlyphId, pixels: u16) -> Option<Bitmap> {
@@ -173,7 +175,8 @@ impl Font {
         })
     }
 
-    /// Empty for a blank glyph, `None` for one without an outline.
+    /// The glyph's colour image if the font has one, else its outline. Empty
+    /// for a blank glyph, `None` for one with neither.
     fn rasterize(&mut self, id: GlyphId, pixels: u16) -> Option<Bitmap> {
         let Self {
             data,
@@ -183,9 +186,11 @@ impl Font {
             instances,
             ..
         } = self;
-        let outlines = FontRef::from_index(data.as_ref(), *index)
-            .ok()?
-            .outline_glyphs();
+        let face = FontRef::from_index(data.as_ref(), *index).ok()?;
+        if let Some(image) = color::rasterize(&face, id, pixels) {
+            return Some(image);
+        }
+        let outlines = face.outline_glyphs();
         let glyph = outlines.get(id)?;
         let at = if let Some(at) = instances.iter().position(|&(size, _)| size == pixels) {
             at
@@ -205,18 +210,19 @@ impl Font {
             .draw(DrawSettings::hinted(instance, false), &mut path)
             .ok()?;
         let (coverage, placement) = Coverage::new(&path.0[..])
-            .format(Format::Alpha)
+            .format(zeno::Format::Alpha)
             .origin(Origin::BottomLeft)
             .render();
         let height = u16::try_from(placement.height).ok()?;
         Some(Bitmap {
+            format: Format::Coverage,
             width: u16::try_from(placement.width).ok()?,
             height,
             left: i16::try_from(placement.left).ok()?,
             // With a bottom-left origin and no size set beforehand, zeno's
             // `top` is the mask's bottom edge, so the height makes it the top.
             top: i16::try_from(placement.top.checked_add(i32::from(height))?).ok()?,
-            coverage,
+            texels: coverage,
         })
     }
 }

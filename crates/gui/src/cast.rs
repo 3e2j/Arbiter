@@ -13,3 +13,8 @@ pub(crate) fn narrow(v: f64) -> f32 {
 pub(crate) fn pixel(v: f64) -> u32 {
     v.round() as u32
 }
+
+#[allow(clippy::cast_possible_truncation)]
+pub(crate) fn pixel_offset(v: f64) -> i32 {
+    v.round() as i32
+}

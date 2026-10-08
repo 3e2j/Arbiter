@@ -2,14 +2,16 @@
 //! [`render`](crate::render) draws it.
 //!
 //! Every shape is one [`Quad`]. The shader rounds its corners and draws its
-//! border per pixel, and text and icons are quads that sample the atlas,
+//! border per pixel, and text and icons are quads that sample an atlas,
 //! so a whole screen batches into a draw per clip.
 
 mod glyphs;
 
 use std::ops::Range;
 
-pub use glyphs::{AtlasUpdate, Error, FontFile, FontId, Glyphs, IconId, LineMetrics, PageWrite};
+pub use glyphs::{
+    AtlasUpdate, Error, FontFile, FontId, Format, Glyphs, IconId, LineMetrics, PageWrite,
+};
 
 /// In logical pixels, from the window's top left.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -99,11 +101,14 @@ pub struct Quad {
     border: [f32; 4],
     /// Top left, top right, bottom right, bottom left.
     radii: [f32; 4],
-    /// `x, y, width, height` in texels on atlas page `page`, whose coverage
-    /// scales the fill. Zero-sized for a quad that samples nothing.
+    /// `x, y, width, height` in texels on `page` of `atlas`. Zero-sized for
+    /// a quad that samples nothing.
     texels: [f32; 4],
     border_width: f32,
-    page: u32,
+    page: u16,
+    /// A [`Format`]. Coverage scales the fill, and colour takes only its
+    /// alpha.
+    atlas: u16,
 }
 
 impl Quad {
@@ -117,15 +122,23 @@ impl Quad {
             texels: [0.; 4],
             border_width: 0.,
             page: 0,
+            atlas: 0,
         }
     }
 
     /// `rect` must be the texel area's size in physical pixels, so each pixel
     /// reads the one texel under it.
-    pub(crate) fn sampled(rect: Rect, page: u16, texels: [f32; 4], fill: Color) -> Self {
+    pub(crate) fn sampled(
+        rect: Rect,
+        atlas: Format,
+        page: u16,
+        texels: [f32; 4],
+        fill: Color,
+    ) -> Self {
         let mut quad = Self::new(rect, fill);
-        quad.page = u32::from(page);
         quad.texels = texels;
+        quad.page = page;
+        quad.atlas = atlas as u16;
         quad
     }
 
