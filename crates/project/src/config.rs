@@ -220,9 +220,9 @@ pub struct Edition {
     pub revision: u8,
     /// XXH3-128 of the whole disc, see `pack::disc::hash`.
     ///
-    /// Catalog hash for a retail disc.
+    /// Catalogue hash for a retail disc.
     ///
-    /// Used to verify that a disc is unmodified from whats expected in a catalog.
+    /// Used to verify that a disc is unmodified from what's expected in a catalogue.
     pub disc_hash: Hash,
     /// XXH3-128 over all unpacked files' paths and hashes, sorted by path.
     /// Unpacked file-based check, not a disc check (see `disc_hash` for that).

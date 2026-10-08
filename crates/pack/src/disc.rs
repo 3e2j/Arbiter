@@ -227,7 +227,7 @@ impl Reader {
 /// # Errors
 ///
 /// If nod can't open the image, reading fails, or the disc ends before its size.
-// Read the way Dusklight's `borealis::disc::verify` does, so it matches the hashes in its catalog.
+// Read the way Dusklight's `borealis::disc::verify` does, so it matches the hashes in its catalogue.
 pub fn hash(path: &Path) -> Result<u128, Error> {
     let mut disc = DiscReader::new(path, &DiscOptions::default())?;
     let size = disc.disc_size();
