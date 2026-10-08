@@ -242,6 +242,7 @@ impl Project {
         staged.commit(&self.root.join(base::DIR))?;
         if let Recorded::Added | Recorded::Switched { .. } = staged.outcome {
             let edition = Edition {
+                platform: staged.platform,
                 revision: staged.revision,
                 files_digest: staged.manifest.files_digest(),
             };
@@ -265,7 +266,7 @@ impl Project {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hash::Hash;
+    use crate::{config::Platform, hash::Hash};
 
     /// A fresh project at `<tmp>/mod`, so its siblings stay inside `<tmp>`.
     fn fresh() -> (tempfile::TempDir, Project) {
@@ -333,6 +334,7 @@ mod tests {
         Staged {
             id: id.to_owned(),
             revision,
+            platform: Platform::Wii,
             manifest,
             bytes: file.len() as u64,
             outcome,
@@ -363,6 +365,7 @@ mod tests {
 
         let project = Project::open(&root).unwrap();
         assert_eq!(project.config.editions["RZDE01"].revision, 2);
+        assert_eq!(project.config.editions["RZDE01"].platform, Platform::Wii);
         assert_eq!(fs::read(root.join("base/RZDE01/a.arc")).unwrap(), b"rev 2");
         assert!(!root.join("base/.RZDE01.partial").exists());
     }
@@ -376,6 +379,7 @@ mod tests {
 
         let staged = project.stage(&disc).unwrap();
         assert_eq!(staged.id, "GZ2E01");
+        assert_eq!(staged.platform, Platform::GameCube);
         assert_eq!(project.commit(staged).unwrap(), Recorded::Added);
         let file = root.join("base/GZ2E01/res/Msgus/bmgres.arc");
         assert!(fs::metadata(&file).unwrap().permissions().readonly());

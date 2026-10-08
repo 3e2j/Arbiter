@@ -60,8 +60,26 @@ pub enum Recorded {
     },
 }
 
+/// Mirrors `pack::disc::Platform`, which stays out of the config format.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Platform {
+    GameCube,
+    Wii,
+}
+
+impl From<pack::disc::Platform> for Platform {
+    fn from(platform: pack::disc::Platform) -> Self {
+        match platform {
+            pack::disc::Platform::GameCube => Self::GameCube,
+            pack::disc::Platform::Wii => Self::Wii,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct Edition {
+    pub platform: Platform,
     /// The disc header's version. Stored here only: `base/` is local, and a
     /// clone needs to know which disc to ask for.
     pub revision: u8,
@@ -85,6 +103,7 @@ mod tests {
             editions: BTreeMap::from([(
                 "GZ2E01".to_owned(),
                 Edition {
+                    platform: Platform::GameCube,
                     revision: 0,
                     files_digest: Hash(0x1234),
                 },

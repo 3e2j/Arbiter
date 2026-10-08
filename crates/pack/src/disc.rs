@@ -24,6 +24,12 @@ pub enum Error {
     Path(String),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Platform {
+    GameCube,
+    Wii,
+}
+
 /// The data partition of an opened disc. A Wii disc's other partitions
 /// (update, channel) hold nothing of the game's.
 pub struct Disc {
@@ -31,6 +37,7 @@ pub struct Disc {
     /// it's safe in a file name.
     pub id: String,
     pub revision: u8,
+    pub platform: Platform,
     /// Files only, in file system order. Every path is plain and relative, so
     /// joining one to a directory can't escape it.
     pub files: Vec<File>,
@@ -63,6 +70,11 @@ impl Disc {
 
         let mut partition =
             disc.open_partition_kind(PartitionKind::Data, &PartitionOptions::default())?;
+        let platform = if partition.is_wii() {
+            Platform::Wii
+        } else {
+            Platform::GameCube
+        };
         let meta = partition.meta()?;
         let fst = meta.fst().map_err(Error::Fst)?;
         let files: Vec<File> = fst
@@ -77,6 +89,7 @@ impl Disc {
         Ok(Self {
             id,
             revision,
+            platform,
             files,
             reader: Reader(partition),
         })
@@ -137,6 +150,7 @@ mod tests {
         let mut disc = Disc::open(&path).unwrap();
         assert_eq!(disc.id, "GZ2E01");
         assert_eq!(disc.revision, 0);
+        assert_eq!(disc.platform, Platform::GameCube);
 
         let file = disc
             .files

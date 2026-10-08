@@ -22,7 +22,7 @@ use pack::disc::{self, Disc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::{Config, Recorded},
+    config::{Config, Platform, Recorded},
     hash::Hash,
 };
 
@@ -86,6 +86,7 @@ impl Manifest {
 pub struct Staged {
     pub id: String,
     pub revision: u8,
+    pub platform: Platform,
     pub manifest: Manifest,
     pub bytes: u64,
     /// Decided against `arbiter.toml` as it was when staged.
@@ -129,6 +130,7 @@ pub fn stage(base: &Path, disc: &Path, config: &Config) -> Result<Staged, Error>
     Ok(Staged {
         id: disc.id,
         revision: disc.revision,
+        platform: disc.platform.into(),
         manifest,
         bytes,
         outcome,
