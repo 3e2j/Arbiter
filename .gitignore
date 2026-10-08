@@ -1,1 +1,13 @@
 /target
+
+# Disc images (formats supported by nod)
+*.iso
+*.iso.[0-9]*
+*.gcm
+*.ciso
+*.gcz
+*.nfs
+*.rvz
+*.wbfs
+*.wia
+*.tgc
