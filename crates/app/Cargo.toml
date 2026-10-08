@@ -1,0 +1,18 @@
+[package]
+name = "arbiter-app"
+description = "The editor: everything the user sees that knows Arbiter, drawn through gui."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "app"
+
+[dependencies]
+arbiter-gui.workspace = true
+# TODO: unused until the editor opens a project.
+arbiter-project.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

@@ -15,8 +15,9 @@ use unpack::unpack;
 #[derive(Parser)]
 #[command(version)]
 struct Cli {
+    /// Opens the editor when none is given.
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -44,14 +45,19 @@ enum Command {
 enum Error {
     #[error(transparent)]
     Project(#[from] project::Error),
+
+    #[error(transparent)]
+    App(#[from] app::Error),
+
     #[error("{0} was given more than once, and no one picked which to keep")]
     Duplicate(String),
 }
 
 fn main() -> ExitCode {
     let result = match Cli::parse().command {
-        Command::New { dir, discs, force } => new(&dir, &discs, force),
-        Command::Unpack { discs, project } => Project::open(&project)
+        None => app::run().map_err(Error::from),
+        Some(Command::New { dir, discs, force }) => new(&dir, &discs, force),
+        Some(Command::Unpack { discs, project }) => Project::open(&project)
             .map_err(Error::from)
             .and_then(|mut p| unpack(&mut p, &discs)),
     };
@@ -64,7 +70,7 @@ fn main() -> ExitCode {
                     eprintln!("help: pass --force to replace it (will wipe all project files!)");
                 }
                 Error::Duplicate(_) => eprintln!("help: pass only one disc per edition"),
-                Error::Project(_) => {}
+                Error::Project(_) | Error::App(_) => {}
             }
             ExitCode::FAILURE
         }
