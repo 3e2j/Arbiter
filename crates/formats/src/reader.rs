@@ -1,4 +1,4 @@
-use crate::{Error, Result};
+use crate::{Error, Record, Result};
 
 /// A cursor over a borrowed buffer.
 ///
@@ -124,24 +124,40 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// Checks a count from a header against the bytes left, before anything
-    /// is allocated for it. `elem_len` is the fewest bytes each element can
-    /// take.
+    /// Borrows a record at the cursor and steps over it.
     ///
     /// # Errors
     ///
-    /// [`Error::OutOfBounds`] if `count` elements can't fit after the cursor.
-    pub fn count(&self, count: usize, elem_len: usize) -> Result<usize> {
-        let out_of_bounds = || Error::OutOfBounds {
-            pos: self.pos,
-            len: count.saturating_mul(elem_len),
+    /// [`Error::OutOfBounds`] if the record runs past the end.
+    pub fn record<T: Record>(&mut self) -> Result<&'a T> {
+        const { assert!(align_of::<T>() == 1, "a record must be aligned to 1") };
+        let bytes = self.bytes(T::LEN)?;
+        // SAFETY: `bytes` is exactly one `T` long and borrowed for as long as
+        // the result. `T` is aligned to 1 (checked above), so any address
+        // suits it, and `Record` promises every bit pattern is a valid `T`.
+        Ok(unsafe { &*bytes.as_ptr().cast::<T>() })
+    }
+
+    /// Borrows `count` records laid end to end at an absolute position. The
+    /// bounds check comes before anything is made of `count`, which is
+    /// usually from the file.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::OutOfBounds`] if the records run past the end.
+    pub fn records_at<T: Record>(&self, pos: usize, count: usize) -> Result<&'a [T]> {
+        const { assert!(align_of::<T>() == 1, "a record must be aligned to 1") };
+        let len = count.checked_mul(T::LEN).ok_or(Error::OutOfBounds {
+            pos,
+            len: usize::MAX,
             size: self.data.len(),
-        };
-        let len = count.checked_mul(elem_len).ok_or_else(out_of_bounds)?;
-        if len > self.remaining() {
-            return Err(out_of_bounds());
-        }
-        Ok(count)
+        })?;
+        let bytes = self.bytes_at(pos, len)?;
+        // SAFETY: `bytes` is exactly `count` records long and borrowed for as
+        // long as the result. `T` is aligned to 1 (checked above), so any
+        // address suits it, and `Record` promises every bit pattern is a
+        // valid `T`.
+        Ok(unsafe { std::slice::from_raw_parts(bytes.as_ptr().cast::<T>(), count) })
     }
 
     /// Borrows the null-terminated bytes at an absolute position, terminator
@@ -212,15 +228,6 @@ mod tests {
             short.magic(*b"Yaz0"),
             Err(Error::WrongMagic { .. })
         ));
-    }
-
-    #[test]
-    fn counts_must_fit_the_bytes_left() {
-        let mut reader = Reader::new(&[0u8; 10]);
-        reader.seek(2);
-        assert_eq!(reader.count(4, 2).unwrap(), 4);
-        assert!(reader.count(5, 2).is_err());
-        assert!(reader.count(usize::MAX, 2).is_err());
     }
 
     #[test]

@@ -21,7 +21,7 @@ mod yaz0;
 pub use yay0::Yay0;
 pub use yaz0::Yaz0;
 
-use crate::{Error, Reader, Result, Writer};
+use crate::{Be32, Error, Reader, Record, Result, Writer};
 
 /// A compression wrapper, told apart by its magic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -91,14 +91,18 @@ impl Compression {
 /// it.
 const MAX_EXPANSION: usize = token::backref::MAX_LENGTH as usize / 3;
 
-/// Reads the magic and the decompressed size every wrapper opens with.
-///
-/// The size comes from the file, so it's held against what the input could
-/// expand to before anything is allocated for it.
-fn header(reader: &mut Reader<'_>, magic: [u8; 4]) -> Result<usize> {
+/// Steps over `magic` and borrows the header after it.
+fn header<'a, T: Record>(reader: &mut Reader<'a>, magic: [u8; 4]) -> Result<&'a T> {
     reader.magic(magic)?;
-    let size = reader.u32()? as usize;
-    if size > reader.len().saturating_mul(MAX_EXPANSION) {
+    reader.record()
+}
+
+/// A header's decompressed size, which comes from the file, so it's held
+/// against what `input_len` bytes could expand to before anything is
+/// allocated for it.
+fn decompressed_size(size: Be32, input_len: usize) -> Result<usize> {
+    let size = size.get() as usize;
+    if size > input_len.saturating_mul(MAX_EXPANSION) {
         return Err(Error::Malformed {
             what: "the decompressed size is more than the data can expand to",
         });

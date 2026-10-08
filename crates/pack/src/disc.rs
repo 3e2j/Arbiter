@@ -292,7 +292,7 @@ fn country(code: u8, platform: Platform, region: Option<Region>) -> Option<Count
 }
 
 // Here to avoid any discs from writing where they shouldn't be.
-fn is_plain(path: &str) -> bool {
+pub(crate) fn is_plain(path: &str) -> bool {
     let path = Path::new(path);
     path.components().next().is_some()
         && path.components().all(|c| matches!(c, Component::Normal(_)))

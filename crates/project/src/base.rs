@@ -3,18 +3,24 @@
 //! ```text
 //! base/
 //! ├─ GZ2E01/          the disc's own tree, every file read-only
+//! │  ├─ res/Msgus/bmgres.arc/
+//! │  │  ├─ zel_00.bmg
+//! │  │  └─ .rarc.toml  how the archive packs back, see `sidecar`
 //! │  └─ sys/          what the disc keeps outside its file system, see `pack::disc`
-//! ├─ GZ2E01.toml      each path, its hash, and what came off it
+//! ├─ GZ2E01.toml      each path, its hash, and what came off a disc file
 //! ├─ GZ2P01/
 //! └─ GZ2P01.toml
 //! ```
 //!
 //! Files sit at their disc paths so any program can open them,
-//! with their compression taken off, and archives unpacked (any packaging).
+//! with their compression taken off. An archive is a directory of its
+//! members, nested any depth.
 //! Read-only keeps them from being edited by accident: changes go in `changes/`.
 
+pub mod sidecar;
+
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, btree_map},
     fmt::{self, Display},
     fs::{self, File},
     io::{self, Write},
@@ -25,7 +31,7 @@ use std::{
 use game::edition::{self, Edition, Game, Verdict};
 use pack::{
     disc::{self, Disc},
-    unpack,
+    unpack::{self, Piece},
 };
 use serde::Deserialize;
 use toml_writer::{TomlWrite, WriteTomlKey};
@@ -34,6 +40,7 @@ use crate::{
     config::{Config, Country, Platform, Recorded, Region},
     hash::Hash,
 };
+use sidecar::Sidecar;
 
 pub const DIR: &str = "base";
 
@@ -47,12 +54,10 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
-    #[error("{path}: {source}")]
-    Decode {
-        path: String,
-        #[source]
-        source: formats::Error,
-    },
+    #[error(transparent)]
+    Unpack(#[from] unpack::Error),
+    #[error("two files unpack to {0}")]
+    Duplicate(String),
     #[error("hashing the disc panicked")]
     HashPanicked,
     #[error("{path}: {source}")]
@@ -85,11 +90,12 @@ pub struct Manifest {
     pub files: BTreeMap<String, Entry>,
 }
 
-/// What an unpack made of one file.
+/// What an unpack made of one file, a disc file or an archive member.
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Entry {
     /// Of the stored bytes, with everything taken off.
     pub hash: Hash,
+    /// What came off a disc file. A member's is in its archive's sidecar.
     pub compression: Option<Compression>,
 }
 
@@ -104,7 +110,7 @@ pub enum Compression {
 }
 
 impl Compression {
-    const fn name(self) -> &'static str {
+    pub(crate) const fn name(self) -> &'static str {
         match self {
             Self::Yaz0 => "yaz0",
             Self::Yay0 => "yay0",
@@ -164,7 +170,7 @@ impl Display for Manifest {
 }
 
 /// Writes `key = `.
-fn assign(f: &mut fmt::Formatter<'_>, key: impl WriteTomlKey) -> fmt::Result {
+pub(crate) fn assign(f: &mut fmt::Formatter<'_>, key: impl WriteTomlKey) -> fmt::Result {
     f.key(key)?;
     f.space()?;
     f.keyval_sep()?;
@@ -287,53 +293,88 @@ pub(crate) fn stage(
 /// Writes every file to `tree` with its packaging unpacked (compression, archives).
 /// Returns their manifest and total size.
 fn unpack(tree: &Path, disc: &mut Disc) -> Result<(Manifest, u64), Error> {
-    let mut files = BTreeMap::new();
-    let mut bytes = 0;
+    let mut out = Out {
+        tree,
+        files: BTreeMap::new(),
+        bytes: 0,
+        made_dir: None,
+    };
     let mut buf = Vec::new();
-    let mut made_dir = None;
     for file in &disc.files {
         disc.reader
             .read(file, &mut buf)
             .map_err(io_err(Path::new(&file.path)))?;
-        let dest = tree.join(&file.path);
-        // Files come in file system order, so siblings share a parent.
-        let parent = dest.parent().unwrap_or(tree);
-        if made_dir.as_deref() != Some(parent) {
-            fs::create_dir_all(parent).map_err(io_err(parent))?;
-            made_dir = Some(parent.to_path_buf());
-        }
-
-        let peeled = unpack::peel(&buf).map_err(|source| Error::Decode {
-            path: file.path.clone(),
-            source,
-        })?;
-        write_readonly(&dest, &peeled.bytes)?;
-        bytes += peeled.bytes.len() as u64;
-
-        files.insert(
-            file.path.clone(),
-            Entry {
-                hash: Hash::of(&peeled.bytes),
-                compression: peeled.compression.map(Into::into),
-            },
-        );
+        unpack::unpack(&file.path, &buf, &mut |piece| out.store(piece))?;
     }
 
-    let sys = tree.join("sys");
-    fs::create_dir_all(&sys).map_err(io_err(&sys))?;
     for file in &disc.sys {
-        write_readonly(&tree.join(file.path), &file.bytes)?;
-        bytes += file.bytes.len() as u64;
-        files.insert(
-            file.path.to_owned(),
-            Entry {
-                hash: Hash::of(&file.bytes),
-                compression: None,
-            },
-        );
+        out.write(file.path, &file.bytes, None)?;
     }
 
-    Ok((Manifest { files }, bytes))
+    Ok((Manifest { files: out.files }, out.bytes))
+}
+
+/// An unpack in progress.
+struct Out<'a> {
+    tree: &'a Path,
+    files: BTreeMap<String, Entry>,
+    bytes: u64,
+    /// The last directory made. Files come in tree order, so siblings share it.
+    made_dir: Option<PathBuf>,
+}
+
+impl Out<'_> {
+    fn store(&mut self, piece: Piece<'_>) -> Result<(), Error> {
+        match piece {
+            Piece::File {
+                path,
+                bytes,
+                compression,
+            } => self.write(path, bytes, compression.map(Into::into)),
+            Piece::Archive {
+                path,
+                archive,
+                compression,
+                members,
+            } => {
+                let sidecar = Sidecar::new(
+                    archive,
+                    compression.map(Into::into),
+                    members.iter().map(|c| c.map(Into::into)),
+                )
+                .to_string();
+                self.write(
+                    &format!("{path}/{}", sidecar::NAME),
+                    sidecar.as_bytes(),
+                    None,
+                )
+            }
+        }
+    }
+
+    fn write(
+        &mut self,
+        path: &str,
+        bytes: &[u8],
+        compression: Option<Compression>,
+    ) -> Result<(), Error> {
+        let btree_map::Entry::Vacant(slot) = self.files.entry(path.to_owned()) else {
+            return Err(Error::Duplicate(path.to_owned()));
+        };
+        let dest = self.tree.join(path);
+        let parent = dest.parent().unwrap_or(self.tree);
+        if self.made_dir.as_deref() != Some(parent) {
+            fs::create_dir_all(parent).map_err(io_err(parent))?;
+            self.made_dir = Some(parent.to_path_buf());
+        }
+        write_readonly(&dest, bytes)?;
+        self.bytes += bytes.len() as u64;
+        slot.insert(Entry {
+            hash: Hash::of(bytes),
+            compression,
+        });
+        Ok(())
+    }
 }
 
 impl Staged {
@@ -437,6 +478,102 @@ mod tests {
         remove_tree(&tree).unwrap();
         assert!(!tree.exists());
         remove_tree(&tree).unwrap();
+    }
+
+    fn archive(files: &[(&str, &[u8])]) -> Vec<u8> {
+        use formats::{Encode, Writer, rarc};
+        let rarc = rarc::Rarc {
+            root: "archive".to_owned(),
+            files: files
+                .iter()
+                .map(|&(path, data)| rarc::File {
+                    path: path.to_owned(),
+                    data: data.to_vec(),
+                    ..rarc::File::default()
+                })
+                .collect(),
+            next_id: None,
+        };
+        let mut out = Writer::new();
+        rarc.encode(&mut out).unwrap();
+        out.finish()
+    }
+
+    fn yaz0(data: &[u8]) -> Vec<u8> {
+        use formats::{Writer, compression::Strategy};
+        let mut out = Writer::new();
+        formats::compression::Compression::Yaz0
+            .compress(data, Strategy::Parity, &mut out)
+            .unwrap();
+        out.finish()
+    }
+
+    fn store<'a>(tree: &'a Path, path: &str, bytes: &[u8]) -> Result<Out<'a>, Error> {
+        let mut out = Out {
+            tree,
+            files: BTreeMap::new(),
+            bytes: 0,
+            made_dir: None,
+        };
+        unpack::unpack(path, bytes, &mut |piece| out.store(piece))?;
+        Ok(out)
+    }
+
+    #[test]
+    fn archives_unpack_into_directories_with_a_sidecar() {
+        let dir = tempfile::tempdir().unwrap();
+        let inner = archive(&[("deep.bin", b"deep")]);
+        let outer = yaz0(&archive(&[
+            ("inner.arc", &inner),
+            ("sub/a.bmg", &yaz0(b"message")),
+        ]));
+        let out = store(dir.path(), "res/a.arc", &outer).unwrap();
+
+        let stored: Vec<_> = out
+            .files
+            .iter()
+            .map(|(path, e)| (path.as_str(), e.compression))
+            .collect();
+        assert_eq!(
+            stored,
+            [
+                ("res/a.arc/.rarc.toml", None),
+                ("res/a.arc/inner.arc/.rarc.toml", None),
+                ("res/a.arc/inner.arc/deep.bin", None),
+                ("res/a.arc/sub/a.bmg", None),
+            ]
+        );
+        let read = |path: &str| fs::read_to_string(dir.path().join(path)).unwrap();
+        assert_eq!(read("res/a.arc/sub/a.bmg"), "message");
+        assert_eq!(read("res/a.arc/inner.arc/deep.bin"), "deep");
+
+        let sidecar: Sidecar = toml::from_str(&read("res/a.arc/.rarc.toml")).unwrap();
+        assert_eq!(sidecar.root, "archive");
+        assert_eq!(sidecar.compression, Some(Compression::Yaz0));
+        let members: Vec<_> = sidecar
+            .members
+            .iter()
+            .map(|m| (m.path.as_str(), m.id, m.compression))
+            .collect();
+        assert_eq!(
+            members,
+            [
+                ("inner.arc", Some(0), None),
+                ("sub/a.bmg", Some(1), Some(Compression::Yaz0))
+            ]
+        );
+        let inner: Sidecar = toml::from_str(&read("res/a.arc/inner.arc/.rarc.toml")).unwrap();
+        assert_eq!(inner.compression, None);
+    }
+
+    #[test]
+    fn a_member_over_the_sidecar_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let outer = archive(&[(sidecar::NAME, b"not a sidecar")]);
+        assert!(matches!(
+            store(dir.path(), "a.arc", &outer),
+            Err(Error::Duplicate(path)) if path == "a.arc/.rarc.toml"
+        ));
     }
 
     fn entry(hash: u128, compression: Option<Compression>) -> Entry {

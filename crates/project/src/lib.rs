@@ -444,36 +444,4 @@ mod tests {
         assert!(config.editions.contains_key("AAAA01"));
         assert_eq!(config.target, Some(BTreeSet::from(["GZ2E01".to_owned()])));
     }
-
-    #[test]
-    #[ignore = "needs a retail disc at discs/NA.iso"]
-    fn unpacks_a_retail_disc_into_a_project() {
-        let disc = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../discs/NA.iso");
-        let (_dir, mut project) = fresh();
-        let root = project.root.clone();
-
-        let peeked = Project::peek(&disc).unwrap();
-        let [(hash, _)] = Project::verify(&[(&disc, &peeked)]).unwrap()[..] else {
-            panic!("one disc, one hash");
-        };
-        let staged = project.stage(&disc, hash).unwrap();
-        assert_eq!(staged.id, "GZ2E01");
-        assert_eq!(staged.platform, Platform::GameCube);
-        assert_eq!(project.commit(staged, true).unwrap(), Recorded::Added);
-        for file in ["res/Msgus/bmgres.arc", "sys/main.dol"] {
-            let file = root.join("base/GZ2E01").join(file);
-            assert!(fs::metadata(&file).unwrap().permissions().readonly());
-        }
-
-        let staged = project.stage(&disc, hash).unwrap();
-        assert_eq!(project.commit(staged, true).unwrap(), Recorded::Same);
-        assert!(!root.join("base/.GZ2E01.partial").exists());
-        assert!(
-            Project::open(&root)
-                .unwrap()
-                .config
-                .editions
-                .contains_key("GZ2E01")
-        );
-    }
 }

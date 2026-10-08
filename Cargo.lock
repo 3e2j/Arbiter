@@ -94,6 +94,7 @@ name = "arbiter-formats"
 version = "0.1.0"
 dependencies = [
  "arbiter-diag",
+ "encoding_rs",
  "thiserror",
 ]
 

@@ -2,15 +2,20 @@
 //!
 //! Every format implements [`Decode`] and [`Encode`].
 //! Data is big-endian, read through [`Reader`] and written through [`Writer`].
+//! Fixed tables are [`record!`] structs, borrowed and copied whole. The types
+//! their fields can be are listed on [`Record`].
 
 pub mod compression;
+pub mod rarc;
 
 mod reader;
+mod record;
 mod writer;
 
 use diag::Diagnostics;
 
 pub use reader::Reader;
+pub use record::{Be16, Be32, Flag, Record, bytes_of};
 pub use writer::Writer;
 
 /// Why bytes couldn't become a format, or a format couldn't become bytes.
@@ -33,6 +38,9 @@ pub enum Error {
 
     #[error("malformed: {what}")]
     Malformed { what: &'static str },
+
+    #[error("{name:?} can't be a file name")]
+    Name { name: String },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

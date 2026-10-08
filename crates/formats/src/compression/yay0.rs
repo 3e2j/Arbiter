@@ -9,15 +9,21 @@ use diag::Diagnostics;
 use super::search::Tokens;
 use super::token::Token;
 use super::token::backref::Backreference;
-use super::{Strategy, header, size_of};
-use crate::{Decode, Encode, Error, Reader, Result, Writer};
+use super::{Strategy, decompressed_size, header, size_of};
+use crate::{Be32, Decode, Encode, Error, Reader, Record, Result, Writer, record};
 
 /// One mask word: one bit per token.
 type Mask = u32;
 const MASK_SIZE: u32 = Mask::BITS;
 const TOP_MASK_BIT: Mask = 1 << (Mask::BITS - 1);
-/// Magic, decompressed size, and the links and chunks offsets.
-const HEADER_LEN: usize = 16;
+record! {
+    /// What follows the magic. Offsets are from the start of the file.
+    struct Header {
+        size: Be32,
+        links_at: Be32,
+        chunks_at: Be32,
+    }
+}
 
 /// A Yay0 wrapper, held decompressed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,11 +58,12 @@ impl Encode for Yay0 {
 
 pub(super) fn decompress(input: &[u8]) -> Result<Vec<u8>> {
     let mut masks = Reader::new(input);
-    let size = header(&mut masks, Yay0::MAGIC)?;
+    let header: &Header = header(&mut masks, Yay0::MAGIC)?;
+    let size = decompressed_size(header.size, input.len())?;
     let mut links = Reader::new(input);
-    links.seek(masks.u32()? as usize);
+    links.seek(header.links_at.get() as usize);
     let mut chunks = Reader::new(input);
-    chunks.seek(masks.u32()? as usize);
+    chunks.seek(header.chunks_at.get() as usize);
 
     let mut out = vec![0; size];
     let mut pos = 0;
@@ -121,18 +128,22 @@ pub(super) fn compress(input: &[u8], strategy: Strategy, out: &mut Writer) -> Re
     }
 
     // Offsets are from the start of this file, wherever `out` places it.
-    let links_at = HEADER_LEN + masks.len();
+    let links_at = Yay0::MAGIC.len() + Header::LEN + masks.len();
     let chunks_at = links_at + links.len();
     let offset = |pos: usize| {
-        u32::try_from(pos).map_err(|_| Error::TooLarge {
-            what: "a Yay0 stream offset",
-        })
+        u32::try_from(pos)
+            .map(Be32::new)
+            .map_err(|_| Error::TooLarge {
+                what: "a Yay0 stream offset",
+            })
     };
 
     out.bytes(&Yay0::MAGIC);
-    out.u32(size);
-    out.u32(offset(links_at)?);
-    out.u32(offset(chunks_at)?);
+    out.record(&Header {
+        size: Be32::new(size),
+        links_at: offset(links_at)?,
+        chunks_at: offset(chunks_at)?,
+    });
     out.bytes(&masks.finish());
     out.bytes(&links.finish());
     out.bytes(&chunks.finish());

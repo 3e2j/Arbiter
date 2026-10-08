@@ -10,6 +10,7 @@ name = "formats"
 
 [dependencies]
 arbiter-diag.workspace = true
+encoding_rs.workspace = true
 thiserror.workspace = true
 
 [lints]

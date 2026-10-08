@@ -5,16 +5,21 @@ use diag::Diagnostics;
 use super::search::Tokens;
 use super::token::Token;
 use super::token::backref::Backreference;
-use super::{Strategy, header, size_of};
-use crate::{Decode, Encode, Reader, Result, Writer};
+use super::{Strategy, decompressed_size, header, size_of};
+use crate::{Be32, Decode, Encode, Reader, Result, Writer, record};
 
 /// The flag byte: one bit per token in its group.
 type Flags = u8;
 /// Tokens led by one flag byte.
 const GROUP_SIZE: u32 = Flags::BITS;
 const TOP_FLAG_BIT: Flags = 1 << (Flags::BITS - 1);
-/// The header's zero padding after the decompressed size.
-const PADDING: usize = 8;
+record! {
+    /// What follows the magic.
+    struct Header {
+        size: Be32,
+        pad: [u8; 8],
+    }
+}
 
 /// A Yaz0 wrapper, held decompressed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,8 +54,8 @@ impl Encode for Yaz0 {
 
 pub(super) fn decompress(input: &[u8]) -> Result<Vec<u8>> {
     let mut reader = Reader::new(input);
-    let size = header(&mut reader, Yaz0::MAGIC)?;
-    reader.bytes(PADDING)?;
+    let header: &Header = header(&mut reader, Yaz0::MAGIC)?;
+    let size = decompressed_size(header.size, input.len())?;
 
     let mut out = vec![0; size];
     let mut pos = 0;
@@ -83,8 +88,10 @@ pub(super) fn decompress(input: &[u8]) -> Result<Vec<u8>> {
 pub(super) fn compress(input: &[u8], strategy: Strategy, out: &mut Writer) -> Result<()> {
     let size = size_of(input)?;
     out.bytes(&Yaz0::MAGIC);
-    out.u32(size);
-    out.zeros(PADDING);
+    out.record(&Header {
+        size: Be32::new(size),
+        pad: [0; 8],
+    });
 
     let mut flags: Flags = 0;
     // Each token is at most a pair and its extra byte.
@@ -131,7 +138,7 @@ mod tests {
     fn header(size: u32) -> Vec<u8> {
         let mut data = b"Yaz0".to_vec();
         data.extend_from_slice(&size.to_be_bytes());
-        data.extend_from_slice(&[0; PADDING]);
+        data.extend_from_slice(&[0; 8]);
         data
     }
 

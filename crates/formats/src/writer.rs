@@ -1,3 +1,5 @@
+use crate::Record;
+
 /// A buffer being built up, append only.
 ///
 /// Nothing here is fallible. There's no seeking back, so a value that depends
@@ -33,6 +35,10 @@ impl Writer {
 
     pub fn bytes(&mut self, bytes: &[u8]) {
         self.data.extend_from_slice(bytes);
+    }
+
+    pub fn record<T: Record>(&mut self, record: &T) {
+        self.bytes(record.as_bytes());
     }
 
     pub fn u8(&mut self, value: u8) {
