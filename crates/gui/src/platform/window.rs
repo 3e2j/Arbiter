@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use crate::{
+    canvas::{Canvas, Rect},
     host::{App, Host},
     platform::gpu::{self, Gpu},
 };
@@ -38,6 +39,7 @@ pub enum Error {
 pub fn run<A: App>() -> Result<(), Error> {
     let mut runner = Runner {
         host: Host::<A>::new().map_err(Error::App)?,
+        canvas: Canvas::default(),
         open: None,
         error: None,
     };
@@ -47,6 +49,8 @@ pub fn run<A: App>() -> Result<(), Error> {
 
 struct Runner<A> {
     host: Host<A>,
+    // Kept between passes so a warm pass allocates nothing.
+    canvas: Canvas,
     open: Option<Open>,
     // winit's callbacks can't return one, so it waits here for run.
     error: Option<Error>,
@@ -62,8 +66,22 @@ impl Open {
         let window =
             Arc::new(event_loop.create_window(Window::default_attributes().with_title(title))?);
         let size = window.inner_size();
-        let gpu = Gpu::new(Arc::clone(&window), [size.width, size.height])?;
+        let gpu = Gpu::new(
+            // The surface holds a clone, so the window can't close before the surface is dropped.
+            Arc::clone(&window),
+            [size.width, size.height],
+            window.scale_factor(),
+        )?;
         Ok(Self { window, gpu })
+    }
+
+    /// The window's contents in logical pixels.
+    fn rect(&self) -> Rect {
+        let size = self
+            .window
+            .inner_size()
+            .to_logical::<f32>(self.window.scale_factor());
+        Rect::new(0., 0., size.width, size.height)
     }
 }
 
@@ -91,12 +109,18 @@ impl<A: App> ApplicationHandler for Runner<A> {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
-                open.gpu.resize([size.width, size.height]);
+                open.gpu
+                    .resize([size.width, size.height], open.window.scale_factor());
+                open.window.request_redraw();
+            }
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                let size = open.window.inner_size();
+                open.gpu.resize([size.width, size.height], scale_factor);
                 open.window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
-                let background = self.host.draw();
-                if let Err(error) = open.gpu.draw(background) {
+                self.host.draw(open.rect(), &mut self.canvas);
+                if let Err(error) = open.gpu.draw(&self.canvas) {
                     self.fail(event_loop, error.into());
                 }
             }

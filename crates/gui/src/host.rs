@@ -1,9 +1,11 @@
 //! Runs an [`App`], keeping what it needs between passes.
 //!
-//! The window drives a [`Host`] and never calls the app itself. For now a pass
-//! only yields a background color. The context, input and canvas come later.
+//! The window drives a [`Host`] and never calls the app itself.
+// TODO: For now a pass draws straight into the canvas. Context and input come later.
 
 use std::error::Error;
+
+use crate::canvas::{Canvas, Color, Rect};
 
 /// The app's side of the host.
 pub trait App: Sized {
@@ -14,26 +16,26 @@ pub trait App: Sized {
     ///
     /// When the app can't start. The window doesn't open.
     fn new(start: &mut Startup) -> Result<Self, Box<dyn Error>>;
+    /// Draws one pass into `canvas`, which covers `rect`.
     // TODO: take `&mut Context` once `gui::context` exists.
-    fn ui(&mut self);
+    fn ui(&mut self, rect: Rect, canvas: &mut Canvas);
     /// After the last pass.
     fn on_close(&mut self) {}
 }
 
 /// What the app sets up before the first pass.
-// TODO: `glyphs` once `gui::canvas` exists, and `wake` once something runs off
-// the main thread, such as `app::watch`.
+// TODO: `glyphs` once `gui::canvas` has them, and `wake` once something runs
+// off the main thread, such as `app::watch`.
 pub struct Startup {
-    /// Linear RGBA.
     // TODO: becomes `theme: Theme` from `gui::context`.
-    pub background: [f64; 4],
+    pub background: Color,
 }
 
 // TODO: input, layout and memory, once `gui::input`, `gui::layout` and
 // `gui::context` exist.
 pub struct Host<A> {
     app: A,
-    background: [f64; 4],
+    background: Color,
 }
 
 impl<A: App> Host<A> {
@@ -42,7 +44,7 @@ impl<A: App> Host<A> {
     /// When [`App::new`] fails.
     pub fn new() -> Result<Self, Box<dyn Error>> {
         let mut start = Startup {
-            background: [0., 0., 0., 1.],
+            background: Color([0., 0., 0., 1.]),
         };
         let app = A::new(&mut start)?;
         Ok(Self {
@@ -51,11 +53,12 @@ impl<A: App> Host<A> {
         })
     }
 
-    /// Runs one pass and returns the color to clear to.
-    // TODO: take the window's rect and a `&mut Canvas`, and return `Out`.
-    pub fn draw(&mut self) -> [f64; 4] {
-        self.app.ui();
-        self.background
+    /// Runs one pass over `rect`, the window in logical pixels.
+    // TODO: return `Out`.
+    pub fn draw(&mut self, rect: Rect, canvas: &mut Canvas) {
+        canvas.clear(rect);
+        canvas.background = self.background;
+        self.app.ui(rect, canvas);
     }
 
     pub fn close(&mut self) {

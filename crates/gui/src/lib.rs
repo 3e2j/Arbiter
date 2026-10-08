@@ -4,5 +4,6 @@
 //! test can drive an app without a window. [`platform`] is the only part that
 //! knows winit or wgpu.
 
+pub mod canvas;
 pub mod host;
 pub mod platform;

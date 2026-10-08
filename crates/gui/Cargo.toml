@@ -9,6 +9,7 @@ license.workspace = true
 name = "gui"
 
 [dependencies]
+bytemuck.workspace = true
 pollster.workspace = true
 thiserror.workspace = true
 wgpu.workspace = true
