@@ -28,11 +28,12 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
-    /// Unpacks a disc into an existing project's base again.
-    /// Another revision of an edition replaces the old one,
-    /// if `changes/` can still apply to it.
+    /// Unpacks each disc into an existing project's base. A new edition is
+    /// added beside the others. Another revision of an edition replaces the
+    /// old one, if `changes/` can still apply to it.
     Unpack {
-        disc: PathBuf,
+        #[arg(required = true)]
+        discs: Vec<PathBuf>,
         #[arg(long, default_value = ".")]
         project: PathBuf,
     },
@@ -41,9 +42,8 @@ enum Command {
 fn main() -> ExitCode {
     let result = match Cli::parse().command {
         Command::New { dir, discs, force } => new(&dir, &discs, force),
-        Command::Unpack { disc, project } => {
-            Project::open(&project).and_then(|mut p| unpack(&mut p, &disc))
-        }
+        Command::Unpack { discs, project } => Project::open(&project)
+            .and_then(|mut p| discs.iter().try_for_each(|disc| unpack(&mut p, disc))),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
