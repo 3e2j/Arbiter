@@ -26,6 +26,9 @@ pub(super) enum Ink {
     Packed(Packed),
     /// Drawn as an empty box in the text's colour.
     Missing,
+    /// Rasterized, but every page of its atlas was drawn this frame. A box
+    /// until a later frame packs it.
+    Waiting,
 }
 
 /// A glyph or icon in an atlas.
@@ -34,6 +37,8 @@ pub(super) struct Packed {
     /// Which atlas.
     pub format: Format,
     pub page: u16,
+    /// Which [`Spot::version`] of `page` holds it.
+    pub version: u32,
     /// `x, y, width, height` in texels on `page`.
     pub texels: [u16; 4],
     /// From the pen position on the baseline to the image's top left corner,
@@ -103,14 +108,23 @@ impl Inks {
             self.cache.insert(key, Ink::Missing);
             return Ink::Missing;
         };
-        // Every page was drawn this frame. A box until one wasn't.
         let Some(ink) = self.pack(&bitmap) else {
             let asked = true;
             self.waiting.insert(key, Waiting { bitmap, asked });
-            return Ink::Missing;
+            return Ink::Waiting;
         };
         self.cache.insert(key, ink);
         ink
+    }
+
+    /// Whether `ink`, from [`Self::get`], can be drawn again without asking
+    /// for it, and if so marks its page as drawn this frame.
+    pub fn holds(&mut self, ink: Ink) -> bool {
+        match ink {
+            Ink::Blank | Ink::Missing => true,
+            Ink::Packed(packed) => self.atlas(packed.format).holds(packed.page, packed.version),
+            Ink::Waiting => false,
+        }
     }
 
     /// Drops the waiting images last frame didn't ask for.
@@ -172,10 +186,17 @@ impl Inks {
             return Some(Ink::Missing);
         }
         loop {
-            if let Some(Spot { page, x, y }) = self.atlas(format).insert(width, height, texels) {
+            if let Some(Spot {
+                page,
+                version,
+                x,
+                y,
+            }) = self.atlas(format).insert(width, height, texels)
+            {
                 return Some(Ink::Packed(Packed {
                     format,
                     page,
+                    version,
                     texels: [x, y, width, height],
                     left,
                     top,
@@ -253,7 +274,7 @@ mod tests {
         let mut fonts = Fonts::default();
         let mut inks = full_atlas();
         let key = Key::Icon(IconId(0), 16);
-        assert!(matches!(inks.get(&mut fonts, &square(), key), Ink::Missing));
+        assert!(matches!(inks.get(&mut fonts, &square(), key), Ink::Waiting));
         assert_eq!(inks.keys().count(), 0);
         inks.next_frame();
         // No icons to rasterize from, so only the waiting mask can be packed.

@@ -208,9 +208,16 @@ impl Glyphs {
         let baseline = self.to_physical(y);
         let height = (f32::from(pixels) * BOX_HEIGHT).round();
         let line = self.lines.get(&mut self.fonts, font, pixels, text);
-        for glyph in &line.glyphs {
-            let key = Key::Glyph(glyph.font, glyph.id, pixels);
-            let ink = self.inks.get(&mut self.fonts, &self.icons, key);
+        for glyph in &mut line.glyphs {
+            let ink = match glyph.ink {
+                Some(ink) if self.inks.holds(ink) => ink,
+                _ => {
+                    let key = Key::Glyph(glyph.font, glyph.id, pixels);
+                    let ink = self.inks.get(&mut self.fonts, &self.icons, key);
+                    glyph.ink = Some(ink);
+                    ink
+                }
+            };
             let pen = [start + glyph.at[0], baseline - glyph.at[1]];
             let inset = (glyph.advance * BOX_INSET).round();
             let missing = [
@@ -297,7 +304,7 @@ fn place(
                 color,
             ));
         }
-        Ink::Missing => {
+        Ink::Missing | Ink::Waiting => {
             let rect = logical(missing);
             canvas.quad(Quad::new(rect, Color::TRANSPARENT).bordered(1. / scale, color));
         }
@@ -432,6 +439,18 @@ mod tests {
         };
         assert!(acute.rect[0] > q.rect[0] && acute.rect[0] < q.rect[0] + q.rect[2]);
         assert!(acute.rect[1] + acute.rect[3] <= q.rect[1] + 1.);
+    }
+
+    #[test]
+    fn a_line_asks_again_once_its_page_is_emptied() {
+        let Loaded {
+            mut glyphs, sans, ..
+        } = loaded(1.);
+        let mut canvas = canvas();
+        glyphs.text(&mut canvas, sans, [0., 20.], 14., "a", WHITE);
+        glyphs.inks.clear();
+        glyphs.text(&mut canvas, sans, [0., 20.], 14., "a", WHITE);
+        assert_eq!(glyphs.inks.keys().count(), 1);
     }
 
     #[test]

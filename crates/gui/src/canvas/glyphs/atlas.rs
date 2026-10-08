@@ -15,6 +15,8 @@ pub struct Atlas {
     pages: Vec<Page>,
     /// Counts up each frame, for which page has gone longest unused.
     frame: u64,
+    /// The last [`Page::version`] handed out.
+    versions: u32,
     /// Whether the next update holds every page: after a page is added, the
     /// atlas clears, or the GPU loses its copy.
     whole: bool,
@@ -28,6 +30,9 @@ struct Page {
     dirty: Option<Range<u16>>,
     /// The last frame an image on this page was drawn or packed.
     used: u64,
+    /// New each time the page is made or emptied, so a [`Spot`] from before
+    /// then can tell it no longer holds its image.
+    version: u32,
 }
 
 struct Shelf {
@@ -52,6 +57,7 @@ pub enum Format {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Spot {
     pub page: u16,
+    pub version: u32,
     pub x: u16,
     pub y: u16,
 }
@@ -94,13 +100,14 @@ impl Format {
 }
 
 impl Page {
-    fn new(format: Format) -> Self {
+    fn new(format: Format, version: u32) -> Self {
         let side = usize::from(PAGE_SIZE);
         Self {
             pixels: vec![0; side * side * format.bytes()],
             shelves: Vec::new(),
             dirty: None,
             used: 0,
+            version,
         }
     }
 }
@@ -109,8 +116,9 @@ impl Atlas {
     pub(super) fn new(format: Format) -> Self {
         Self {
             format,
-            pages: vec![Page::new(format)],
+            pages: vec![Page::new(format, 0)],
             frame: 0,
+            versions: 0,
             whole: true,
         }
     }
@@ -134,19 +142,43 @@ impl Atlas {
             if let Some(spot) = at.place(padded) {
                 at.write(format, spot, area, texels, frame);
                 let [x, y] = spot;
-                return Some(Spot { page, x, y });
+                let version = at.version;
+                return Some(Spot {
+                    page,
+                    version,
+                    x,
+                    y,
+                });
             }
         }
         let page = u16::try_from(self.pages.len()).ok()?;
         if page >= MAX_PAGES {
             return None;
         }
-        let mut at = Page::new(format);
+        let version = self.next_version();
+        let mut at = Page::new(format, version);
         let [x, y] = at.place(padded)?;
         at.write(format, [x, y], area, texels, frame);
         self.pages.push(at);
         self.whole = true;
-        Some(Spot { page, x, y })
+        Some(Spot {
+            page,
+            version,
+            x,
+            y,
+        })
+    }
+
+    /// Whether `page` still holds what was packed into it at `version`, and
+    /// if so marks it as drawn this frame.
+    pub(super) fn holds(&mut self, page: u16, version: u32) -> bool {
+        match self.pages.get_mut(usize::from(page)) {
+            Some(at) if at.version == version => {
+                at.used = self.frame;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Empties the page that has gone longest without being drawn and
@@ -158,7 +190,8 @@ impl Atlas {
             .zip(&mut self.pages)
             .filter(|(_, at)| at.used != frame)
             .min_by_key(|(_, at)| at.used)?;
-        at.clear();
+        self.versions = self.versions.wrapping_add(1);
+        at.clear(self.versions);
         Some(page)
     }
 
@@ -177,10 +210,16 @@ impl Atlas {
     /// before are no longer valid.
     pub(super) fn clear(&mut self) {
         self.pages.truncate(1);
+        let version = self.next_version();
         for page in &mut self.pages {
-            page.clear();
+            page.clear(version);
         }
         self.whole = true;
+    }
+
+    fn next_version(&mut self) -> u32 {
+        self.versions = self.versions.wrapping_add(1);
+        self.versions
     }
 
     /// Makes the next update hold every page, for a GPU whose copy is gone.
@@ -274,7 +313,8 @@ impl Page {
 
     /// Zeroes the texels too, since `write` leaves the padding around an image
     /// as it finds it.
-    fn clear(&mut self) {
+    fn clear(&mut self, version: u32) {
+        self.version = version;
         self.shelves.clear();
         self.pixels.fill(0);
         self.dirty = Some(0..PAGE_SIZE);
@@ -341,8 +381,12 @@ mod tests {
         }
         atlas.next_frame();
         atlas.take_update();
+        let old = atlas.pages[5].version;
         assert_eq!(atlas.evict(), Some(5));
-        assert_eq!(atlas.insert(2, 2, &[1; 4]).unwrap().page, 5);
+        assert!(!atlas.holds(5, old));
+        let spot = atlas.insert(2, 2, &[1; 4]).unwrap();
+        assert_eq!(spot.page, 5);
+        assert!(atlas.holds(5, spot.version));
         let update = atlas.take_update().unwrap();
         let [write] = &update.writes[..] else {
             panic!("one page written")

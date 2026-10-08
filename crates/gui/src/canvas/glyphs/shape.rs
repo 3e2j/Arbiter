@@ -14,6 +14,7 @@ use unicode_script::{Script, UnicodeScript};
 
 use super::FontId;
 use super::fonts::Fonts;
+use super::ink::Ink;
 use crate::cast::narrow;
 
 /// Shaped lines, kept while they're drawn every frame.
@@ -45,6 +46,9 @@ pub(super) struct Placed {
     /// as a mark over its letter. `y` grows up.
     pub at: [f32; 2],
     pub advance: f32,
+    /// What it was last drawn with, so drawing the line again skips looking
+    /// each glyph up while its atlas page still holds it.
+    pub ink: Option<Ink>,
 }
 
 /// A stretch of a line drawn in one font.
@@ -59,7 +63,7 @@ struct Run {
 impl Lines {
     /// `text` shaped in `font` at `pixels` per em, from this frame, else last
     /// frame, else shaped now.
-    pub fn get(&mut self, fonts: &mut Fonts, font: FontId, pixels: u16, text: &str) -> &Line {
+    pub fn get(&mut self, fonts: &mut Fonts, font: FontId, pixels: u16, text: &str) -> &mut Line {
         let hash = line_hash(font, pixels, text);
         let line = match self.this_frame.remove(&hash) {
             Some(line) if *line.text == *text => line,
@@ -134,6 +138,7 @@ impl Lines {
                     to_pixels(position.y_offset),
                 ],
                 advance,
+                ink: None,
             });
             pen += advance;
         }
