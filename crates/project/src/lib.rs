@@ -381,8 +381,10 @@ mod tests {
         assert_eq!(staged.id, "GZ2E01");
         assert_eq!(staged.platform, Platform::GameCube);
         assert_eq!(project.commit(staged).unwrap(), Recorded::Added);
-        let file = root.join("base/GZ2E01/res/Msgus/bmgres.arc");
-        assert!(fs::metadata(&file).unwrap().permissions().readonly());
+        for file in ["res/Msgus/bmgres.arc", "sys/main.dol"] {
+            let file = root.join("base/GZ2E01").join(file);
+            assert!(fs::metadata(&file).unwrap().permissions().readonly());
+        }
 
         let staged = project.stage(&disc).unwrap();
         assert_eq!(project.commit(staged).unwrap(), Recorded::Same);

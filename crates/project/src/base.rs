@@ -3,6 +3,7 @@
 //! ```text
 //! base/
 //! ├─ GZ2E01/          the disc's own tree, every file read-only
+//! │  └─ sys/          what the disc keeps outside its file system, see `pack::disc`
 //! ├─ GZ2E01.toml      each path and its hash
 //! ├─ GZ2P01/
 //! └─ GZ2P01.toml
@@ -123,6 +124,13 @@ pub fn stage(base: &Path, disc: &Path, config: &Config) -> Result<Staged, Error>
         write_readonly(&dest, &buf)?;
         bytes += buf.len() as u64;
         files.insert(file.path.clone(), Hash::of(&buf));
+    }
+    let sys = tree.join("sys");
+    fs::create_dir_all(&sys).map_err(io_err(&sys))?;
+    for file in &disc.sys {
+        write_readonly(&tree.join(file.path), &file.bytes)?;
+        bytes += file.bytes.len() as u64;
+        files.insert(file.path.to_owned(), Hash::of(&file.bytes));
     }
 
     let manifest = Manifest { files };

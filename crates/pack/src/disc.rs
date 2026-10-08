@@ -1,15 +1,19 @@
 //! GameCube and Wii discs, in any container nod reads (ISO, CISO, RVZ, WIA,
 //! WBFS, GCZ, TGC). Files stream one at a time, so a disc never loads whole.
+//!
+//! Files outside the file system, such as `main.dol`, go under `sys/` as in
+//! Dolphin and nodtool.
 
 use std::{
     io::{self, BufRead, Read},
     path::{Component, Path},
+    sync::Arc,
 };
 
 use nod::{
     common::PartitionKind,
     disc::fst::Node,
-    read::{DiscOptions, DiscReader, PartitionOptions, PartitionReader},
+    read::{DiscOptions, DiscReader, PartitionMeta, PartitionOptions, PartitionReader},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -22,6 +26,8 @@ pub enum Error {
     Id([u8; 6]),
     #[error("the disc names a file {0:?}, which isn't a plain relative path")]
     Path(String),
+    #[error("the disc has its own file {0:?}, where its system files would go")]
+    Sys(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,7 +47,15 @@ pub struct Disc {
     /// Files only, in file system order. Every path is plain and relative, so
     /// joining one to a directory can't escape it.
     pub files: Vec<File>,
+    /// Read whole on open, they're small besides `main.dol`.
+    pub sys: Vec<SysFile>,
     pub reader: Reader,
+}
+
+pub struct SysFile {
+    /// Such as `sys/main.dol`. Never the path of a file in `Disc::files`.
+    pub path: &'static str,
+    pub bytes: Arc<[u8]>,
 }
 
 pub struct File {
@@ -85,12 +99,48 @@ impl Disc {
         if let Some(file) = files.iter().find(|f| !is_plain(&f.path)) {
             return Err(Error::Path(file.path.clone()));
         }
+        if let Some(file) = files.iter().find(|f| is_sys(&f.path)) {
+            return Err(Error::Sys(file.path.clone()));
+        }
+
+        // Exhaustive, so a field added in a nod update doesn't go unnoticed.
+        let PartitionMeta {
+            raw_boot,
+            raw_bi2,
+            raw_apploader,
+            raw_dol,
+            raw_fst,
+            raw_ticket,
+            raw_tmd,
+            raw_cert_chain,
+            raw_h3_table,
+        } = meta;
+        let sys = [
+            ("sys/boot.bin", Some(raw_boot as Arc<[u8]>)),
+            ("sys/bi2.bin", Some(raw_bi2)),
+            ("sys/apploader.img", Some(raw_apploader)),
+            ("sys/fst.bin", Some(raw_fst)),
+            ("sys/main.dol", Some(raw_dol)),
+            ("sys/ticket.bin", raw_ticket),
+            ("sys/tmd.bin", raw_tmd),
+            ("sys/cert.bin", raw_cert_chain),
+            ("sys/h3.bin", raw_h3_table.map(|h3| h3 as Arc<[u8]>)),
+        ]
+        .into_iter()
+        .filter_map(|(path, bytes)| {
+            Some(SysFile {
+                path,
+                bytes: bytes?,
+            })
+        })
+        .collect();
 
         Ok(Self {
             id,
             revision,
             platform,
             files,
+            sys,
             reader: Reader(partition),
         })
     }
@@ -130,6 +180,10 @@ fn is_plain(path: &str) -> bool {
         && path.components().all(|c| matches!(c, Component::Normal(_)))
 }
 
+fn is_sys(path: &str) -> bool {
+    path == "sys" || path.starts_with("sys/")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,6 +195,14 @@ mod tests {
         assert!(!is_plain("/etc/passwd"));
         assert!(!is_plain("res/../../x"));
         assert!(!is_plain("./res"));
+    }
+
+    #[test]
+    fn sys_is_reserved() {
+        assert!(is_sys("sys"));
+        assert!(is_sys("sys/main.dol"));
+        assert!(!is_sys("system/a.arc"));
+        assert!(!is_sys("res/sys/a.arc"));
     }
 
     #[test]
