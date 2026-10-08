@@ -1,7 +1,11 @@
 //! Opens the OS window and draws into it.
 
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
+use super::pacer::Pacer;
 use crate::{
     canvas::{Canvas, Rect},
     host::{App, Host},
@@ -10,9 +14,12 @@ use crate::{
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
-    event_loop::{ActiveEventLoop, EventLoop},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     window::{Window, WindowId},
 };
+
+/// Used when the monitor doesn't report its refresh rate.
+const FALLBACK_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -59,6 +66,7 @@ struct Runner<A> {
 struct Open {
     window: Arc<Window>,
     gpu: Gpu,
+    pacer: Pacer,
 }
 
 impl Open {
@@ -72,7 +80,8 @@ impl Open {
             [size.width, size.height],
             window.scale_factor(),
         )?;
-        Ok(Self { window, gpu })
+        let pacer = Pacer::new((!compositor_paced(event_loop)).then(|| interval(&window)));
+        Ok(Self { window, gpu, pacer })
     }
 
     /// The window's contents in logical pixels.
@@ -108,13 +117,16 @@ impl<A: App> ApplicationHandler for Runner<A> {
         let Some(open) = &mut self.open else { return };
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
-            // A drag sends many of these per refresh. They only ask for a redraw, which
-            // winit holds until the compositor shows the last frame, so the surface is
-            // resized once per refresh, to the latest size.
-            WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
-                open.window.request_redraw();
+            // A drag sends many of these per refresh. The pacer turns them into one
+            // redraw, which resizes the surface to the latest size.
+            WindowEvent::Resized(_) => open.pacer.request(),
+            WindowEvent::ScaleFactorChanged { .. } => {
+                open.pacer.set_interval(interval(&open.window));
+                open.pacer.request();
             }
+            WindowEvent::Moved(_) => open.pacer.set_interval(interval(&open.window)),
             WindowEvent::RedrawRequested => {
+                open.pacer.drew(Instant::now());
                 let size = open.window.inner_size();
                 open.gpu
                     .resize([size.width, size.height], open.window.scale_factor());
@@ -129,8 +141,53 @@ impl<A: App> ApplicationHandler for Runner<A> {
         }
     }
 
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let Some(open) = &mut self.open else { return };
+        let (redraw, due) = open.pacer.poll(Instant::now());
+        if redraw {
+            open.window.request_redraw();
+        }
+        event_loop.set_control_flow(due.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
+    }
+
     // Every way out passes through here, including a failure.
     fn exiting(&mut self, _: &ActiveEventLoop) {
         self.host.close();
     }
+}
+
+/// The time between refreshes of the monitor `window` is on.
+fn interval(window: &Window) -> Duration {
+    window
+        .current_monitor()
+        .and_then(|monitor| monitor.refresh_rate_millihertz())
+        .filter(|&millihertz| millihertz > 0)
+        .map_or(FALLBACK_INTERVAL, |millihertz| {
+            Duration::from_nanos(1_000_000_000_000 / u64::from(millihertz))
+        })
+}
+
+/// Whether the compositor holds each redraw until it has shown the last, which
+/// winit does on Wayland once [`Window::pre_present_notify`] is called.
+#[cfg(any(
+    target_os = "linux",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd",
+))]
+fn compositor_paced(event_loop: &ActiveEventLoop) -> bool {
+    use winit::platform::wayland::ActiveEventLoopExtWayland;
+    event_loop.is_wayland()
+}
+
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd",
+)))]
+const fn compositor_paced(_: &ActiveEventLoop) -> bool {
+    false
 }
