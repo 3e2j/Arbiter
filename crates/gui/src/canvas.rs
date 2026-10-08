@@ -1,5 +1,5 @@
 //! What gets drawn. A pass writes quads into a [`Canvas`], and
-//! [`platform::gpu`](crate::platform::gpu) draws it.
+//! [`render`](crate::render) draws it.
 //!
 //! Every shape is one [`Quad`]. The shader rounds its corners and draws its
 //! border per pixel, so a whole screen batches into a draw per clip.

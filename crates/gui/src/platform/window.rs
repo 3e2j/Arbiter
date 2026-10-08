@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::{
     canvas::{Canvas, Rect},
     host::{App, Host},
-    platform::gpu::{self, Gpu},
+    render::{self, Gpu},
 };
 use winit::{
     application::ApplicationHandler,
@@ -23,7 +23,7 @@ pub enum Error {
     Os(#[from] winit::error::OsError),
 
     #[error(transparent)]
-    Gpu(#[from] gpu::Error),
+    Gpu(#[from] render::Error),
 
     // `Box<dyn Error>` doesn't implement `Error`, so it can't be a source.
     #[error("{0}")]

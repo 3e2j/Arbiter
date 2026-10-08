@@ -1,5 +1,3 @@
-//! The OS window and the GPU.
-//! `gpu` and `window` are the only modules that use wgpu and winit.
+//! The OS window. `window` is the only module that uses winit.
 
-pub mod gpu;
 pub mod window;
