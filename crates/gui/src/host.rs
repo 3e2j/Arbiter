@@ -1,11 +1,12 @@
 //! Runs an [`App`], keeping what it needs between passes.
 //!
 //! The window drives a [`Host`] and never calls the app itself.
-// TODO: For now a pass draws straight into the canvas. Context and input come later.
+// TODO: For now a pass draws straight into the canvas. Context comes later.
 
 use std::error::Error;
 
 use crate::canvas::{AtlasUpdate, Canvas, Color, Glyphs, Rect};
+use crate::input::{Event, Input, Out};
 
 /// The app's side of the host.
 pub trait App: Sized {
@@ -16,9 +17,17 @@ pub trait App: Sized {
     ///
     /// When the app can't start. The window doesn't open.
     fn new(start: &mut Startup) -> Result<Self, Box<dyn Error>>;
-    /// Draws one pass into `canvas`, which covers `rect`.
+    /// Draws one pass into `canvas`, which covers `rect`, reading what the
+    /// user did since the last pass from `input`.
     // TODO: take `&mut Context` once `gui::context` exists.
-    fn ui(&mut self, rect: Rect, canvas: &mut Canvas, glyphs: &mut Glyphs);
+    fn ui(
+        &mut self,
+        rect: Rect,
+        canvas: &mut Canvas,
+        glyphs: &mut Glyphs,
+        input: &Input,
+        out: &mut Out,
+    );
     /// After the last pass.
     fn on_close(&mut self) {}
 }
@@ -32,12 +41,12 @@ pub struct Startup<'a> {
     pub glyphs: &'a mut Glyphs,
 }
 
-// TODO: input, layout and memory, once `gui::input`, `gui::layout` and
-// `gui::context` exist.
+// TODO: layout and memory, once `gui::layout` and `gui::context` exist.
 pub struct Host<A> {
     app: A,
     background: Color,
     glyphs: Glyphs,
+    input: Input,
 }
 
 impl<A: App> Host<A> {
@@ -56,18 +65,28 @@ impl<A: App> Host<A> {
             app,
             background,
             glyphs,
+            input: Input::default(),
         })
     }
 
+    /// Holds `event` for the next pass.
+    pub fn push(&mut self, event: Event) {
+        self.input.push(event);
+    }
+
     /// Runs one pass over `rect`, the window in logical pixels, with `scale`
-    /// physical pixels per logical one.
-    // TODO: return `Out`.
-    pub fn draw(&mut self, rect: Rect, scale: f32, canvas: &mut Canvas) {
+    /// physical pixels per logical one, using up the events pushed since the
+    /// last.
+    pub fn draw(&mut self, rect: Rect, scale: f32, canvas: &mut Canvas) -> Out {
         self.glyphs.set_scale(scale);
         self.glyphs.next_frame();
         canvas.clear(rect);
         canvas.background = self.background;
-        self.app.ui(rect, canvas, &mut self.glyphs);
+        let mut out = Out::default();
+        self.app
+            .ui(rect, canvas, &mut self.glyphs, &self.input, &mut out);
+        self.input.clear();
+        out
     }
 
     /// Makes the next [`Self::take_atlas_updates`] hold the whole atlases, for a

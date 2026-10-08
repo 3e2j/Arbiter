@@ -41,6 +41,13 @@ impl Rect {
         self.y + self.h
     }
 
+    /// Whether `[x, y]` is inside, counting the top and left edges but not
+    /// the bottom and right, so boxes side by side never both contain it.
+    #[must_use]
+    pub fn contains(self, [x, y]: [f32; 2]) -> bool {
+        x >= self.x && y >= self.y && x < self.right() && y < self.bottom()
+    }
+
     /// The overlap of both, zero-sized when they don't touch.
     #[must_use]
     pub fn intersect(self, other: Self) -> Self {

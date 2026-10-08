@@ -1,4 +1,5 @@
-//! Opens the OS window and draws into it.
+//! Opens the OS window, draws into it, and turns its events into
+//! [`Event`]s.
 
 use std::{
     sync::Arc,
@@ -10,17 +11,21 @@ use crate::{
     canvas::{Canvas, Rect},
     cast::narrow,
     host::{App, Host},
+    input::{Button, Cursor, Event, Key, KeyPress, Modifiers},
     render::{self, Gpu},
 };
 use winit::{
     application::ApplicationHandler,
-    event::WindowEvent,
+    event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    window::{Window, WindowId},
+    keyboard::{self, NamedKey},
+    window::{CursorIcon, Window, WindowId},
 };
 
 /// Used when the monitor doesn't report its refresh rate.
 const FALLBACK_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
+/// How far a wheel's line of scrolling goes, in logical pixels.
+const SCROLL_LINE: f32 = 40.;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -68,6 +73,8 @@ struct Open {
     window: Arc<Window>,
     gpu: Gpu,
     pacer: Pacer,
+    /// The shape last set, so it's only set again when a pass changes it.
+    cursor: Cursor,
 }
 
 impl Open {
@@ -76,7 +83,12 @@ impl Open {
             Arc::new(event_loop.create_window(Window::default_attributes().with_title(title))?);
         let gpu = gpu(&window)?;
         let pacer = Pacer::new((!compositor_paced(event_loop)).then(|| interval(&window)));
-        Ok(Self { window, gpu, pacer })
+        Ok(Self {
+            window,
+            gpu,
+            pacer,
+            cursor: Cursor::Default,
+        })
     }
 
     /// The window's contents in logical pixels.
@@ -137,7 +149,11 @@ impl<A: App> ApplicationHandler for Runner<A> {
                 open.gpu
                     .resize([size.width, size.height], open.window.scale_factor());
                 let scale = narrow(open.window.scale_factor());
-                self.host.draw(open.rect(), scale, &mut self.canvas);
+                let out = self.host.draw(open.rect(), scale, &mut self.canvas);
+                if out.cursor != open.cursor {
+                    open.cursor = out.cursor;
+                    open.window.set_cursor(cursor_icon(out.cursor));
+                }
                 let atlas = self.host.take_atlas_updates();
                 // Without this, Wayland gets a frame per event and shows them all in turn.
                 let window = &open.window;
@@ -157,7 +173,17 @@ impl<A: App> ApplicationHandler for Runner<A> {
                     Err(error) => self.fail(event_loop, error.into()),
                 }
             }
-            _ => {}
+            event => {
+                let scale = open.window.scale_factor();
+                let mut pushed = false;
+                translate(&event, scale, |event| {
+                    self.host.push(event);
+                    pushed = true;
+                });
+                if pushed {
+                    open.pacer.request();
+                }
+            }
         }
     }
 
@@ -173,6 +199,139 @@ impl<A: App> ApplicationHandler for Runner<A> {
     // Every way out passes through here, including a failure.
     fn exiting(&mut self, _: &ActiveEventLoop) {
         self.host.close();
+    }
+}
+
+/// Passes on what `event` says the user did, if anything, with positions
+/// in logical pixels at `scale` physical pixels per logical one.
+fn translate(event: &WindowEvent, scale: f64, mut push: impl FnMut(Event)) {
+    match event {
+        WindowEvent::CursorMoved { position, .. } => {
+            let at = position.to_logical::<f32>(scale);
+            push(Event::Pointer(Some([at.x, at.y])));
+        }
+        WindowEvent::CursorLeft { .. } => push(Event::Pointer(None)),
+        WindowEvent::MouseInput { state, button, .. } => {
+            let button = match button {
+                MouseButton::Left => Button::Left,
+                MouseButton::Right => Button::Right,
+                MouseButton::Middle => Button::Middle,
+                MouseButton::Back => Button::Back,
+                MouseButton::Forward => Button::Forward,
+                MouseButton::Other(_) => return,
+            };
+            push(match state {
+                ElementState::Pressed => Event::Pressed(button),
+                ElementState::Released => Event::Released(button),
+            });
+        }
+        WindowEvent::MouseWheel { delta, .. } => push(Event::Scroll(match delta {
+            MouseScrollDelta::LineDelta(x, y) => [x * SCROLL_LINE, y * SCROLL_LINE],
+            MouseScrollDelta::PixelDelta(by) => {
+                let by = by.to_logical::<f32>(scale);
+                [by.x, by.y]
+            }
+        })),
+        // A synthetic press is a key already held when the window gained
+        // focus, which the user didn't press for this window.
+        WindowEvent::KeyboardInput {
+            event:
+                KeyEvent {
+                    logical_key,
+                    text,
+                    state: ElementState::Pressed,
+                    repeat,
+                    ..
+                },
+            is_synthetic: false,
+            ..
+        } => {
+            if let Some(key) = key(logical_key) {
+                let repeat = *repeat;
+                push(Event::Key(KeyPress { key, repeat }));
+            }
+            // Keys like Enter and Backspace type control characters, which
+            // are reported as keys instead.
+            if let Some(text) = text
+                .as_deref()
+                .filter(|text| !text.contains(char::is_control))
+            {
+                push(Event::Text(text));
+            }
+        }
+        WindowEvent::ModifiersChanged(modifiers) => {
+            let state = modifiers.state();
+            let held = [
+                (state.shift_key(), Modifiers::SHIFT),
+                (state.control_key(), Modifiers::CTRL),
+                (state.alt_key(), Modifiers::ALT),
+                (state.super_key(), Modifiers::SUPER),
+            ];
+            let modifiers = held
+                .into_iter()
+                .filter(|&(down, _)| down)
+                .fold(Modifiers::default(), |all, (_, one)| all.with(one));
+            push(Event::Modifiers(modifiers));
+        }
+        WindowEvent::Focused(false) => push(Event::Unfocused),
+        _ => {}
+    }
+}
+
+/// The [`Key`] `key` is, if the editor acts on it.
+fn key(key: &keyboard::Key) -> Option<Key> {
+    let named = match key {
+        keyboard::Key::Named(named) => named,
+        keyboard::Key::Character(text) => {
+            let mut chars = text.chars();
+            let c = chars.next()?;
+            // A dead key or input method can type more than one.
+            return chars
+                .next()
+                .is_none()
+                .then(|| Key::Char(c.to_lowercase().next().unwrap_or(c)));
+        }
+        _ => return None,
+    };
+    Some(match named {
+        NamedKey::Enter => Key::Enter,
+        NamedKey::Escape => Key::Escape,
+        NamedKey::Tab => Key::Tab,
+        NamedKey::Backspace => Key::Backspace,
+        NamedKey::Delete => Key::Delete,
+        NamedKey::ArrowLeft => Key::Left,
+        NamedKey::ArrowRight => Key::Right,
+        NamedKey::ArrowUp => Key::Up,
+        NamedKey::ArrowDown => Key::Down,
+        NamedKey::Home => Key::Home,
+        NamedKey::End => Key::End,
+        NamedKey::PageUp => Key::PageUp,
+        NamedKey::PageDown => Key::PageDown,
+        NamedKey::Space => Key::Char(' '),
+        NamedKey::F1 => Key::F(1),
+        NamedKey::F2 => Key::F(2),
+        NamedKey::F3 => Key::F(3),
+        NamedKey::F4 => Key::F(4),
+        NamedKey::F5 => Key::F(5),
+        NamedKey::F6 => Key::F(6),
+        NamedKey::F7 => Key::F(7),
+        NamedKey::F8 => Key::F(8),
+        NamedKey::F9 => Key::F(9),
+        NamedKey::F10 => Key::F(10),
+        NamedKey::F11 => Key::F(11),
+        NamedKey::F12 => Key::F(12),
+        _ => return None,
+    })
+}
+
+const fn cursor_icon(cursor: Cursor) -> CursorIcon {
+    match cursor {
+        Cursor::Default => CursorIcon::Default,
+        Cursor::Pointer => CursorIcon::Pointer,
+        Cursor::Text => CursorIcon::Text,
+        Cursor::ResizeH => CursorIcon::EwResize,
+        Cursor::ResizeV => CursorIcon::NsResize,
+        Cursor::Grab => CursorIcon::Grab,
     }
 }
 
