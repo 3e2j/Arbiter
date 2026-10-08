@@ -1,7 +1,8 @@
 //! Draws a [`Canvas`] into any surface wgpu accepts, and never sees a window.
 //!
-//! Every quad is one instance of a 4-vertex strip, and a new draw call starts
-//! only where the clip changes. Text and icons read the atlas pages, layers
+//! Every quad is one instance of a 4-vertex strip, and triangles are an indexed
+//! list drawn by a second pipeline. A new draw call starts only where the clip
+//! or the kind of shape changes. Text and icons read the atlas pages, layers
 //! of a texture array per atlas that take only the rows that changed each
 //! frame.
 
@@ -9,10 +10,11 @@ use std::ops::Range;
 
 use wgpu::{CurrentSurfaceTexture, SurfaceTarget};
 
-use crate::canvas::{AtlasUpdate, Canvas, Format, Quad, Rect};
+use crate::canvas::{AtlasUpdate, Canvas, Format, Kind, Quad, Rect, Vertex};
 use crate::cast::{narrow, pixel};
 
 const QUAD_SIZE: wgpu::BufferAddress = size_of::<Quad>() as wgpu::BufferAddress;
+const VERTEX_SIZE: wgpu::BufferAddress = size_of::<Vertex>() as wgpu::BufferAddress;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -31,8 +33,8 @@ pub enum Error {
     #[error("the surface was lost")]
     Lost,
 
-    #[error("too many quads to draw in one pass")]
-    TooManyQuads,
+    #[error("too many shapes to draw in one pass")]
+    TooManyShapes,
 }
 
 pub struct Gpu {
@@ -42,11 +44,14 @@ pub struct Gpu {
     config: wgpu::SurfaceConfiguration,
     /// Physical pixels per logical one.
     scale: f64,
-    pipeline: wgpu::RenderPipeline,
+    quad_pipeline: wgpu::RenderPipeline,
+    triangle_pipeline: wgpu::RenderPipeline,
     viewport: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
-    /// Grows to the largest canvas drawn so far, and never shrinks.
+    /// These three grow to the largest canvas drawn so far, and never shrink.
     instances: wgpu::Buffer,
+    vertices: wgpu::Buffer,
+    indices: wgpu::Buffer,
     atlas: Atlas,
 }
 
@@ -121,8 +126,12 @@ impl Gpu {
             }],
         });
         let atlas = Atlas::new(&device);
-        let pipeline = quad_pipeline(&device, [&viewport_layout, &atlas.layout], config.format);
-        let instances = instance_buffer(&device, 1);
+        let quad_pipeline =
+            quad_pipeline(&device, [&viewport_layout, &atlas.layout], config.format);
+        let triangle_pipeline = triangle_pipeline(&device, &viewport_layout, config.format);
+        let instances = buffer(&device, "quads", wgpu::BufferUsages::VERTEX, QUAD_SIZE);
+        let vertices = buffer(&device, "vertices", wgpu::BufferUsages::VERTEX, VERTEX_SIZE);
+        let indices = buffer(&device, "indices", wgpu::BufferUsages::INDEX, 4);
 
         let gpu = Self {
             surface,
@@ -130,10 +139,13 @@ impl Gpu {
             queue,
             config,
             scale,
-            pipeline,
+            quad_pipeline,
+            triangle_pipeline,
             viewport,
             bind_group,
             instances,
+            vertices,
+            indices,
             atlas,
         };
         gpu.write_viewport();
@@ -156,7 +168,7 @@ impl Gpu {
     }
 
     /// Uploads what changed in the atlases, then clears the surface to the
-    /// canvas's background and draws its quads, calling `before_present` right
+    /// canvas's background and draws its shapes, calling `before_present` right
     /// before the frame goes out.
     ///
     /// Skips the frame, without calling it, when the surface isn't ready, such
@@ -166,7 +178,7 @@ impl Gpu {
     /// # Errors
     ///
     /// [`Error::Lost`] when the surface is gone and needs a new [`Gpu`], and
-    /// [`Error::TooManyQuads`] when the canvas can't fit in one buffer.
+    /// [`Error::TooManyShapes`] when the canvas can't fit in its buffers.
     pub fn draw<'a>(
         &mut self,
         canvas: &Canvas,
@@ -188,7 +200,7 @@ impl Gpu {
                 return Err(Error::Lost);
             }
         };
-        self.upload(canvas.quads())?;
+        self.upload(canvas)?;
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -210,16 +222,22 @@ impl Gpu {
                 })],
                 ..Default::default()
             });
-            pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.set_bind_group(1, &self.atlas.bind_group, &[]);
-            pass.set_vertex_buffer(0, self.instances.slice(..));
-            for (clip, quads) in canvas.batches() {
+            let mut bound = None;
+            for (clip, kind, range) in canvas.batches() {
                 let Some([left, top, width, height]) = self.scissor(clip) else {
                     continue;
                 };
+                if bound != Some(kind) {
+                    self.bind(&mut pass, kind);
+                    bound = Some(kind);
+                }
                 pass.set_scissor_rect(left, top, width, height);
-                pass.draw(0..4, instance_range(quads)?);
+                match kind {
+                    Kind::Quads => pass.draw(0..4, range_u32(range)?),
+                    Kind::Triangles => pass.draw_indexed(range_u32(range)?, 0, 0..1),
+                }
             }
         }
         self.queue.submit([encoder.finish()]);
@@ -239,21 +257,37 @@ impl Gpu {
             .write_buffer(&self.viewport, 0, bytemuck::cast_slice(&viewport));
     }
 
-    fn upload(&mut self, quads: &[Quad]) -> Result<(), Error> {
-        if quads.is_empty() {
-            return Ok(());
-        }
-        let bytes: &[u8] = bytemuck::cast_slice(quads);
-        let size = wgpu::BufferAddress::try_from(bytes.len()).map_err(|_| Error::TooManyQuads)?;
-        if size > self.instances.size() {
-            if size > self.device.limits().max_buffer_size {
-                return Err(Error::TooManyQuads);
+    fn upload(&mut self, canvas: &Canvas) -> Result<(), Error> {
+        let (device, queue) = (&self.device, &self.queue);
+        write(device, queue, &mut self.instances, "quads", canvas.quads())?;
+        write(
+            device,
+            queue,
+            &mut self.vertices,
+            "vertices",
+            canvas.vertices(),
+        )?;
+        write(
+            device,
+            queue,
+            &mut self.indices,
+            "indices",
+            canvas.indices(),
+        )
+    }
+
+    fn bind(&self, pass: &mut wgpu::RenderPass, kind: Kind) {
+        match kind {
+            Kind::Quads => {
+                pass.set_pipeline(&self.quad_pipeline);
+                pass.set_vertex_buffer(0, self.instances.slice(..));
             }
-            self.instances =
-                instance_buffer(&self.device, size.div_ceil(QUAD_SIZE).next_power_of_two());
+            Kind::Triangles => {
+                pass.set_pipeline(&self.triangle_pipeline);
+                pass.set_vertex_buffer(0, self.vertices.slice(..));
+                pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
+            }
         }
-        self.queue.write_buffer(&self.instances, 0, bytes);
-        Ok(())
     }
 
     /// `clip` in physical pixels, cut to the surface. `None` when nothing of it is left.
@@ -268,56 +302,126 @@ impl Gpu {
     }
 }
 
-fn instance_buffer(device: &wgpu::Device, quads: u64) -> wgpu::Buffer {
+fn buffer(
+    device: &wgpu::Device,
+    label: &'static str,
+    usage: wgpu::BufferUsages,
+    size: wgpu::BufferAddress,
+) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("quads"),
-        size: quads * QUAD_SIZE,
-        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        label: Some(label),
+        size,
+        usage: usage | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     })
 }
 
-fn instance_range(quads: Range<usize>) -> Result<Range<u32>, Error> {
-    let start = u32::try_from(quads.start).map_err(|_| Error::TooManyQuads)?;
-    let end = u32::try_from(quads.end).map_err(|_| Error::TooManyQuads)?;
+/// Writes `items` from the start of `buffer`, first replacing it with one at
+/// the next power of two when they don't fit.
+fn write<T: bytemuck::Pod>(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    buffer: &mut wgpu::Buffer,
+    label: &'static str,
+    items: &[T],
+) -> Result<(), Error> {
+    if items.is_empty() {
+        return Ok(());
+    }
+    let bytes: &[u8] = bytemuck::cast_slice(items);
+    let size = wgpu::BufferAddress::try_from(bytes.len()).map_err(|_| Error::TooManyShapes)?;
+    if size > buffer.size() {
+        let max = device.limits().max_buffer_size;
+        if size > max {
+            return Err(Error::TooManyShapes);
+        }
+        let size = size.next_power_of_two().min(max);
+        *buffer = self::buffer(device, label, buffer.usage(), size);
+    }
+    queue.write_buffer(buffer, 0, bytes);
+    Ok(())
+}
+
+fn range_u32(range: Range<usize>) -> Result<Range<u32>, Error> {
+    let start = u32::try_from(range.start).map_err(|_| Error::TooManyShapes)?;
+    let end = u32::try_from(range.end).map_err(|_| Error::TooManyShapes)?;
     Ok(start..end)
 }
 
 fn quad_pipeline(
     device: &wgpu::Device,
-    [viewport_layout, atlas_layout]: [&wgpu::BindGroupLayout; 2],
+    layouts: [&wgpu::BindGroupLayout; 2],
     format: wgpu::TextureFormat,
 ) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::include_wgsl!("quad.wgsl"));
+    let quads = wgpu::VertexBufferLayout {
+        array_stride: QUAD_SIZE,
+        step_mode: wgpu::VertexStepMode::Instance,
+        attributes: &wgpu::vertex_attr_array![
+            0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4,
+            4 => Float32x4, 5 => Float32, 6 => Uint16x2,
+        ],
+    };
+    pipeline(
+        device,
+        ("quad", &shader, format),
+        &layouts,
+        quads,
+        wgpu::PrimitiveTopology::TriangleStrip,
+    )
+}
+
+fn triangle_pipeline(
+    device: &wgpu::Device,
+    viewport_layout: &wgpu::BindGroupLayout,
+    format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    let shader = device.create_shader_module(wgpu::include_wgsl!("triangle.wgsl"));
+    let vertices = wgpu::VertexBufferLayout {
+        array_stride: VERTEX_SIZE,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4],
+    };
+    pipeline(
+        device,
+        ("triangle", &shader, format),
+        &[viewport_layout],
+        vertices,
+        wgpu::PrimitiveTopology::TriangleList,
+    )
+}
+
+/// Reads one vertex buffer and blends premultiplied colour over the surface.
+fn pipeline(
+    device: &wgpu::Device,
+    (label, shader, format): (&str, &wgpu::ShaderModule, wgpu::TextureFormat),
+    layouts: &[&wgpu::BindGroupLayout],
+    buffer: wgpu::VertexBufferLayout,
+    topology: wgpu::PrimitiveTopology,
+) -> wgpu::RenderPipeline {
+    let bind_group_layouts: Vec<_> = layouts.iter().copied().map(Some).collect();
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("quad"),
-        bind_group_layouts: &[Some(viewport_layout), Some(atlas_layout)],
+        label: Some(label),
+        bind_group_layouts: &bind_group_layouts,
         immediate_size: 0,
     });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("quad"),
+        label: Some(label),
         layout: Some(&pipeline_layout),
         vertex: wgpu::VertexState {
-            module: &shader,
+            module: shader,
             entry_point: Some("vs"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
-            buffers: &[Some(wgpu::VertexBufferLayout {
-                array_stride: QUAD_SIZE,
-                step_mode: wgpu::VertexStepMode::Instance,
-                attributes: &wgpu::vertex_attr_array![
-                    0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4,
-                    4 => Float32x4, 5 => Float32, 6 => Uint16x2,
-                ],
-            })],
+            buffers: &[Some(buffer)],
         },
         primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleStrip,
+            topology,
             ..Default::default()
         },
         depth_stencil: None,
         multisample: wgpu::MultisampleState::default(),
         fragment: Some(wgpu::FragmentState {
-            module: &shader,
+            module: shader,
             entry_point: Some("fs"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             targets: &[Some(wgpu::ColorTargetState {

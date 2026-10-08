@@ -1,9 +1,10 @@
-//! What gets drawn. A pass writes quads into a [`Canvas`], and
+//! What gets drawn. A pass writes quads and triangles into a [`Canvas`], and
 //! [`render`](crate::render) draws it.
 //!
-//! Every shape is one [`Quad`]. The shader rounds its corners and draws its
-//! border per pixel, and text and icons are quads that sample an atlas,
-//! so a whole screen batches into a draw per clip.
+//! Most shapes are one [`Quad`]. The shader rounds its corners and draws its
+//! border per pixel, and text and icons are quads that sample an atlas. Anything
+//! else, such as a curve or an arrow, is indexed triangles of [`Vertex`]es. A
+//! new batch starts only where the clip or the kind of shape changes.
 
 mod glyphs;
 
@@ -163,19 +164,49 @@ impl Quad {
     }
 }
 
-/// A pass's quads in draw order, split where the clip changes.
+/// One corner of a triangle. The colour is interpolated across it.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Vertex {
+    pub at: [f32; 2],
+    /// Linear RGBA, straight alpha, as in [`Color`].
+    pub color: [f32; 4],
+}
+
+impl Vertex {
+    #[must_use]
+    pub const fn new(at: [f32; 2], color: Color) -> Self {
+        Self { at, color: color.0 }
+    }
+}
+
+/// What a batch draws, so the renderer picks the pipeline.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    /// Its range is into [`Canvas::quads`].
+    Quads = 0,
+    /// Its range is into [`Canvas::indices`].
+    Triangles = 1,
+}
+
+/// A pass's shapes in draw order, split where the clip or the kind changes.
 #[derive(Debug, Default)]
 pub struct Canvas {
-    /// What the surface is cleared to before any quad.
+    /// What the surface is cleared to before any shape.
     pub background: Color,
     quads: Vec<Quad>,
+    vertices: Vec<Vertex>,
+    indices: Vec<u32>,
     batches: Vec<Batch>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Batch {
     clip: Rect,
-    start: usize,
+    kind: Kind,
+    /// Where each kind's shapes were when the batch started, indexed by
+    /// [`Kind`], so the next batch ends this one whatever its kind.
+    starts: [usize; 2],
 }
 
 impl Canvas {
@@ -183,26 +214,38 @@ impl Canvas {
     /// allocations, so a warm pass allocates nothing.
     pub fn clear(&mut self, root: Rect) {
         self.quads.clear();
+        self.vertices.clear();
+        self.indices.clear();
         self.batches.clear();
         self.batches.push(Batch {
             clip: root,
-            start: 0,
+            kind: Kind::Quads,
+            starts: [0; 2],
         });
     }
 
-    /// Cuts off every quad after this one at `clip`, until the next call.
+    /// Cuts off every shape after this one at `clip`, until the next call.
     pub fn clip(&mut self, clip: Rect) {
-        let start = self.quads.len();
-        match self.batches.last_mut() {
-            Some(last) if last.clip == clip => {}
-            // Nothing was drawn under the last clip, so it's replaced, not split.
-            Some(last) if last.start == start => last.clip = clip,
-            _ => self.batches.push(Batch { clip, start }),
+        if let Some(last) = self.batches.last() {
+            self.open(clip, last.kind);
         }
     }
 
     pub fn quad(&mut self, quad: Quad) {
+        self.switch(Kind::Quads);
         self.quads.push(quad);
+    }
+
+    /// Every three indices are one triangle, indexing into `vertices`.
+    /// Triangles drawn one after another under the same clip share a batch.
+    pub fn triangles(&mut self, vertices: &[Vertex], indices: &[u32]) {
+        self.switch(Kind::Triangles);
+        // A canvas past u32::MAX vertices is refused by the renderer, so a
+        // saturated index is never drawn.
+        let base = u32::try_from(self.vertices.len()).unwrap_or(u32::MAX);
+        self.vertices.extend_from_slice(vertices);
+        self.indices
+            .extend(indices.iter().map(|&i| base.saturating_add(i)));
     }
 
     #[must_use]
@@ -210,19 +253,63 @@ impl Canvas {
         &self.quads
     }
 
-    /// Each clip with the quads it cuts, in draw order, skipping empty ones.
-    pub fn batches(&self) -> impl Iterator<Item = (Rect, Range<usize>)> {
+    #[must_use]
+    pub fn vertices(&self) -> &[Vertex] {
+        &self.vertices
+    }
+
+    /// Already offset to index into all of [`Canvas::vertices`].
+    #[must_use]
+    pub fn indices(&self) -> &[u32] {
+        &self.indices
+    }
+
+    /// Each clip with the kind and range of shapes it cuts, in draw order,
+    /// skipping empty ones.
+    pub fn batches(&self) -> impl Iterator<Item = (Rect, Kind, Range<usize>)> {
         let ends = self
             .batches
             .iter()
             .skip(1)
-            .map(|next| next.start)
-            .chain([self.quads.len()]);
+            .map(|next| next.starts)
+            .chain([self.lens()]);
         self.batches
             .iter()
             .zip(ends)
-            .map(|(batch, end)| (batch.clip, batch.start..end))
-            .filter(|(_, range)| !range.is_empty())
+            .map(|(batch, ends)| {
+                let at = batch.kind as usize;
+                (batch.clip, batch.kind, batch.starts[at]..ends[at])
+            })
+            .filter(|(_, _, range)| !range.is_empty())
+    }
+
+    /// Indexed by [`Kind`].
+    fn lens(&self) -> [usize; 2] {
+        [self.quads.len(), self.indices.len()]
+    }
+
+    /// Keeps the clip and starts a batch of `kind`, unless the last one is.
+    fn switch(&mut self, kind: Kind) {
+        if let Some(last) = self.batches.last() {
+            self.open(last.clip, kind);
+        }
+    }
+
+    fn open(&mut self, clip: Rect, kind: Kind) {
+        let batch = Batch {
+            clip,
+            kind,
+            starts: self.lens(),
+        };
+        match self.batches.last() {
+            Some(last) if last.clip == clip && last.kind == kind => {}
+            // Nothing was drawn in the last batch, so it's replaced, not split.
+            Some(last) if last.starts == batch.starts => {
+                self.batches.pop();
+                self.batches.push(batch);
+            }
+            _ => self.batches.push(batch),
+        }
     }
 }
 
@@ -237,7 +324,12 @@ mod tests {
         Quad::new(ROOT, Color::TRANSPARENT)
     }
 
-    fn batches(canvas: &Canvas) -> Vec<(Rect, Range<usize>)> {
+    fn triangle() -> ([Vertex; 3], [u32; 3]) {
+        let vertex = Vertex::new([0.; 2], Color::TRANSPARENT);
+        ([vertex; 3], [0, 1, 2])
+    }
+
+    fn batches(canvas: &Canvas) -> Vec<(Rect, Kind, Range<usize>)> {
         canvas.batches().collect()
     }
 
@@ -248,7 +340,7 @@ mod tests {
         canvas.quad(quad());
         canvas.clip(ROOT);
         canvas.quad(quad());
-        assert_eq!(batches(&canvas), [(ROOT, 0..2)]);
+        assert_eq!(batches(&canvas), [(ROOT, Kind::Quads, 0..2)]);
     }
 
     #[test]
@@ -260,7 +352,14 @@ mod tests {
         canvas.quad(quad());
         canvas.clip(ROOT);
         canvas.quad(quad());
-        assert_eq!(batches(&canvas), [(ROOT, 0..1), (SIDE, 1..2), (ROOT, 2..3)]);
+        assert_eq!(
+            batches(&canvas),
+            [
+                (ROOT, Kind::Quads, 0..1),
+                (SIDE, Kind::Quads, 1..2),
+                (ROOT, Kind::Quads, 2..3)
+            ]
+        );
     }
 
     #[test]
@@ -270,7 +369,7 @@ mod tests {
         canvas.clip(SIDE);
         canvas.quad(quad());
         canvas.clip(ROOT);
-        assert_eq!(batches(&canvas), [(SIDE, 0..1)]);
+        assert_eq!(batches(&canvas), [(SIDE, Kind::Quads, 0..1)]);
     }
 
     #[test]
@@ -281,7 +380,50 @@ mod tests {
         canvas.quad(quad());
         canvas.clear(ROOT);
         canvas.quad(quad());
-        assert_eq!(batches(&canvas), [(ROOT, 0..1)]);
+        assert_eq!(batches(&canvas), [(ROOT, Kind::Quads, 0..1)]);
+    }
+
+    #[test]
+    fn triangles_split_from_quads() {
+        let (vertices, indices) = triangle();
+        let mut canvas = Canvas::default();
+        canvas.clear(ROOT);
+        canvas.quad(quad());
+        canvas.triangles(&vertices, &indices);
+        canvas.quad(quad());
+        assert_eq!(
+            batches(&canvas),
+            [
+                (ROOT, Kind::Quads, 0..1),
+                (ROOT, Kind::Triangles, 0..3),
+                (ROOT, Kind::Quads, 1..2)
+            ]
+        );
+    }
+
+    #[test]
+    fn triangles_merge_and_offset() {
+        let (vertices, indices) = triangle();
+        let mut canvas = Canvas::default();
+        canvas.clear(ROOT);
+        canvas.triangles(&vertices, &indices);
+        canvas.triangles(&vertices, &indices);
+        assert_eq!(batches(&canvas), [(ROOT, Kind::Triangles, 0..6)]);
+        assert_eq!(canvas.indices(), [0, 1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn a_clip_keeps_the_kind() {
+        let (vertices, indices) = triangle();
+        let mut canvas = Canvas::default();
+        canvas.clear(ROOT);
+        canvas.triangles(&vertices, &indices);
+        canvas.clip(SIDE);
+        canvas.triangles(&vertices, &indices);
+        assert_eq!(
+            batches(&canvas),
+            [(ROOT, Kind::Triangles, 0..3), (SIDE, Kind::Triangles, 3..6)]
+        );
     }
 
     #[test]

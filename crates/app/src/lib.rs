@@ -8,7 +8,7 @@ mod assets;
 
 use assets::{Fonts, Icon, Icons};
 use gui::{
-    canvas::{Canvas, Color, FontId, Glyphs, Quad, Rect},
+    canvas::{Canvas, Color, FontId, Glyphs, Quad, Rect, Vertex},
     host::{App, Startup},
     platform::window,
 };
@@ -103,6 +103,16 @@ impl App for Editor {
             );
             y += ROW;
         }
+        let [left, top] = [body.x, y + GAP];
+        let size = ICON_SIZE * 3.;
+        canvas.triangles(
+            &[
+                Vertex::new([left + size / 2., top], Color::hex(0xfa_4d_56)),
+                Vertex::new([left + size, top + size], Color::hex(0x42_be_65)),
+                Vertex::new([left, top + size], Color::hex(0x78_a9_ff)),
+            ],
+            &[0, 1, 2],
+        );
     }
 }
 
