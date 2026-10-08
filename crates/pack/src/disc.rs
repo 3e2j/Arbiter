@@ -41,6 +41,34 @@ pub enum Platform {
     Wii,
 }
 
+/// The console region a disc boots on. Several countries share one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Region {
+    NtscJ,
+    NtscU,
+    Pal,
+    /// Wii only, Korean GameCube discs are `NtscJ`.
+    NtscK,
+}
+
+/// The market a disc was released in, from the id's fourth character.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Country {
+    World,
+    Usa,
+    Japan,
+    Korea,
+    Taiwan,
+    Europe,
+    Germany,
+    France,
+    Italy,
+    Netherlands,
+    Russia,
+    Spain,
+    Australia,
+}
+
 /// The data partition of an opened disc.
 // A Wii disc's other partitions (update, channel) hold nothing of the game's.
 pub struct Disc {
@@ -49,6 +77,10 @@ pub struct Disc {
     pub id: String,
     pub revision: u8,
     pub platform: Platform,
+    /// `None` if the disc's region word isn't one of the four.
+    pub region: Option<Region>,
+    /// `None` for a country code nobody has catalogued.
+    pub country: Option<Country>,
     /// Files only, in file system order.
     /// Every path is plain and relative, so joining one to a directory can't escape it.
     pub files: Vec<File>,
@@ -86,6 +118,7 @@ impl Disc {
         }
         let id = raw_id.iter().copied().map(char::from).collect();
         let revision = header.disc_version;
+        let wii_region = disc.region().and_then(|r| region(*r.first_chunk()?));
 
         let mut partition =
             disc.open_partition_kind(PartitionKind::Data, &PartitionOptions::default())?;
@@ -120,6 +153,14 @@ impl Disc {
             raw_cert_chain,
             raw_h3_table,
         } = meta;
+        let region = match platform {
+            Platform::Wii => wii_region,
+            Platform::GameCube => raw_bi2
+                .get(BI2_REGION..)
+                .and_then(|r| region(*r.first_chunk()?)),
+        };
+        let country = country(raw_id[3], platform, region);
+
         let sys = [
             ("sys/boot.bin", Some(raw_boot as Arc<[u8]>)),
             ("sys/bi2.bin", Some(raw_bi2)),
@@ -144,6 +185,8 @@ impl Disc {
             id,
             revision,
             platform,
+            region,
+            country,
             files,
             sys,
             reader: Reader(partition),
@@ -206,6 +249,48 @@ pub fn hash(path: &Path) -> Result<u128, Error> {
     Ok(hasher.digest128())
 }
 
+/// The region word's offset in `bi2.bin`. A Wii disc has its own region data
+/// outside the partition, which nod reads.
+const BI2_REGION: usize = 0x18;
+
+/// The region word, numbered as in Dolphin's `DiscIO::Region`.
+fn region(word: [u8; 4]) -> Option<Region> {
+    match u32::from_be_bytes(word) {
+        0 => Some(Region::NtscJ),
+        1 => Some(Region::NtscU),
+        2 => Some(Region::Pal),
+        4 => Some(Region::NtscK),
+        _ => None,
+    }
+}
+
+/// After Dolphin's `CountryCodeToCountry`. Some codes only resolve with the region.
+fn country(code: u8, platform: Platform, region: Option<Region>) -> Option<Country> {
+    let gc = platform == Platform::GameCube;
+    Some(match code {
+        // Codes shared across markets, told apart by the region. English
+        // GameCube discs sold in Korea use `E` or `W` with an NTSC-J region.
+        b'E' if gc && region == Some(Region::NtscJ) => Country::Korea,
+        b'W' if gc => Country::Korea,
+        b'W' if region != Some(Region::Pal) => Country::Taiwan,
+        b'X' | b'Y' | b'Z' if region == Some(Region::NtscU) => Country::Usa,
+
+        b'A' => Country::World,
+        b'E' | b'B' | b'N' => Country::Usa,
+        b'J' => Country::Japan,
+        b'K' | b'Q' | b'T' => Country::Korea,
+        b'P' | b'L' | b'M' | b'V' | b'W' | b'X' | b'Y' | b'Z' => Country::Europe,
+        b'D' => Country::Germany,
+        b'F' => Country::France,
+        b'I' => Country::Italy,
+        b'H' => Country::Netherlands,
+        b'R' => Country::Russia,
+        b'S' => Country::Spain,
+        b'U' => Country::Australia,
+        _ => return None,
+    })
+}
+
 // Here to avoid any discs from writing where they shouldn't be.
 fn is_plain(path: &str) -> bool {
     let path = Path::new(path);
@@ -239,6 +324,32 @@ mod tests {
     }
 
     #[test]
+    fn country_needs_the_region_for_some_codes() {
+        let gc = Platform::GameCube;
+        assert_eq!(country(b'E', gc, Some(Region::NtscU)), Some(Country::Usa));
+        assert_eq!(country(b'E', gc, Some(Region::NtscJ)), Some(Country::Korea));
+        assert_eq!(
+            country(b'E', Platform::Wii, Some(Region::NtscJ)),
+            Some(Country::Usa)
+        );
+        assert_eq!(country(b'X', gc, Some(Region::NtscU)), Some(Country::Usa));
+        assert_eq!(country(b'X', gc, Some(Region::Pal)), Some(Country::Europe));
+        assert_eq!(country(b'W', gc, Some(Region::NtscJ)), Some(Country::Korea));
+        assert_eq!(
+            country(b'W', Platform::Wii, Some(Region::NtscJ)),
+            Some(Country::Taiwan)
+        );
+        assert_eq!(country(b'G', gc, None), None);
+    }
+
+    #[test]
+    fn region_words() {
+        assert_eq!(region([0, 0, 0, 2]), Some(Region::Pal));
+        assert_eq!(region([0, 0, 0, 4]), Some(Region::NtscK));
+        assert_eq!(region([0, 0, 0, 3]), None);
+    }
+
+    #[test]
     #[ignore = "needs a retail disc at dev/fixtures/NA.ciso"]
     fn reads_the_retail_disc() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../dev/fixtures/NA.ciso");
@@ -246,6 +357,8 @@ mod tests {
         assert_eq!(disc.id, "GZ2E01");
         assert_eq!(disc.revision, 0);
         assert_eq!(disc.platform, Platform::GameCube);
+        assert_eq!(disc.region, Some(Region::NtscU));
+        assert_eq!(disc.country, Some(Country::Usa));
 
         let file = disc
             .files

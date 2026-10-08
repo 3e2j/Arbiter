@@ -20,11 +20,12 @@ use std::{
     thread,
 };
 
+use game::edition::{self, Edition, Game, Verdict};
 use pack::disc::{self, Disc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::{Config, Platform, Recorded},
+    config::{Config, Country, Platform, Recorded, Region},
     hash::Hash,
 };
 
@@ -91,41 +92,106 @@ pub struct Staged {
     pub id: String,
     pub revision: u8,
     pub platform: Platform,
+    pub region: Option<Region>,
+    pub country: Option<Country>,
     pub manifest: Manifest,
     /// See `config::Edition::disc_hash`.
     pub disc_hash: Hash,
+    /// `None` for an id with no tables, which shows raw values.
+    pub edition: Option<&'static Edition>,
+    /// For an unknown id, the game its game code suggests.
+    pub guess: Option<Game>,
     pub bytes: u64,
     /// Decided against `arbiter.toml` as it was when staged.
     pub outcome: Recorded,
     pub(crate) tree: PathBuf,
 }
 
+/// A disc's header, read without unpacking it.
+#[derive(Debug)]
+pub struct Peeked {
+    pub id: String,
+    pub revision: u8,
+    /// `None` for an unknown id.
+    pub game: Option<Game>,
+}
+
+/// Reads a disc's header and file system table alone.
+///
+/// # Errors
+///
+/// If the disc can't be read.
+pub(crate) fn peek(path: &Path) -> Result<Peeked, Error> {
+    let disc = Disc::open(path)?;
+    let game = edition::edition(&disc.id).map(|e| e.game);
+    Ok(Peeked {
+        id: disc.id,
+        revision: disc.revision,
+        game,
+    })
+}
+
+/// Hashes whole discs, one thread each, and checks each against its edition's
+/// clean dump.
+///
+/// # Errors
+///
+/// If a disc can't be read.
+pub(crate) fn verify(discs: &[(&Path, &Peeked)]) -> Result<Vec<(Hash, Verdict)>, Error> {
+    thread::scope(|s| {
+        let hashing: Vec<_> = discs
+            .iter()
+            .map(|&(path, _)| s.spawn(|| disc::hash(path)))
+            .collect();
+        hashing
+            .into_iter()
+            .zip(discs)
+            .map(|(hashing, (_, peeked))| {
+                let hash = Hash(hashing.join().map_err(|_| Error::HashPanicked)??);
+                Ok((hash, check(&peeked.id, peeked.revision, hash)))
+            })
+            .collect()
+    })
+}
+
+fn check(id: &str, revision: u8, hash: Hash) -> Verdict {
+    edition::edition(id).map_or(Verdict::Uncatalogued, |e| e.check(revision, hash.0))
+}
+
 /// Unpacks a disc beside the edition's current tree, so the current one stays
-/// whole until `Staged::commit` swaps them. The disc is hashed on another
-/// thread meanwhile.
+/// whole until `Staged::commit` swaps them. `disc_hash` is from `verify`.
 ///
 /// # Errors
 ///
 /// If the disc can't be read or a file can't be written.
-pub fn stage(base: &Path, path: &Path, config: &Config) -> Result<Staged, Error> {
+pub(crate) fn stage(
+    base: &Path,
+    path: &Path,
+    disc_hash: Hash,
+    config: &Config,
+) -> Result<Staged, Error> {
     let mut disc = Disc::open(path)?;
     let tree = base.join(format!(".{}.partial", disc.id));
     remove_tree(&tree)?;
 
-    let (unpacked, hashed) = thread::scope(|s| {
-        let hashing = s.spawn(|| disc::hash(path));
-        (unpack(&tree, &mut disc), hashing.join())
-    });
-    let (manifest, bytes) = unpacked?;
-    let disc_hash = Hash(hashed.map_err(|_| Error::HashPanicked)??);
+    let (manifest, bytes) = unpack(&tree, &mut disc)?;
 
+    let edition = edition::edition(&disc.id);
+    let guess = edition
+        .is_none()
+        .then(|| edition::guess(&disc.id))
+        .flatten();
     let outcome = config.record(&disc.id, disc.revision, manifest.files_digest());
     Ok(Staged {
         id: disc.id,
         revision: disc.revision,
         platform: disc.platform.into(),
+        region: disc.region.map(Into::into),
+        country: disc.country.map(Into::into),
         manifest,
         disc_hash,
+        edition,
+        guess,
         bytes,
         outcome,
         tree,

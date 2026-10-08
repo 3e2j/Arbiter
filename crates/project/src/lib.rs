@@ -20,17 +20,19 @@ pub mod config;
 pub mod hash;
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     ffi::OsString,
     fs, io,
     path::{self, Path, PathBuf},
     process::Command,
 };
 
-pub use base::Staged;
+pub use base::{Peeked, Staged};
 pub use config::Recorded;
 use config::{Config, Edition, Kind};
 use diag::Diagnostics;
+pub use game::edition::{Game, Verdict};
+use hash::Hash;
 
 /// Every directory a mod project owns.
 const MOD_DIRS: &[&str] = &[
@@ -70,6 +72,8 @@ pub enum Error {
     },
     #[error("{0} is a game project, which has no base to unpack into")]
     NoBase(PathBuf),
+    #[error(transparent)]
+    Target(#[from] config::Conflict),
     #[error("git init failed: {0}")]
     Git(String),
 }
@@ -171,6 +175,7 @@ impl Project {
             root: partial.0.clone(),
             config: Config {
                 kind: Kind::Mod,
+                target: Some(BTreeSet::new()),
                 editions: BTreeMap::new(),
             },
         };
@@ -211,17 +216,42 @@ impl Project {
         })
     }
 
+    /// A disc's id, revision and known game, without unpacking it, so the
+    /// target's game and duplicate editions are settled before any disc is staged.
+    ///
+    /// # Errors
+    ///
+    /// If the disc can't be read.
+    pub fn peek(disc: &Path) -> Result<Peeked, Error> {
+        Ok(base::peek(disc)?)
+    }
+
+    /// Hashes whole discs in parallel and checks each against its edition's
+    /// clean dump, before any is unpacked. Each hash goes to `stage`.
+    ///
+    /// # Errors
+    ///
+    /// If a disc can't be read.
+    pub fn verify(discs: &[(&Path, &Peeked)]) -> Result<Vec<(Hash, Verdict)>, Error> {
+        Ok(base::verify(discs)?)
+    }
+
     /// Unpacks a disc beside `base/`, without touching the project. Then
     /// `switch_check` it if it switches revision, and `commit` or discard it.
     ///
     /// # Errors
     ///
     /// If this is a game project, or unpacking fails.
-    pub fn stage(&self, disc: &Path) -> Result<Staged, Error> {
+    pub fn stage(&self, disc: &Path, disc_hash: Hash) -> Result<Staged, Error> {
         if self.config.kind != Kind::Mod {
             return Err(Error::NoBase(self.root.clone()));
         }
-        Ok(base::stage(&self.root.join(base::DIR), disc, &self.config)?)
+        Ok(base::stage(
+            &self.root.join(base::DIR),
+            disc,
+            disc_hash,
+            &self.config,
+        )?)
     }
 
     /// Every change in `changes/` that wouldn't apply cleanly to the staged base.
@@ -232,22 +262,33 @@ impl Project {
         diag
     }
 
-    /// Swaps the staged tree in as its edition's base. `arbiter.toml` changes
-    /// only for a new edition or a revision switch. Returns the staged outcome.
+    /// Swaps the staged tree in as its edition's base, as a target or a
+    /// reference. `arbiter.toml` changes only for a new edition, a revision
+    /// switch, or a change of target. Returns the staged outcome.
     ///
     /// # Errors
     ///
-    /// If the tree can't be swapped in or the project can't be saved.
-    pub fn commit(&mut self, staged: Staged) -> Result<Recorded, Error> {
+    /// If `target` and it's a known edition of another game than the target's,
+    /// the tree can't be swapped in, or the project can't be saved.
+    pub fn commit(&mut self, staged: Staged, target: bool) -> Result<Recorded, Error> {
+        if target {
+            self.config.check_target(&staged.id)?;
+        }
         staged.commit(&self.root.join(base::DIR))?;
+        let mut dirty = self.config.set_target(&staged.id, target);
         if let Recorded::Added | Recorded::Switched { .. } = staged.outcome {
             let edition = Edition {
                 platform: staged.platform,
+                region: staged.region,
+                country: staged.country,
                 revision: staged.revision,
                 disc_hash: staged.disc_hash,
                 files_digest: staged.manifest.files_digest(),
             };
             self.config.editions.insert(staged.id, edition);
+            dirty = true;
+        }
+        if dirty {
             self.save()?;
         }
         Ok(staged.outcome)
@@ -267,7 +308,7 @@ impl Project {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{config::Platform, hash::Hash};
+    use crate::config::Platform;
 
     /// A fresh project at `<tmp>/mod`, so its siblings stay inside `<tmp>`.
     fn fresh() -> (tempfile::TempDir, Project) {
@@ -336,8 +377,12 @@ mod tests {
             id: id.to_owned(),
             revision,
             platform: Platform::Wii,
+            region: None,
+            country: None,
             manifest,
             disc_hash: Hash::of(file),
+            edition: None,
+            guess: None,
             bytes: file.len() as u64,
             outcome,
             tree,
@@ -350,7 +395,7 @@ mod tests {
         let root = project.root.clone();
         let mut commit = |revision, file: &[u8]| {
             let staged = stage_fake(&project, "RZDE01", revision, file);
-            project.commit(staged).unwrap()
+            project.commit(staged, true).unwrap()
         };
 
         assert_eq!(commit(0, b"rev 0"), Recorded::Added);
@@ -373,23 +418,41 @@ mod tests {
     }
 
     #[test]
+    fn commit_keeps_references_out_of_the_target() {
+        let (_dir, mut project) = fresh();
+        let root = project.root.clone();
+        let staged = stage_fake(&project, "AAAA01", 0, b"unknown");
+        project.commit(staged, false).unwrap();
+        let staged = stage_fake(&project, "GZ2E01", 0, b"known");
+        project.commit(staged, true).unwrap();
+
+        let config = Project::open(&root).unwrap().config;
+        assert!(config.editions.contains_key("AAAA01"));
+        assert_eq!(config.target, Some(BTreeSet::from(["GZ2E01".to_owned()])));
+    }
+
+    #[test]
     #[ignore = "needs a retail disc at discs/NA.iso"]
     fn unpacks_a_retail_disc_into_a_project() {
         let disc = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../discs/NA.iso");
         let (_dir, mut project) = fresh();
         let root = project.root.clone();
 
-        let staged = project.stage(&disc).unwrap();
+        let peeked = Project::peek(&disc).unwrap();
+        let [(hash, _)] = Project::verify(&[(&disc, &peeked)]).unwrap()[..] else {
+            panic!("one disc, one hash");
+        };
+        let staged = project.stage(&disc, hash).unwrap();
         assert_eq!(staged.id, "GZ2E01");
         assert_eq!(staged.platform, Platform::GameCube);
-        assert_eq!(project.commit(staged).unwrap(), Recorded::Added);
+        assert_eq!(project.commit(staged, true).unwrap(), Recorded::Added);
         for file in ["res/Msgus/bmgres.arc", "sys/main.dol"] {
             let file = root.join("base/GZ2E01").join(file);
             assert!(fs::metadata(&file).unwrap().permissions().readonly());
         }
 
-        let staged = project.stage(&disc).unwrap();
-        assert_eq!(project.commit(staged).unwrap(), Recorded::Same);
+        let staged = project.stage(&disc, hash).unwrap();
+        assert_eq!(project.commit(staged, true).unwrap(), Recorded::Same);
         assert!(!root.join("base/.GZ2E01.partial").exists());
         assert!(
             Project::open(&root)

@@ -82,6 +82,7 @@ dependencies = [
  "arbiter-diag",
  "arbiter-project",
  "clap",
+ "thiserror",
 ]
 
 [[package]]
