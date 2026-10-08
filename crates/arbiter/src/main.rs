@@ -71,12 +71,13 @@ fn unpack(project: &mut Project, disc: &Path) -> Result<(), project::Error> {
     let start = Instant::now();
     let staged = project.stage(disc)?;
     println!(
-        "unpacked {} rev {}: {} files, {} MiB in {:.1?}",
+        "unpacked {} rev {}: {} files, {} MiB in {:.1?}, disc {}",
         staged.id,
         staged.revision,
         staged.manifest.files.len(),
         staged.bytes >> 20,
         start.elapsed(),
+        staged.disc_hash,
     );
 
     if let Recorded::Switched { from } = staged.outcome {

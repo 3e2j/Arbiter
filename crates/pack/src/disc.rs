@@ -15,6 +15,7 @@ use nod::{
     disc::fst::Node,
     read::{DiscOptions, DiscReader, PartitionMeta, PartitionOptions, PartitionReader},
 };
+use xxhash_rust::xxh3::Xxh3;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -28,6 +29,10 @@ pub enum Error {
     Path(String),
     #[error("the disc has its own file {0:?}, where its system files would go")]
     Sys(String),
+    #[error("reading the disc: {0}")]
+    Read(#[from] io::Error),
+    #[error("the disc ended at {read} of {size} bytes")]
+    Truncated { read: u64, size: u64 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,16 +41,16 @@ pub enum Platform {
     Wii,
 }
 
-/// The data partition of an opened disc. A Wii disc's other partitions
-/// (update, channel) hold nothing of the game's.
+/// The data partition of an opened disc.
+// A Wii disc's other partitions (update, channel) hold nothing of the game's.
 pub struct Disc {
-    /// The edition id, such as `GZ2E01`. Checked to be ASCII alphanumeric, so
-    /// it's safe in a file name.
+    /// The edition id, such as `GZ2E01`.
+    /// Checked to be ASCII alphanumeric, so it's safe in a file name.
     pub id: String,
     pub revision: u8,
     pub platform: Platform,
-    /// Files only, in file system order. Every path is plain and relative, so
-    /// joining one to a directory can't escape it.
+    /// Files only, in file system order.
+    /// Every path is plain and relative, so joining one to a directory can't escape it.
     pub files: Vec<File>,
     /// Read whole on open, they're small besides `main.dol`.
     pub sys: Vec<SysFile>,
@@ -171,6 +176,34 @@ impl Reader {
         self.open(file)?.read_to_end(buf)?;
         Ok(())
     }
+}
+
+/// XXH3-128 over every byte of the disc.
+/// The same disc gives the same hash in any container.
+///
+/// # Errors
+///
+/// If nod can't open the image, reading fails, or the disc ends before its size.
+// Read the way Dusklight's `borealis::disc::verify` does, so it matches the hashes in its catalog.
+pub fn hash(path: &Path) -> Result<u128, Error> {
+    let mut disc = DiscReader::new(path, &DiscOptions::default())?;
+    let size = disc.disc_size();
+    let mut hasher = Xxh3::new();
+    let mut read = 0;
+    loop {
+        let buf = disc.fill_buf()?;
+        let len = buf.len();
+        if len == 0 {
+            break;
+        }
+        hasher.update(buf);
+        disc.consume(len);
+        read += len as u64;
+    }
+    if read != size {
+        return Err(Error::Truncated { read, size });
+    }
+    Ok(hasher.digest128())
 }
 
 // Here to avoid any discs from writing where they shouldn't be.

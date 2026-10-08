@@ -17,6 +17,7 @@ use std::{
     fs::{self, File},
     io::{self, Write},
     path::{Path, PathBuf},
+    thread,
 };
 
 use pack::disc::{self, Disc};
@@ -39,6 +40,8 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("hashing the disc panicked")]
+    HashPanicked,
     #[error("{path}: {source}")]
     Toml {
         path: PathBuf,
@@ -89,6 +92,8 @@ pub struct Staged {
     pub revision: u8,
     pub platform: Platform,
     pub manifest: Manifest,
+    /// See `config::Edition::disc_hash`.
+    pub disc_hash: Hash,
     pub bytes: u64,
     /// Decided against `arbiter.toml` as it was when staged.
     pub outcome: Recorded,
@@ -96,16 +101,39 @@ pub struct Staged {
 }
 
 /// Unpacks a disc beside the edition's current tree, so the current one stays
-/// whole until `Staged::commit` swaps them.
+/// whole until `Staged::commit` swaps them. The disc is hashed on another
+/// thread meanwhile.
 ///
 /// # Errors
 ///
 /// If the disc can't be read or a file can't be written.
-pub fn stage(base: &Path, disc: &Path, config: &Config) -> Result<Staged, Error> {
-    let mut disc = Disc::open(disc)?;
+pub fn stage(base: &Path, path: &Path, config: &Config) -> Result<Staged, Error> {
+    let mut disc = Disc::open(path)?;
     let tree = base.join(format!(".{}.partial", disc.id));
     remove_tree(&tree)?;
 
+    let (unpacked, hashed) = thread::scope(|s| {
+        let hashing = s.spawn(|| disc::hash(path));
+        (unpack(&tree, &mut disc), hashing.join())
+    });
+    let (manifest, bytes) = unpacked?;
+    let disc_hash = Hash(hashed.map_err(|_| Error::HashPanicked)??);
+
+    let outcome = config.record(&disc.id, disc.revision, manifest.files_digest());
+    Ok(Staged {
+        id: disc.id,
+        revision: disc.revision,
+        platform: disc.platform.into(),
+        manifest,
+        disc_hash,
+        bytes,
+        outcome,
+        tree,
+    })
+}
+
+/// Writes every file to `tree`. Returns their manifest and total size.
+fn unpack(tree: &Path, disc: &mut Disc) -> Result<(Manifest, u64), Error> {
     let mut files = BTreeMap::new();
     let mut bytes = 0;
     let mut buf = Vec::new();
@@ -116,7 +144,7 @@ pub fn stage(base: &Path, disc: &Path, config: &Config) -> Result<Staged, Error>
             .map_err(io_err(Path::new(&file.path)))?;
         let dest = tree.join(&file.path);
         // Files come in file system order, so siblings share a parent.
-        let parent = dest.parent().unwrap_or(&tree);
+        let parent = dest.parent().unwrap_or(tree);
         if made_dir.as_deref() != Some(parent) {
             fs::create_dir_all(parent).map_err(io_err(parent))?;
             made_dir = Some(parent.to_path_buf());
@@ -132,18 +160,7 @@ pub fn stage(base: &Path, disc: &Path, config: &Config) -> Result<Staged, Error>
         bytes += file.bytes.len() as u64;
         files.insert(file.path.to_owned(), Hash::of(&file.bytes));
     }
-
-    let manifest = Manifest { files };
-    let outcome = config.record(&disc.id, disc.revision, manifest.files_digest());
-    Ok(Staged {
-        id: disc.id,
-        revision: disc.revision,
-        platform: disc.platform.into(),
-        manifest,
-        bytes,
-        outcome,
-        tree,
-    })
+    Ok((Manifest { files }, bytes))
 }
 
 impl Staged {

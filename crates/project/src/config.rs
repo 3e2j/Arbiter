@@ -83,12 +83,19 @@ pub struct Edition {
     /// The disc header's version. Stored here only: `base/` is local, and a
     /// clone needs to know which disc to ask for.
     pub revision: u8,
-    /// XXH3-128 over the unpacked files' paths and hashes, sorted by path.
-    /// Equal when two bases hold the same files, whatever container or dump
-    /// they came from.
+    /// XXH3-128 of the whole disc, see `pack::disc::hash`.
     ///
-    /// Used to checks a collaborator's base after a clone from a repo
-    /// (where they need to unpack the game again as `base/` is gitignored).
+    /// Catalog hash for a retail disc.
+    ///
+    /// Used to verify that a disc is unmodified from whats expected in a catalog.
+    pub disc_hash: Hash,
+    /// XXH3-128 over all unpacked files' paths and hashes, sorted by path.
+    /// Unpacked file-based check, not a disc check (see `disc_hash` for that).
+    ///
+    /// Used to verify all unpacked files have the same bytes (when unpacking again),
+    /// even if it came from a modified disc.
+    // A changed digest only means "something" has changed, not what. So this is
+    // used as a fast-path check before checking against every file that differs.
     pub files_digest: Hash,
 }
 
@@ -105,6 +112,7 @@ mod tests {
                 Edition {
                     platform: Platform::GameCube,
                     revision: 0,
+                    disc_hash: Hash(0x5678),
                     files_digest: Hash(0x1234),
                 },
             )]),

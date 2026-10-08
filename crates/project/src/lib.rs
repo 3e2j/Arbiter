@@ -244,6 +244,7 @@ impl Project {
             let edition = Edition {
                 platform: staged.platform,
                 revision: staged.revision,
+                disc_hash: staged.disc_hash,
                 files_digest: staged.manifest.files_digest(),
             };
             self.config.editions.insert(staged.id, edition);
@@ -336,6 +337,7 @@ mod tests {
             revision,
             platform: Platform::Wii,
             manifest,
+            disc_hash: Hash::of(file),
             bytes: file.len() as u64,
             outcome,
             tree,

@@ -111,6 +111,7 @@ dependencies = [
  "arbiter-formats",
  "nod",
  "thiserror",
+ "xxhash-rust",
 ]
 
 [[package]]
