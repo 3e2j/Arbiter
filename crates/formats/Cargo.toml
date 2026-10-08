@@ -11,6 +11,7 @@ name = "formats"
 [dependencies]
 arbiter-diag.workspace = true
 encoding_rs.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 
 [lints]

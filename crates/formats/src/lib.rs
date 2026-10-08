@@ -1,6 +1,10 @@
 //! The game's file formats as plain structures. Knows no game or project.
 //!
 //! Every format implements [`Decode`] and [`Encode`].
+//! One that can be edited implements:
+//! - [`Edit`], in either project kind.
+//! - [`Patch`], which stores the edits as changes against the base (for mods).
+//!
 //! Data is big-endian, read through [`Reader`] and written through [`Writer`].
 //! Fixed tables are [`record!`] structs, borrowed and copied whole. The types
 //! their fields can be are listed on [`Record`].
@@ -12,7 +16,8 @@ mod reader;
 mod record;
 mod writer;
 
-use diag::Diagnostics;
+use diag::{Address, Diagnostics};
+use serde::{Serialize, de::DeserializeOwned};
 
 pub use reader::Reader;
 pub use record::{Be16, Be32, Flag, Record, bytes_of};
@@ -67,4 +72,35 @@ pub trait Encode {
     /// When the value doesn't fit the format, such as a size field
     /// overflowing ([`Error::TooLarge`]).
     fn encode(&self, out: &mut Writer) -> Result<()>;
+}
+
+/// A document changed through edits, with undo. An edit is an intent keyed by
+/// stable ids, never a row index. It never fails for being invalid, only a
+/// check does, so one naming something the document doesn't hold changes
+/// nothing.
+pub trait Edit {
+    type Edit;
+    type Item: Address;
+
+    /// Returns the edit that undoes this one, and the items it touched for
+    /// rechecking.
+    fn apply(&mut self, edit: Self::Edit) -> (Self::Edit, Vec<Self::Item>);
+
+    /// Whether `next` joins `edit`'s undo step, such as typing in one field.
+    fn merges(_edit: &Self::Edit, _next: &Self::Edit) -> bool {
+        false
+    }
+}
+
+/// A document stored in a mod as its changes against the base.
+pub trait Patch: Sized {
+    /// Keyed by a stable id, as [`Edit::Edit`] is.
+    type Change: Serialize + DeserializeOwned;
+
+    /// What turns `base` into `edited`.
+    fn diff(base: &Self, edited: &Self) -> Vec<Self::Change>;
+
+    /// Applies `changes` to the base. One that no longer fits it, such as one
+    /// naming something removed since, is skipped and reported to `diag`.
+    fn patch(&mut self, changes: &[Self::Change], diag: &mut Diagnostics);
 }

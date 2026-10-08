@@ -17,6 +17,7 @@
 //! members, nested any depth.
 //! Read-only keeps them from being edited by accident: changes go in `changes/`.
 
+pub mod packing;
 pub mod sidecar;
 
 use std::{
@@ -33,7 +34,7 @@ use pack::{
     disc::{self, Disc},
     unpack::{self, Piece},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use toml_writer::{TomlWrite, WriteTomlKey};
 
 use crate::{
@@ -101,7 +102,7 @@ pub struct Entry {
 
 /// Mirrors `formats::compression::Compression`. The discriminants feed the
 /// files digest, so they're fixed apart from the variant order. 0 is none.
-#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 #[repr(u8)]
 pub enum Compression {

@@ -21,6 +21,13 @@ pub struct Code {
 /// edit's touched items use the same keys, so the store can match the two.
 pub type Key = (&'static str, String);
 
+/// Something inside a document that an edit touches and a diagnostic can sit
+/// on, such as one message.
+pub trait Address {
+    /// Outermost first, as [`Location::key`] holds it.
+    fn key(&self) -> Vec<Key>;
+}
+
 /// Relative to the file the store holds it under. A producer knows keys and
 /// offsets inside its own document, never the path.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]

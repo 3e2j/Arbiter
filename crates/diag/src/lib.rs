@@ -6,5 +6,5 @@
 mod diagnostic;
 mod sink;
 
-pub use diagnostic::{Code, Diagnostic, Key, Location, Severity, Snippet, Span};
+pub use diagnostic::{Address, Code, Diagnostic, Key, Location, Severity, Snippet, Span};
 pub use sink::Diagnostics;
