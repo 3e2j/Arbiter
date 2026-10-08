@@ -37,6 +37,7 @@ zeno = "0.3"
 resvg = { version = "0.48", default-features = false }
 fontique = "0.11"
 unicode-script = "0.5"
+harfrust = "0.12"
 
 [workspace.lints.clippy]
 pedantic = { level = "deny", priority = -1 }

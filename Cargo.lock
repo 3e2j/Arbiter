@@ -186,6 +186,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "fontique",
+ "harfrust",
  "pollster",
  "resvg",
  "skrifa",
@@ -951,6 +952,18 @@ dependencies = [
  "crunchy",
  "num-traits",
  "zerocopy",
+]
+
+[[package]]
+name = "harfrust"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c03d949a14aa089bbb282f7dd76a498a7f684428e4257202efc119ec010376f9"
+dependencies = [
+ "bitflags 2.13.2",
+ "bytemuck",
+ "read-fonts",
+ "smallvec",
 ]
 
 [[package]]

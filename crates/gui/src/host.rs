@@ -64,6 +64,7 @@ impl<A: App> Host<A> {
     // TODO: return `Out`.
     pub fn draw(&mut self, rect: Rect, scale: f32, canvas: &mut Canvas) {
         self.glyphs.set_scale(scale);
+        self.glyphs.next_frame();
         canvas.clear(rect);
         canvas.background = self.background;
         self.app.ui(rect, canvas, &mut self.glyphs);

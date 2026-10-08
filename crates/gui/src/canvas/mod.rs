@@ -5,14 +5,11 @@
 //! border per pixel, and text and icons are quads that sample one atlas,
 //! so a whole screen batches into a draw per clip.
 
-mod atlas;
 mod glyphs;
-mod system;
 
 use std::ops::Range;
 
-pub use atlas::AtlasUpdate;
-pub use glyphs::{Error, FontFile, FontId, Glyphs, IconId, LineMetrics};
+pub use glyphs::{AtlasUpdate, Error, FontFile, FontId, Glyphs, IconId, LineMetrics};
 
 /// In logical pixels, from the window's top left.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

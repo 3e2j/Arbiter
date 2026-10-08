@@ -11,6 +11,7 @@ name = "gui"
 [dependencies]
 bytemuck.workspace = true
 fontique.workspace = true
+harfrust.workspace = true
 pollster.workspace = true
 resvg.workspace = true
 skrifa.workspace = true
