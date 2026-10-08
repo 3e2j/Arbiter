@@ -20,7 +20,7 @@ use resvg::usvg;
 use skrifa::MetadataProvider;
 use skrifa::instance::Size;
 
-pub use atlas::AtlasUpdate;
+pub use atlas::{AtlasUpdate, PageWrite};
 use fonts::Fonts;
 use ink::{Ink, Inks, Key};
 use shape::Lines;
@@ -157,6 +157,7 @@ impl Glyphs {
     /// dropped.
     pub(crate) fn next_frame(&mut self) {
         self.lines.next_frame();
+        self.inks.next_frame();
     }
 
     /// Makes the next update hold the whole atlas, for a GPU that starts empty.
@@ -284,7 +285,7 @@ fn place(
             let x = (pen[0] + f32::from(mask.left)).round();
             let y = pen[1].round() - f32::from(mask.top);
             let rect = logical([x, y, width, height]);
-            canvas.quad(Quad::sampled(rect, [u, v, width, height], color));
+            canvas.quad(Quad::sampled(rect, mask.page, [u, v, width, height], color));
         }
         Ink::Missing => {
             let rect = logical(missing);

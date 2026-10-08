@@ -10,8 +10,8 @@ struct Viewport {
 }
 
 @group(0) @binding(0) var<uniform> viewport: Viewport;
-// One coverage byte per texel.
-@group(1) @binding(0) var atlas: texture_2d<f32>;
+// One coverage byte per texel, a layer per page.
+@group(1) @binding(0) var atlas: texture_2d_array<f32>;
 
 struct Instance {
     @location(0) rect: vec4<f32>,
@@ -20,6 +20,7 @@ struct Instance {
     @location(3) radii: vec4<f32>,
     @location(4) texels: vec4<f32>,
     @location(5) border_width: f32,
+    @location(6) page: u32,
 }
 
 struct Varyings {
@@ -32,6 +33,7 @@ struct Varyings {
     @location(4) @interpolate(flat) radii: vec4<f32>,
     @location(5) @interpolate(flat) border_width: f32,
     @location(6) @interpolate(flat) texels: vec4<f32>,
+    @location(7) @interpolate(flat) page: u32,
 }
 
 @vertex
@@ -48,6 +50,7 @@ fn vs(@builtin(vertex_index) i: u32, quad: Instance) -> Varyings {
     out.radii = quad.radii;
     out.border_width = quad.border_width;
     out.texels = quad.texels;
+    out.page = quad.page;
     return out;
 }
 
@@ -69,7 +72,7 @@ fn coverage_under(in: Varyings) -> f32 {
     }
     let texel = floor((in.local + in.half) * viewport.scale);
     let at = in.texels.xy + clamp(texel, vec2<f32>(0.0), in.texels.zw - 1.0);
-    return textureLoad(atlas, vec2<i32>(at), 0).r;
+    return textureLoad(atlas, vec2<i32>(at), in.page, 0).r;
 }
 
 @fragment

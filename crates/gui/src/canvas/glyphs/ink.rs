@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use resvg::{tiny_skia, usvg};
 use skrifa::GlyphId;
 
-use super::atlas::Atlas;
+use super::atlas::{Atlas, Spot};
 use super::fonts::Fonts;
 use super::{FontId, IconId};
 
@@ -30,7 +30,8 @@ pub(super) enum Ink {
 
 #[derive(Clone, Copy)]
 pub(super) struct Mask {
-    /// `x, y, width, height` in atlas texels.
+    pub page: u16,
+    /// `x, y, width, height` in texels on `page`.
     pub texels: [u16; 4],
     /// From the pen position on the baseline to the mask's top left corner,
     /// `y` growing up.
@@ -56,8 +57,13 @@ pub(super) struct Inks {
 }
 
 impl Inks {
+    /// Marks the page under a cached mask as drawn this frame, so it isn't
+    /// evicted while its quads are on screen.
     pub fn get(&mut self, fonts: &mut Fonts, icons: &[usvg::Tree], key: Key) -> Ink {
         if let Some(&ink) = self.cache.get(&key) {
+            if let Ink::Mask(mask) = ink {
+                self.atlas.touch(mask.page);
+            }
             return ink;
         }
         let bitmap = match key {
@@ -66,9 +72,18 @@ impl Inks {
                 .get(usize::from(icon.0))
                 .and_then(|tree| rasterize_icon(tree, pixels)),
         };
-        let ink = bitmap.map_or(Ink::Missing, |bitmap| self.pack(&bitmap));
+        let packed = bitmap.map_or(Some(Ink::Missing), |bitmap| self.pack(&bitmap));
+        // Not cached when every page was drawn this frame, so it's packed
+        // again on a later one.
+        let Some(ink) = packed else {
+            return Ink::Missing;
+        };
         self.cache.insert(key, ink);
         ink
+    }
+
+    pub fn next_frame(&mut self) {
+        self.atlas.next_frame();
     }
 
     /// Forgets every mask, for a new scale.
@@ -82,8 +97,9 @@ impl Inks {
         self.cache.keys().copied()
     }
 
-    /// [`Ink::Missing`] once the atlas is full.
-    fn pack(&mut self, bitmap: &Bitmap) -> Ink {
+    /// [`Ink::Missing`] for a mask bigger than a page, and `None` when no
+    /// page has room and every page was drawn this frame.
+    fn pack(&mut self, bitmap: &Bitmap) -> Option<Ink> {
         let Bitmap {
             width,
             height,
@@ -92,15 +108,23 @@ impl Inks {
             ref coverage,
         } = *bitmap;
         if width == 0 || height == 0 {
-            return Ink::Blank;
+            return Some(Ink::Blank);
         }
-        match self.atlas.insert(width, height, coverage) {
-            Some([x, y]) => Ink::Mask(Mask {
-                texels: [x, y, width, height],
-                left,
-                top,
-            }),
-            None => Ink::Missing,
+        if !Atlas::fits(width, height) {
+            return Some(Ink::Missing);
+        }
+        loop {
+            if let Some(Spot { page, x, y }) = self.atlas.insert(width, height, coverage) {
+                return Some(Ink::Mask(Mask {
+                    page,
+                    texels: [x, y, width, height],
+                    left,
+                    top,
+                }));
+            }
+            let evicted = self.atlas.evict()?;
+            self.cache
+                .retain(|_, ink| !matches!(ink, Ink::Mask(mask) if mask.page == evicted));
         }
     }
 }
@@ -120,4 +144,47 @@ fn rasterize_icon(tree: &usvg::Tree, pixels: u16) -> Option<Bitmap> {
         // Premultiplied, so alpha alone is the coverage.
         coverage: pixmap.pixels().iter().map(|pixel| pixel.alpha()).collect(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::atlas::{MAX_PAGES, PAGE_SIZE};
+    use super::*;
+
+    #[test]
+    fn an_evicted_page_forgets_its_inks() {
+        let square = br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1"/></svg>"#;
+        let icons = [usvg::Tree::from_data(square, &usvg::Options::default()).unwrap()];
+        let mut fonts = Fonts::default();
+        let mut inks = Inks::default();
+        let old = Key::Icon(IconId(0), 16);
+        inks.get(&mut fonts, &icons, old);
+        let full = PAGE_SIZE - 1;
+        // Fills the rest of the first page, under the old icon's shelf.
+        inks.atlas.insert(full, PAGE_SIZE - 18, &[]).unwrap();
+        while inks.atlas.insert(full, full, &[]).is_some() {}
+        inks.next_frame();
+        for page in 1..MAX_PAGES {
+            inks.atlas.touch(page);
+        }
+        inks.next_frame();
+        let new = Key::Icon(IconId(0), 32);
+        assert!(matches!(inks.get(&mut fonts, &icons, new), Ink::Mask(mask) if mask.page == 0));
+        assert_eq!(inks.keys().collect::<Vec<_>>(), [new]);
+    }
+
+    #[test]
+    fn a_mask_waits_while_every_page_is_on_screen() {
+        let square = br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1"/></svg>"#;
+        let icons = [usvg::Tree::from_data(square, &usvg::Options::default()).unwrap()];
+        let mut fonts = Fonts::default();
+        let mut inks = Inks::default();
+        let full = PAGE_SIZE - 1;
+        while inks.atlas.insert(full, full, &[]).is_some() {}
+        let key = Key::Icon(IconId(0), 16);
+        assert!(matches!(inks.get(&mut fonts, &icons, key), Ink::Missing));
+        assert_eq!(inks.keys().count(), 0);
+        inks.next_frame();
+        assert!(matches!(inks.get(&mut fonts, &icons, key), Ink::Mask(_)));
+    }
 }
