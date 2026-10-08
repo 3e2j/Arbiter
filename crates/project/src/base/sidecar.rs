@@ -5,21 +5,15 @@
 //! sidecar, a plain member's on its line in the sidecar holding it.
 //! A member that's an archive leaves it to its own sidecar.
 //!
-//! Written by its `Display`, one line per member. A mod changes it through
-//! [`Edit`], keyed by member path.
+//! A mod changes it through [`Edit`], keyed by member path.
 
-use std::{
-    collections::HashMap,
-    fmt::{self, Display},
-    mem,
-};
+use std::{collections::HashMap, mem};
 
 use diag::{Address, Code, Diagnostic, Diagnostics, Key, Location, Severity};
 use formats::rarc::{self, Rarc};
 use serde::{Deserialize, Serialize};
-use toml_writer::TomlWrite;
 
-use super::{Compression, assign};
+use super::Compression;
 
 pub const NAME: &str = ".rarc.toml";
 
@@ -29,21 +23,24 @@ pub const MISSING_MEMBER: Code = Code {
     summary: "a change names an archive member the base doesn't hold",
 };
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Sidecar {
     /// See `formats::rarc::Rarc::root`.
     pub root: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub compression: Option<Compression>,
     /// In entry order, which is also data order, so a rebuild keeps it.
     pub members: Vec<Member>,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Member {
     /// Under the archive's directory.
     pub path: String,
     /// What other files reference it by. `None` for one a modder added.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub compression: Option<Compression>,
     #[serde(default)]
     pub preload: Preload,
@@ -57,16 +54,6 @@ pub enum Preload {
     Mram,
     Aram,
     Disc,
-}
-
-impl Preload {
-    const fn name(self) -> &'static str {
-        match self {
-            Self::Mram => "mram",
-            Self::Aram => "aram",
-            Self::Disc => "disc",
-        }
-    }
 }
 
 impl From<rarc::Preload> for Preload {
@@ -266,55 +253,6 @@ impl formats::Patch for Sidecar {
     }
 }
 
-impl Display for Sidecar {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        assign(f, "root")?;
-        f.value(self.root.as_str())?;
-        f.newline()?;
-        if let Some(compression) = self.compression {
-            assign(f, "compression")?;
-            f.value(compression.name())?;
-            f.newline()?;
-        }
-        assign(f, "members")?;
-        f.open_array()?;
-        for member in &self.members {
-            f.newline()?;
-            f.write_str("    ")?;
-            f.open_inline_table()?;
-            f.space()?;
-            assign(f, "path")?;
-            f.value(member.path.as_str())?;
-            if let Some(id) = member.id {
-                f.val_sep()?;
-                f.space()?;
-                assign(f, "id")?;
-                f.value(id)?;
-            }
-            if let Some(compression) = member.compression {
-                f.val_sep()?;
-                f.space()?;
-                assign(f, "compression")?;
-                f.value(compression.name())?;
-            }
-            if member.preload != Preload::Mram {
-                f.val_sep()?;
-                f.space()?;
-                assign(f, "preload")?;
-                f.value(member.preload.name())?;
-            }
-            f.space()?;
-            f.close_inline_table()?;
-            f.val_sep()?;
-        }
-        if !self.members.is_empty() {
-            f.newline()?;
-        }
-        f.close_array()?;
-        f.newline()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use formats::{Edit as _, Patch as _};
@@ -457,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn writes_a_line_per_member_and_reads_back() {
+    fn reads_back() {
         let sidecar = Sidecar {
             root: "archive".to_owned(),
             compression: Some(Compression::Yaz0),
@@ -476,16 +414,7 @@ mod tests {
                 },
             ],
         };
-        let text = sidecar.to_string();
-        assert_eq!(
-            text,
-            "root = \"archive\"\n\
-             compression = \"yaz0\"\n\
-             members = [\n    \
-                 { path = \"zel_00.bmg\", id = 0, compression = \"yaz0\" },\n    \
-                 { path = \"sub/a.bmd\", preload = \"aram\" },\n\
-             ]\n"
-        );
+        let text = toml::to_string(&sidecar).unwrap();
         assert_eq!(toml::from_str::<Sidecar>(&text).unwrap(), sidecar);
     }
 
@@ -496,8 +425,7 @@ mod tests {
             compression: None,
             members: Vec::new(),
         };
-        let text = sidecar.to_string();
-        assert_eq!(text, "root = \"empty\"\nmembers = []\n");
+        let text = toml::to_string(&sidecar).unwrap();
         assert_eq!(toml::from_str::<Sidecar>(&text).unwrap(), sidecar);
     }
 }

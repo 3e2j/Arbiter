@@ -130,7 +130,6 @@ dependencies = [
  "tempfile",
  "thiserror",
  "toml",
- "toml_writer",
  "xxhash-rust",
 ]
 

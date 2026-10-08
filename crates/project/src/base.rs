@@ -22,7 +22,6 @@ pub mod sidecar;
 
 use std::{
     collections::{BTreeMap, btree_map},
-    fmt::{self, Display},
     fs::{self, File},
     io::{self, Write},
     path::{Path, PathBuf},
@@ -35,7 +34,6 @@ use pack::{
     unpack::{self, Piece},
 };
 use serde::{Deserialize, Serialize};
-use toml_writer::{TomlWrite, WriteTomlKey};
 
 use crate::{
     config::{Config, Country, Platform, Recorded, Region},
@@ -85,18 +83,18 @@ pub enum Error {
 /// - Its fix re-reads just those files from the disc's last known location. If
 ///   the disc moved, ask for `arbiter unpack <disc>`, which updates it.
 ///
-/// Written by its `Display`, one line per file.
-#[derive(Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct Manifest {
     pub files: BTreeMap<String, Entry>,
 }
 
 /// What an unpack made of one file, a disc file or an archive member.
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Entry {
     /// Of the stored bytes, with everything taken off.
     pub hash: Hash,
     /// What came off a disc file. A member's is in its archive's sidecar.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub compression: Option<Compression>,
 }
 
@@ -108,15 +106,6 @@ pub struct Entry {
 pub enum Compression {
     Yaz0 = 1,
     Yay0 = 2,
-}
-
-impl Compression {
-    pub(crate) const fn name(self) -> &'static str {
-        match self {
-            Self::Yaz0 => "yaz0",
-            Self::Yay0 => "yay0",
-        }
-    }
 }
 
 impl From<formats::compression::Compression> for Compression {
@@ -144,38 +133,12 @@ impl Manifest {
     }
 }
 
-impl Display for Manifest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.open_table_header()?;
-        f.key("files")?;
-        f.close_table_header()?;
-        f.newline()?;
-        for (path, entry) in &self.files {
-            assign(f, path.as_str())?;
-            f.open_inline_table()?;
-            f.space()?;
-            assign(f, "hash")?;
-            f.value(entry.hash.to_string())?;
-            if let Some(compression) = entry.compression {
-                f.val_sep()?;
-                f.space()?;
-                assign(f, "compression")?;
-                f.value(compression.name())?;
-            }
-            f.space()?;
-            f.close_inline_table()?;
-            f.newline()?;
-        }
-        Ok(())
-    }
-}
-
-/// Writes `key = `.
-pub(crate) fn assign(f: &mut fmt::Formatter<'_>, key: impl WriteTomlKey) -> fmt::Result {
-    f.key(key)?;
-    f.space()?;
-    f.keyval_sep()?;
-    f.space()
+/// `value` as TOML, for writing to `path`.
+fn to_toml(value: &impl Serialize, path: &Path) -> Result<String, Error> {
+    toml::to_string(value).map_err(|source| Error::Toml {
+        path: path.to_path_buf(),
+        source,
+    })
 }
 
 /// A disc unpacked to `base/.<id>.partial/`, not yet in place. Either
@@ -342,13 +305,10 @@ impl Out<'_> {
                     archive,
                     compression.map(Into::into),
                     members.iter().map(|c| c.map(Into::into)),
-                )
-                .to_string();
-                self.write(
-                    &format!("{path}/{}", sidecar::NAME),
-                    sidecar.as_bytes(),
-                    None,
-                )
+                );
+                let path = format!("{path}/{}", sidecar::NAME);
+                let text = to_toml(&sidecar, &self.tree.join(&path))?;
+                self.write(&path, text.as_bytes(), None)
             }
         }
     }
@@ -392,7 +352,7 @@ impl Staged {
         fs::rename(&self.tree, &dest).map_err(io_err(&dest))?;
 
         let path = base.join(format!("{}.toml", self.id));
-        write_atomic(&path, self.manifest.to_string().as_bytes())
+        write_atomic(&path, to_toml(&self.manifest, &path)?.as_bytes())
     }
 
     /// # Errors
@@ -585,7 +545,7 @@ mod tests {
     }
 
     #[test]
-    fn manifest_writes_a_line_per_file_and_reads_back() {
+    fn manifest_reads_back() {
         let manifest = Manifest {
             files: [
                 ("res/a.arc".to_owned(), entry(1, Some(Compression::Yaz0))),
@@ -593,13 +553,7 @@ mod tests {
             ]
             .into(),
         };
-        let text = manifest.to_string();
-        assert_eq!(
-            text,
-            "[files]\n\
-             \"res/a.arc\" = { hash = \"xxh3:00000000000000000000000000000001\", compression = \"yaz0\" }\n\
-             \"sys/main.dol\" = { hash = \"xxh3:00000000000000000000000000000002\" }\n"
-        );
+        let text = toml::to_string(&manifest).unwrap();
         assert_eq!(toml::from_str::<Manifest>(&text).unwrap(), manifest);
     }
 
