@@ -5,6 +5,7 @@
 //! only part that knows winit, and [`render`] the only part that knows wgpu.
 
 pub mod canvas;
+mod cast;
 pub mod host;
 pub mod platform;
 pub mod render;

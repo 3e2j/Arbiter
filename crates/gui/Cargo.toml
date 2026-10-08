@@ -10,10 +10,15 @@ name = "gui"
 
 [dependencies]
 bytemuck.workspace = true
+fontique.workspace = true
 pollster.workspace = true
+resvg.workspace = true
+skrifa.workspace = true
 thiserror.workspace = true
+unicode-script.workspace = true
 wgpu.workspace = true
 winit.workspace = true
+zeno.workspace = true
 
 [lints]
 workspace = true

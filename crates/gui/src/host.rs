@@ -5,7 +5,7 @@
 
 use std::error::Error;
 
-use crate::canvas::{Canvas, Color, Rect};
+use crate::canvas::{AtlasUpdate, Canvas, Color, Glyphs, Rect};
 
 /// The app's side of the host.
 pub trait App: Sized {
@@ -18,17 +18,18 @@ pub trait App: Sized {
     fn new(start: &mut Startup) -> Result<Self, Box<dyn Error>>;
     /// Draws one pass into `canvas`, which covers `rect`.
     // TODO: take `&mut Context` once `gui::context` exists.
-    fn ui(&mut self, rect: Rect, canvas: &mut Canvas);
+    fn ui(&mut self, rect: Rect, canvas: &mut Canvas, glyphs: &mut Glyphs);
     /// After the last pass.
     fn on_close(&mut self) {}
 }
 
 /// What the app sets up before the first pass.
-// TODO: `glyphs` once `gui::canvas` has them, and `wake` once something runs
-// off the main thread, such as `app::watch`.
-pub struct Startup {
+// TODO: `wake` once something runs off the main thread, such as `app::watch`.
+pub struct Startup<'a> {
     // TODO: becomes `theme: Theme` from `gui::context`.
     pub background: Color,
+    /// Where the app adds its fonts and icons.
+    pub glyphs: &'a mut Glyphs,
 }
 
 // TODO: input, layout and memory, once `gui::input`, `gui::layout` and
@@ -36,6 +37,7 @@ pub struct Startup {
 pub struct Host<A> {
     app: A,
     background: Color,
+    glyphs: Glyphs,
 }
 
 impl<A: App> Host<A> {
@@ -43,22 +45,39 @@ impl<A: App> Host<A> {
     ///
     /// When [`App::new`] fails.
     pub fn new() -> Result<Self, Box<dyn Error>> {
+        let mut glyphs = Glyphs::default();
         let mut start = Startup {
             background: Color([0., 0., 0., 1.]),
+            glyphs: &mut glyphs,
         };
         let app = A::new(&mut start)?;
+        let background = start.background;
         Ok(Self {
             app,
-            background: start.background,
+            background,
+            glyphs,
         })
     }
 
-    /// Runs one pass over `rect`, the window in logical pixels.
+    /// Runs one pass over `rect`, the window in logical pixels, with `scale`
+    /// physical pixels per logical one.
     // TODO: return `Out`.
-    pub fn draw(&mut self, rect: Rect, canvas: &mut Canvas) {
+    pub fn draw(&mut self, rect: Rect, scale: f32, canvas: &mut Canvas) {
+        self.glyphs.set_scale(scale);
         canvas.clear(rect);
         canvas.background = self.background;
-        self.app.ui(rect, canvas);
+        self.app.ui(rect, canvas, &mut self.glyphs);
+    }
+
+    /// Makes the next [`Self::take_atlas_update`] hold the whole atlas, for a
+    /// new GPU that has none of it.
+    pub fn reupload_atlas(&mut self) {
+        self.glyphs.reupload();
+    }
+
+    /// What the passes since the last call added to the atlas, for the GPU.
+    pub fn take_atlas_update(&mut self) -> Option<AtlasUpdate<'_>> {
+        self.glyphs.take_update()
     }
 
     pub fn close(&mut self) {

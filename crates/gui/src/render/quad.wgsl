@@ -1,20 +1,25 @@
 // One instance per Quad from gui::canvas, drawn as a 4-vertex strip. Corners
 // and borders come from a signed distance to the rounded rect, antialiased
-// over one physical pixel.
+// over one physical pixel. Text and icons scale the fill by the atlas.
 
 struct Viewport {
     // In logical pixels.
     size: vec2<f32>,
+    // Physical pixels per logical one.
+    scale: f32,
 }
 
 @group(0) @binding(0) var<uniform> viewport: Viewport;
+// One coverage byte per texel.
+@group(1) @binding(0) var atlas: texture_2d<f32>;
 
 struct Instance {
     @location(0) rect: vec4<f32>,
     @location(1) fill: vec4<f32>,
     @location(2) border: vec4<f32>,
     @location(3) radii: vec4<f32>,
-    @location(4) border_width: f32,
+    @location(4) texels: vec4<f32>,
+    @location(5) border_width: f32,
 }
 
 struct Varyings {
@@ -26,6 +31,7 @@ struct Varyings {
     @location(3) @interpolate(flat) border: vec4<f32>,
     @location(4) @interpolate(flat) radii: vec4<f32>,
     @location(5) @interpolate(flat) border_width: f32,
+    @location(6) @interpolate(flat) texels: vec4<f32>,
 }
 
 @vertex
@@ -41,6 +47,7 @@ fn vs(@builtin(vertex_index) i: u32, quad: Instance) -> Varyings {
     out.border = quad.border;
     out.radii = quad.radii;
     out.border_width = quad.border_width;
+    out.texels = quad.texels;
     return out;
 }
 
@@ -53,6 +60,18 @@ fn rounded_rect(p: vec2<f32>, half: vec2<f32>, radii: vec4<f32>) -> f32 {
     return min(max(q.x, q.y), 0.0) + length(max(q, vec2<f32>(0.0))) - r;
 }
 
+// The atlas texel under this pixel, or full coverage for a quad that samples
+// nothing. A sampling quad is its texel area's size in physical pixels, so
+// each pixel reads exactly one texel.
+fn coverage_under(in: Varyings) -> f32 {
+    if in.texels.z <= 0.0 {
+        return 1.0;
+    }
+    let texel = floor((in.local + in.half) * viewport.scale);
+    let at = in.texels.xy + clamp(texel, vec2<f32>(0.0), in.texels.zw - 1.0);
+    return textureLoad(atlas, vec2<i32>(at), 0).r;
+}
+
 @fragment
 fn fs(in: Varyings) -> @location(0) vec4<f32> {
     let d = rounded_rect(in.local, in.half, in.radii);
@@ -60,7 +79,8 @@ fn fs(in: Varyings) -> @location(0) vec4<f32> {
     let coverage = clamp(0.5 - d / pixel, 0.0, 1.0);
     let inside_border = clamp(0.5 - (d + in.border_width) / pixel, 0.0, 1.0);
     let t = select(inside_border, 1.0, in.border_width <= 0.0);
-    let fill = vec4<f32>(in.fill.rgb * in.fill.a, in.fill.a);
+    let alpha = in.fill.a * coverage_under(in);
+    let fill = vec4<f32>(in.fill.rgb * alpha, alpha);
     let border = vec4<f32>(in.border.rgb * in.border.a, in.border.a);
     return mix(border, fill, t) * coverage;
 }

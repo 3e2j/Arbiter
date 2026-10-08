@@ -8,6 +8,7 @@ use std::{
 use super::pacer::Pacer;
 use crate::{
     canvas::{Canvas, Rect},
+    cast::narrow,
     host::{App, Host},
     render::{self, Gpu},
 };
@@ -41,8 +42,8 @@ pub enum Error {
 ///
 /// # Errors
 ///
-/// When the app can't start, the window or its GPU surface can't be opened,
-/// or the surface is lost.
+/// When the app can't start, or the window or its GPU surface can't be opened,
+/// including again after the surface is lost.
 pub fn run<A: App>() -> Result<(), Error> {
     let mut runner = Runner {
         host: Host::<A>::new().map_err(Error::App)?,
@@ -73,13 +74,7 @@ impl Open {
     fn new(event_loop: &ActiveEventLoop, title: &str) -> Result<Self, Error> {
         let window =
             Arc::new(event_loop.create_window(Window::default_attributes().with_title(title))?);
-        let size = window.inner_size();
-        let gpu = Gpu::new(
-            // The surface holds a clone, so the window can't close before the surface is dropped.
-            Arc::clone(&window),
-            [size.width, size.height],
-            window.scale_factor(),
-        )?;
+        let gpu = gpu(&window)?;
         let pacer = Pacer::new((!compositor_paced(event_loop)).then(|| interval(&window)));
         Ok(Self { window, gpu, pacer })
     }
@@ -92,6 +87,17 @@ impl Open {
             .to_logical::<f32>(self.window.scale_factor());
         Rect::new(0., 0., size.width, size.height)
     }
+}
+
+/// A new surface on `window`, at its current size and scale.
+fn gpu(window: &Arc<Window>) -> Result<Gpu, render::Error> {
+    let size = window.inner_size();
+    Gpu::new(
+        // The surface holds a clone, so the window can't close before the surface is dropped.
+        Arc::clone(window),
+        [size.width, size.height],
+        window.scale_factor(),
+    )
 }
 
 impl<A> Runner<A> {
@@ -130,11 +136,25 @@ impl<A: App> ApplicationHandler for Runner<A> {
                 let size = open.window.inner_size();
                 open.gpu
                     .resize([size.width, size.height], open.window.scale_factor());
-                self.host.draw(open.rect(), &mut self.canvas);
+                let scale = narrow(open.window.scale_factor());
+                self.host.draw(open.rect(), scale, &mut self.canvas);
+                let atlas = self.host.take_atlas_update();
                 // Without this, Wayland gets a frame per event and shows them all in turn.
                 let window = &open.window;
-                if let Err(error) = open.gpu.draw(&self.canvas, || window.pre_present_notify()) {
-                    self.fail(event_loop, error.into());
+                match open
+                    .gpu
+                    .draw(&self.canvas, atlas, || window.pre_present_notify())
+                {
+                    Ok(()) => {}
+                    Err(render::Error::Lost) => match gpu(&open.window) {
+                        Ok(gpu) => {
+                            open.gpu = gpu;
+                            self.host.reupload_atlas();
+                            open.pacer.request();
+                        }
+                        Err(error) => self.fail(event_loop, error.into()),
+                    },
+                    Err(error) => self.fail(event_loop, error.into()),
                 }
             }
             _ => {}

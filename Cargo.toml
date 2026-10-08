@@ -32,6 +32,11 @@ winit = "0.30"
 wgpu = "30"
 pollster = "0.4"
 bytemuck = { version = "1", features = ["derive"] }
+skrifa = "0.44"
+zeno = "0.3"
+resvg = { version = "0.48", default-features = false }
+fontique = "0.11"
+unicode-script = "0.5"
 
 [workspace.lints.clippy]
 pedantic = { level = "deny", priority = -1 }

@@ -1,13 +1,15 @@
 //! Draws a [`Canvas`] into any surface wgpu accepts, and never sees a window.
 //!
 //! Every quad is one instance of a 4-vertex strip, and a new draw call starts
-//! only where the clip changes.
+//! only where the clip changes. Text and icons read one atlas texture, which
+//! takes only the rows that changed each frame.
 
 use std::ops::Range;
 
 use wgpu::{CurrentSurfaceTexture, SurfaceTarget};
 
-use crate::canvas::{Canvas, Quad, Rect};
+use crate::canvas::{AtlasUpdate, Canvas, Quad, Rect};
+use crate::cast::{narrow, pixel};
 
 const QUAD_SIZE: wgpu::BufferAddress = size_of::<Quad>() as wgpu::BufferAddress;
 
@@ -44,6 +46,15 @@ pub struct Gpu {
     bind_group: wgpu::BindGroup,
     /// Grows to the largest canvas drawn so far, and never shrinks.
     instances: wgpu::Buffer,
+    atlas: Atlas,
+}
+
+/// The atlas texture and the bind group that reads it, both replaced when the
+/// atlas grows.
+struct Atlas {
+    layout: wgpu::BindGroupLayout,
+    texture: wgpu::Texture,
+    bind_group: wgpu::BindGroup,
 }
 
 impl Gpu {
@@ -90,7 +101,7 @@ impl Gpu {
             label: Some("viewport"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -107,7 +118,8 @@ impl Gpu {
                 resource: viewport.as_entire_binding(),
             }],
         });
-        let pipeline = quad_pipeline(&device, &viewport_layout, config.format);
+        let atlas = Atlas::new(&device);
+        let pipeline = quad_pipeline(&device, [&viewport_layout, &atlas.layout], config.format);
         let instances = instance_buffer(&device, 1);
 
         let gpu = Self {
@@ -120,6 +132,7 @@ impl Gpu {
             viewport,
             bind_group,
             instances,
+            atlas,
         };
         gpu.write_viewport();
         Ok(gpu)
@@ -140,15 +153,27 @@ impl Gpu {
         self.write_viewport();
     }
 
-    /// Clears the surface to the canvas's background and draws its quads, calling
-    /// `before_present` right before the frame goes out. Skips the frame, without
-    /// calling it, when the surface isn't ready, such as while it's hidden.
+    /// Uploads what changed in the atlas, then clears the surface to the
+    /// canvas's background and draws its quads, calling `before_present` right
+    /// before the frame goes out.
+    ///
+    /// Skips the frame, without calling it, when the surface isn't ready, such
+    /// as while it's hidden, but still takes the atlas update, since it won't
+    /// come again.
     ///
     /// # Errors
     ///
     /// [`Error::Lost`] when the surface is gone and needs a new [`Gpu`], and
     /// [`Error::TooManyQuads`] when the canvas can't fit in one buffer.
-    pub fn draw(&mut self, canvas: &Canvas, before_present: impl FnOnce()) -> Result<(), Error> {
+    pub fn draw(
+        &mut self,
+        canvas: &Canvas,
+        atlas: Option<AtlasUpdate>,
+        before_present: impl FnOnce(),
+    ) -> Result<(), Error> {
+        if let Some(update) = atlas {
+            self.atlas.write(&self.device, &self.queue, &update);
+        }
         let (frame, suboptimal) = match self.surface.get_current_texture() {
             CurrentSurfaceTexture::Success(frame) => (frame, false),
             CurrentSurfaceTexture::Suboptimal(frame) => (frame, true),
@@ -185,6 +210,7 @@ impl Gpu {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.set_bind_group(1, &self.atlas.bind_group, &[]);
             pass.set_vertex_buffer(0, self.instances.slice(..));
             for (clip, quads) in canvas.batches() {
                 let Some([left, top, width, height]) = self.scissor(clip) else {
@@ -204,9 +230,9 @@ impl Gpu {
     }
 
     fn write_viewport(&self) {
-        let size =
+        let [width, height] =
             [self.config.width, self.config.height].map(|n| narrow(f64::from(n) / self.scale));
-        let viewport = [size[0], size[1], 0., 0.];
+        let viewport = [width, height, narrow(self.scale), 0.];
         self.queue
             .write_buffer(&self.viewport, 0, bytemuck::cast_slice(&viewport));
     }
@@ -257,13 +283,13 @@ fn instance_range(quads: Range<usize>) -> Result<Range<u32>, Error> {
 
 fn quad_pipeline(
     device: &wgpu::Device,
-    viewport_layout: &wgpu::BindGroupLayout,
+    [viewport_layout, atlas_layout]: [&wgpu::BindGroupLayout; 2],
     format: wgpu::TextureFormat,
 ) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::include_wgsl!("quad.wgsl"));
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("quad"),
-        bind_group_layouts: &[Some(viewport_layout)],
+        bind_group_layouts: &[Some(viewport_layout), Some(atlas_layout)],
         immediate_size: 0,
     });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -277,7 +303,8 @@ fn quad_pipeline(
                 array_stride: QUAD_SIZE,
                 step_mode: wgpu::VertexStepMode::Instance,
                 attributes: &wgpu::vertex_attr_array![
-                    0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4, 4 => Float32,
+                    0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4,
+                    4 => Float32x4, 5 => Float32,
                 ],
             })],
         },
@@ -302,14 +329,88 @@ fn quad_pipeline(
     })
 }
 
-// wgpu takes f32 positions and u32 pixels, and Rust has no conversion into
-// either from f64 that isn't `as`. Both saturate, which is what's wanted here.
-#[allow(clippy::cast_possible_truncation)]
-fn narrow(v: f64) -> f32 {
-    v as f32
+impl Atlas {
+    /// A 1 by 1 texture until the first update.
+    fn new(device: &wgpu::Device) -> Self {
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("atlas"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            }],
+        });
+        let (texture, bind_group) = atlas_texture(device, &layout, 1);
+        Self {
+            layout,
+            texture,
+            bind_group,
+        }
+    }
+
+    fn write(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, update: &AtlasUpdate) {
+        let size = u32::from(update.size);
+        if self.texture.width() != size {
+            (self.texture, self.bind_group) = atlas_texture(device, &self.layout, size);
+        }
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: 0,
+                    y: u32::from(update.rows.start),
+                    z: 0,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            update.pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(size),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width: size,
+                height: u32::from(update.rows.end - update.rows.start),
+                depth_or_array_layers: 1,
+            },
+        );
+    }
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn pixel(v: f64) -> u32 {
-    v.round() as u32
+fn atlas_texture(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    size: u32,
+) -> (wgpu::Texture, wgpu::BindGroup) {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("atlas"),
+        size: wgpu::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::R8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("atlas"),
+        layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::TextureView(&view),
+        }],
+    });
+    (texture, bind_group)
 }

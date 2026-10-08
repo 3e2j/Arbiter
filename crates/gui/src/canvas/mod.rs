@@ -2,9 +2,17 @@
 //! [`render`](crate::render) draws it.
 //!
 //! Every shape is one [`Quad`]. The shader rounds its corners and draws its
-//! border per pixel, so a whole screen batches into a draw per clip.
+//! border per pixel, and text and icons are quads that sample one atlas,
+//! so a whole screen batches into a draw per clip.
+
+mod atlas;
+mod glyphs;
+mod system;
 
 use std::ops::Range;
+
+pub use atlas::AtlasUpdate;
+pub use glyphs::{Error, FontFile, FontId, Glyphs, IconId, LineMetrics};
 
 /// In logical pixels, from the window's top left.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -94,6 +102,9 @@ pub struct Quad {
     border: [f32; 4],
     /// Top left, top right, bottom right, bottom left.
     radii: [f32; 4],
+    /// `x, y, width, height` in atlas texels, whose coverage scales the fill.
+    /// Zero-sized for a quad that samples nothing.
+    texels: [f32; 4],
     border_width: f32,
 }
 
@@ -105,8 +116,17 @@ impl Quad {
             fill: fill.0,
             border: [0.; 4],
             radii: [0.; 4],
+            texels: [0.; 4],
             border_width: 0.,
         }
+    }
+
+    /// `rect` must be the texel area's size in physical pixels, so each pixel
+    /// reads the one texel under it.
+    pub(crate) const fn sampled(rect: Rect, texels: [f32; 4], fill: Color) -> Self {
+        let mut quad = Self::new(rect, fill);
+        quad.texels = texels;
+        quad
     }
 
     #[must_use]
