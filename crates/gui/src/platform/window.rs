@@ -108,19 +108,20 @@ impl<A: App> ApplicationHandler for Runner<A> {
         let Some(open) = &mut self.open else { return };
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::Resized(size) => {
-                open.gpu
-                    .resize([size.width, size.height], open.window.scale_factor());
-                open.window.request_redraw();
-            }
-            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                let size = open.window.inner_size();
-                open.gpu.resize([size.width, size.height], scale_factor);
+            // A drag sends many of these per refresh. They only ask for a redraw, which
+            // winit holds until the compositor shows the last frame, so the surface is
+            // resized once per refresh, to the latest size.
+            WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
                 open.window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
+                let size = open.window.inner_size();
+                open.gpu
+                    .resize([size.width, size.height], open.window.scale_factor());
                 self.host.draw(open.rect(), &mut self.canvas);
-                if let Err(error) = open.gpu.draw(&self.canvas) {
+                // Without this, Wayland gets a frame per event and shows them all in turn.
+                let window = &open.window;
+                if let Err(error) = open.gpu.draw(&self.canvas, || window.pre_present_notify()) {
                     self.fail(event_loop, error.into());
                 }
             }

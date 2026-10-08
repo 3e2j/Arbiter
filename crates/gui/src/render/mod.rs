@@ -69,9 +69,15 @@ impl Gpu {
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))?;
         // wgpu rejects a zero-sized surface, which a window can report before it's mapped.
         let [width, height] = size.map(|n| n.max(1));
-        let config = surface
-            .get_default_config(&adapter, width, height)
-            .ok_or(Error::Unsupported)?;
+        // The default takes the driver's first present mode, which can be Mailbox or
+        // Immediate, so vsync is set here. Every backend must support Fifo.
+        let config = wgpu::SurfaceConfiguration {
+            present_mode: wgpu::PresentMode::Fifo,
+            desired_maximum_frame_latency: 1,
+            ..surface
+                .get_default_config(&adapter, width, height)
+                .ok_or(Error::Unsupported)?
+        };
         surface.configure(&device, &config);
 
         let viewport = device.create_buffer(&wgpu::BufferDescriptor {
@@ -119,9 +125,12 @@ impl Gpu {
         Ok(gpu)
     }
 
-    /// A zero size, such as a minimized window, keeps the last one.
+    /// Reconfigures the surface when the size or scale changed. A zero size,
+    /// such as a minimized window, keeps the last one.
     pub fn resize(&mut self, [width, height]: [u32; 2], scale: f64) {
-        if width == 0 || height == 0 {
+        let same = [width, height] == [self.config.width, self.config.height]
+            && scale.total_cmp(&self.scale).is_eq();
+        if same || width == 0 || height == 0 {
             return;
         }
         self.config.width = width;
@@ -131,14 +140,15 @@ impl Gpu {
         self.write_viewport();
     }
 
-    /// Clears the surface to the canvas's background and draws its quads.
-    /// Skips the frame when the surface isn't ready, such as while it's hidden.
+    /// Clears the surface to the canvas's background and draws its quads, calling
+    /// `before_present` right before the frame goes out. Skips the frame, without
+    /// calling it, when the surface isn't ready, such as while it's hidden.
     ///
     /// # Errors
     ///
     /// [`Error::Lost`] when the surface is gone and needs a new [`Gpu`], and
     /// [`Error::TooManyQuads`] when the canvas can't fit in one buffer.
-    pub fn draw(&mut self, canvas: &Canvas) -> Result<(), Error> {
+    pub fn draw(&mut self, canvas: &Canvas, before_present: impl FnOnce()) -> Result<(), Error> {
         let (frame, suboptimal) = match self.surface.get_current_texture() {
             CurrentSurfaceTexture::Success(frame) => (frame, false),
             CurrentSurfaceTexture::Suboptimal(frame) => (frame, true),
@@ -185,6 +195,7 @@ impl Gpu {
             }
         }
         self.queue.submit([encoder.finish()]);
+        before_present();
         self.queue.present(frame);
         if suboptimal {
             self.surface.configure(&self.device, &self.config);
