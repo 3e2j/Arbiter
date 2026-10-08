@@ -42,6 +42,12 @@ pub(super) struct Packed {
     pub top: i16,
 }
 
+struct Waiting {
+    bitmap: Bitmap,
+    /// Whether it was asked for this frame. One that wasn't is dropped.
+    asked: bool,
+}
+
 /// A glyph or icon filled in, before it's packed.
 pub(super) struct Bitmap {
     pub format: Format,
@@ -56,6 +62,9 @@ pub(super) struct Bitmap {
 
 pub(super) struct Inks {
     cache: HashMap<Key, Ink>,
+    /// Images rasterized while their atlas had no room and nothing it could
+    /// evict, so a later frame packs them without rasterizing again.
+    waiting: HashMap<Key, Waiting>,
     pub coverage: Atlas,
     pub color: Atlas,
 }
@@ -64,6 +73,7 @@ impl Default for Inks {
     fn default() -> Self {
         Self {
             cache: HashMap::new(),
+            waiting: HashMap::new(),
             coverage: Atlas::new(Format::Coverage),
             color: Atlas::new(Format::Color),
         }
@@ -80,23 +90,33 @@ impl Inks {
             }
             return ink;
         }
-        let bitmap = match key {
-            Key::Glyph(font, id, pixels) => fonts.rasterize(font, id, pixels),
-            Key::Icon(icon, pixels) => icons
-                .get(usize::from(icon.0))
-                .and_then(|tree| rasterize_icon(tree, pixels)),
+        let bitmap = match self.waiting.remove(&key) {
+            Some(waiting) => Some(waiting.bitmap),
+            None => match key {
+                Key::Glyph(font, id, pixels) => fonts.rasterize(font, id, pixels),
+                Key::Icon(icon, pixels) => icons
+                    .get(usize::from(icon.0))
+                    .and_then(|tree| rasterize_icon(tree, pixels)),
+            },
         };
-        let packed = bitmap.map_or(Some(Ink::Missing), |bitmap| self.pack(&bitmap));
-        // Not cached when every page was drawn this frame, so it's packed
-        // again on a later one.
-        let Some(ink) = packed else {
+        let Some(bitmap) = bitmap else {
+            self.cache.insert(key, Ink::Missing);
+            return Ink::Missing;
+        };
+        // Every page was drawn this frame. A box until one wasn't.
+        let Some(ink) = self.pack(&bitmap) else {
+            let asked = true;
+            self.waiting.insert(key, Waiting { bitmap, asked });
             return Ink::Missing;
         };
         self.cache.insert(key, ink);
         ink
     }
 
+    /// Drops the waiting images last frame didn't ask for.
     pub fn next_frame(&mut self) {
+        self.waiting
+            .retain(|_, waiting| std::mem::take(&mut waiting.asked));
         self.coverage.next_frame();
         self.color.next_frame();
     }
@@ -104,6 +124,7 @@ impl Inks {
     /// Forgets every image, for a new scale.
     pub fn clear(&mut self) {
         self.cache.clear();
+        self.waiting.clear();
         self.coverage.clear();
         self.color.clear();
     }
@@ -191,10 +212,14 @@ mod tests {
     use super::super::atlas::{MAX_PAGES, PAGE_SIZE};
     use super::*;
 
+    fn square() -> [usvg::Tree; 1] {
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1"/></svg>"#;
+        [usvg::Tree::from_data(svg, &usvg::Options::default()).unwrap()]
+    }
+
     #[test]
     fn an_evicted_page_forgets_its_inks() {
-        let square = br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1"/></svg>"#;
-        let icons = [usvg::Tree::from_data(square, &usvg::Options::default()).unwrap()];
+        let icons = square();
         let mut fonts = Fonts::default();
         let mut inks = Inks::default();
         let old = Key::Icon(IconId(0), 16);
@@ -215,18 +240,34 @@ mod tests {
         assert_eq!(inks.keys().collect::<Vec<_>>(), [new]);
     }
 
-    #[test]
-    fn a_mask_waits_while_every_page_is_on_screen() {
-        let square = br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1"/></svg>"#;
-        let icons = [usvg::Tree::from_data(square, &usvg::Options::default()).unwrap()];
-        let mut fonts = Fonts::default();
+    /// Every page full and drawn this frame.
+    fn full_atlas() -> Inks {
         let mut inks = Inks::default();
         let full = PAGE_SIZE - 1;
         while inks.coverage.insert(full, full, &[]).is_some() {}
+        inks
+    }
+
+    #[test]
+    fn a_mask_waits_while_every_page_is_on_screen() {
+        let mut fonts = Fonts::default();
+        let mut inks = full_atlas();
         let key = Key::Icon(IconId(0), 16);
-        assert!(matches!(inks.get(&mut fonts, &icons, key), Ink::Missing));
+        assert!(matches!(inks.get(&mut fonts, &square(), key), Ink::Missing));
         assert_eq!(inks.keys().count(), 0);
         inks.next_frame();
-        assert!(matches!(inks.get(&mut fonts, &icons, key), Ink::Packed(_)));
+        // No icons to rasterize from, so only the waiting mask can be packed.
+        assert!(matches!(inks.get(&mut fonts, &[], key), Ink::Packed(_)));
+    }
+
+    #[test]
+    fn a_waiting_mask_not_asked_for_is_dropped() {
+        let mut fonts = Fonts::default();
+        let mut inks = full_atlas();
+        let key = Key::Icon(IconId(0), 16);
+        inks.get(&mut fonts, &square(), key);
+        inks.next_frame();
+        inks.next_frame();
+        assert!(inks.waiting.is_empty());
     }
 }
