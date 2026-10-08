@@ -47,7 +47,7 @@ impl<A: App> Host<A> {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         let mut glyphs = Glyphs::default();
         let mut start = Startup {
-            background: Color([0., 0., 0., 1.]),
+            background: Color::hex(0),
             glyphs: &mut glyphs,
         };
         let app = A::new(&mut start)?;

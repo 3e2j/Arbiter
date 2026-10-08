@@ -17,10 +17,12 @@ struct Viewport {
 
 struct Instance {
     @location(0) rect: vec4<f32>,
-    @location(1) fill: vec4<f32>,
-    @location(2) border: vec4<f32>,
-    @location(3) radii: vec4<f32>,
-    @location(4) texels: vec4<f32>,
+    @location(1) texels: vec4<u32>,
+    // In sixteenths of a logical pixel.
+    @location(2) radii: vec4<u32>,
+    // sRGB, straight alpha.
+    @location(3) fill: vec4<f32>,
+    @location(4) border: vec4<f32>,
     @location(5) border_width: f32,
     // The page, then 0 for the coverage atlas or 1 for the colour one.
     @location(6) atlas: vec2<u32>,
@@ -48,13 +50,19 @@ fn vs(@builtin(vertex_index) i: u32, quad: Instance) -> Varyings {
     out.position = vec4<f32>(ndc.x, -ndc.y, 0.0, 1.0);
     out.local = (corner - 0.5) * size;
     out.half = size * 0.5;
-    out.fill = quad.fill;
-    out.border = quad.border;
-    out.radii = quad.radii;
+    out.fill = linear(quad.fill);
+    out.border = linear(quad.border);
+    out.radii = vec4<f32>(quad.radii) / 16.0;
     out.border_width = quad.border_width;
-    out.texels = quad.texels;
+    out.texels = vec4<f32>(quad.texels);
     out.atlas = quad.atlas;
     return out;
+}
+
+fn linear(c: vec4<f32>) -> vec4<f32> {
+    let low = c.rgb / 12.92;
+    let high = pow((c.rgb + 0.055) / 1.055, vec3<f32>(2.4));
+    return vec4<f32>(select(high, low, c.rgb <= vec3<f32>(0.04045)), c.a);
 }
 
 // Negative inside. Radii are top left, top right, bottom right, bottom left.

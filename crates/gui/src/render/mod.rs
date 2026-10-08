@@ -207,7 +207,7 @@ impl Gpu {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-        let [r, g, b, a] = canvas.background.0.map(f64::from);
+        let [r, g, b, a] = canvas.background.linear().map(f64::from);
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
@@ -358,8 +358,8 @@ fn quad_pipeline(
         array_stride: QUAD_SIZE,
         step_mode: wgpu::VertexStepMode::Instance,
         attributes: &wgpu::vertex_attr_array![
-            0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4,
-            4 => Float32x4, 5 => Float32, 6 => Uint16x2,
+            0 => Float32x4, 1 => Uint16x4, 2 => Uint16x4, 3 => Unorm8x4,
+            4 => Unorm8x4, 5 => Float32, 6 => Uint16x2,
         ],
     };
     pipeline(
@@ -380,7 +380,7 @@ fn triangle_pipeline(
     let vertices = wgpu::VertexBufferLayout {
         array_stride: VERTEX_SIZE,
         step_mode: wgpu::VertexStepMode::Vertex,
-        attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4],
+        attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Unorm8x4],
     };
     pipeline(
         device,

@@ -13,7 +13,7 @@ struct Viewport {
 
 struct Vertex {
     @location(0) at: vec2<f32>,
-    // Straight alpha.
+    // sRGB, straight alpha.
     @location(1) color: vec4<f32>,
 }
 
@@ -27,8 +27,14 @@ fn vs(vertex: Vertex) -> Varyings {
     let ndc = vertex.at / viewport.size * 2.0 - 1.0;
     var out: Varyings;
     out.position = vec4<f32>(ndc.x, -ndc.y, 0.0, 1.0);
-    out.color = vertex.color;
+    out.color = linear(vertex.color);
     return out;
+}
+
+fn linear(c: vec4<f32>) -> vec4<f32> {
+    let low = c.rgb / 12.92;
+    let high = pow((c.rgb + 0.055) / 1.055, vec3<f32>(2.4));
+    return vec4<f32>(select(high, low, c.rgb <= vec3<f32>(0.04045)), c.a);
 }
 
 @fragment

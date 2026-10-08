@@ -285,16 +285,15 @@ fn place(
         // The pen keeps its fraction so advances don't drift, but each image
         // lands on a whole pixel, where its texels map one to one.
         Ink::Packed(packed) => {
-            let [u, v, width, height] = packed.texels.map(f32::from);
+            let [.., width, height] = packed.texels.map(f32::from);
             let x = (pen[0] + f32::from(packed.left)).round();
             let y = pen[1].round() - f32::from(packed.top);
             let rect = logical([x, y, width, height]);
-            let texels = [u, v, width, height];
             canvas.quad(Quad::sampled(
                 rect,
                 packed.format,
                 packed.page,
-                texels,
+                packed.texels,
                 color,
             ));
         }
@@ -328,7 +327,7 @@ mod tests {
         name: "Noto Sans JP",
         data: asset!("fonts/noto-sans-jp/NotoSansJP[wght].ttf"),
     };
-    const WHITE: Color = Color([1.; 4]);
+    const WHITE: Color = Color([u8::MAX; 4]);
 
     struct Loaded {
         glyphs: Glyphs,
@@ -460,9 +459,9 @@ mod tests {
             panic!("two quads")
         };
         for quad in [crab, hangul] {
-            assert_eq!(quad.texels, [0.; 4]);
-            assert_eq!(quad.fill, Color::TRANSPARENT.0);
-            assert_eq!(quad.border, WHITE.0);
+            assert_eq!(quad.texels, [0; 4]);
+            assert_eq!(quad.fill, Color::TRANSPARENT);
+            assert_eq!(quad.border, WHITE);
             assert!((quad.rect[1] + quad.rect[3] - 20.).abs() < 1e-3);
         }
         assert!(hangul.rect[0] + hangul.rect[2] < end);
@@ -478,7 +477,7 @@ mod tests {
         let mut canvas = canvas();
         glyphs.text(&mut canvas, sans, [0., 20.], 14., "한국어", WHITE);
         assert_eq!(canvas.quads().len(), 3);
-        assert!(canvas.quads().iter().all(|quad| quad.texels[2] > 0.));
+        assert!(canvas.quads().iter().all(|quad| quad.texels[2] > 0));
     }
 
     #[test]
@@ -509,7 +508,7 @@ mod tests {
         let [quad] = canvas.quads() else {
             panic!("one quad")
         };
-        assert_eq!(quad.border, WHITE.0);
+        assert_eq!(quad.border, WHITE);
         let [x, y, w, h] = quad.rect;
         assert!(
             x > 0. && y > 0. && x + w < 16. && y + h < 16.,

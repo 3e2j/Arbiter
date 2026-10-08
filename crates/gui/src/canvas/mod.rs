@@ -1,8 +1,8 @@
 //! What gets drawn. A pass writes quads and triangles into a [`Canvas`], and
 //! [`render`](crate::render) draws it.
 //!
-//! Most shapes are one [`Quad`]. The shader rounds its corners and draws its
-//! border per pixel, and text and icons are quads that sample an atlas. Anything
+//! Most shapes are one [`Quad`], 48 bytes. The shader rounds its corners and
+//! draws its border per pixel, and text and icons are quads that sample an atlas. Anything
 //! else, such as a curve or an arrow, is indexed triangles of [`Vertex`]es. A
 //! new batch starts only where the clip or the kind of shape changes.
 
@@ -13,6 +13,8 @@ use std::ops::Range;
 pub use glyphs::{
     AtlasUpdate, Error, FontFile, FontId, Format, Glyphs, IconId, LineMetrics, PageWrite,
 };
+
+use crate::cast::sixteenths;
 
 /// In logical pixels, from the window's top left.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -61,24 +63,33 @@ impl Rect {
     }
 }
 
-/// Linear RGBA, straight alpha.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Color(pub [f32; 4]);
+/// sRGB, with straight alpha, a byte each. The shaders make it linear
+/// before blending.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
+pub struct Color(pub [u8; 4]);
 
 impl Color {
-    pub const TRANSPARENT: Self = Self([0.; 4]);
+    pub const TRANSPARENT: Self = Self([0; 4]);
 
-    /// From an sRGB `0xRRGGBB`, as colours are usually written.
+    /// From `0xRRGGBB`, opaque.
     #[must_use]
-    pub fn hex(rgb: u32) -> Self {
+    pub const fn hex(rgb: u32) -> Self {
         let [_, r, g, b] = rgb.to_be_bytes();
-        Self([linear(r), linear(g), linear(b), 1.])
+        Self([r, g, b, u8::MAX])
     }
 
     #[must_use]
-    pub const fn alpha(self, a: f32) -> Self {
+    pub const fn alpha(self, a: u8) -> Self {
         let [r, g, b, _] = self.0;
         Self([r, g, b, a])
+    }
+
+    /// Linear RGBA, straight alpha, as the shaders blend in.
+    #[must_use]
+    pub fn linear(self) -> [f32; 4] {
+        let [r, g, b, a] = self.0;
+        [linear(r), linear(g), linear(b), f32::from(a) / 255.]
     }
 }
 
@@ -98,13 +109,14 @@ fn linear(channel: u8) -> f32 {
 #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Quad {
     rect: [f32; 4],
-    fill: [f32; 4],
-    border: [f32; 4],
-    /// Top left, top right, bottom right, bottom left.
-    radii: [f32; 4],
     /// `x, y, width, height` in texels on `page` of `atlas`. Zero-sized for
     /// a quad that samples nothing.
-    texels: [f32; 4],
+    texels: [u16; 4],
+    /// Top left, top right, bottom right, bottom left, in sixteenths of a
+    /// logical pixel.
+    radii: [u16; 4],
+    fill: Color,
+    border: Color,
     border_width: f32,
     page: u16,
     /// A [`Format`]. Coverage scales the fill, and colour takes only its
@@ -112,15 +124,18 @@ pub struct Quad {
     atlas: u16,
 }
 
+// The render pipeline's attribute offsets follow from this layout.
+const _: () = assert!(size_of::<Quad>() == 48);
+
 impl Quad {
     #[must_use]
     pub const fn new(rect: Rect, fill: Color) -> Self {
         Self {
             rect: [rect.x, rect.y, rect.w, rect.h],
-            fill: fill.0,
-            border: [0.; 4],
-            radii: [0.; 4],
-            texels: [0.; 4],
+            texels: [0; 4],
+            radii: [0; 4],
+            fill,
+            border: Color::TRANSPARENT,
             border_width: 0.,
             page: 0,
             atlas: 0,
@@ -129,11 +144,11 @@ impl Quad {
 
     /// `rect` must be the texel area's size in physical pixels, so each pixel
     /// reads the one texel under it.
-    pub(crate) fn sampled(
+    pub(crate) const fn sampled(
         rect: Rect,
         atlas: Format,
         page: u16,
-        texels: [f32; 4],
+        texels: [u16; 4],
         fill: Color,
     ) -> Self {
         let mut quad = Self::new(rect, fill);
@@ -148,10 +163,11 @@ impl Quad {
         self.corners([radius; 4])
     }
 
-    /// Top left, top right, bottom right, bottom left.
+    /// Top left, top right, bottom right, bottom left. Kept to a sixteenth of
+    /// a pixel.
     #[must_use]
-    pub const fn corners(mut self, radii: [f32; 4]) -> Self {
-        self.radii = radii;
+    pub const fn corners(mut self, [a, b, c, d]: [f32; 4]) -> Self {
+        self.radii = [sixteenths(a), sixteenths(b), sixteenths(c), sixteenths(d)];
         self
     }
 
@@ -159,7 +175,7 @@ impl Quad {
     #[must_use]
     pub const fn bordered(mut self, width: f32, color: Color) -> Self {
         self.border_width = width;
-        self.border = color.0;
+        self.border = color;
         self
     }
 }
@@ -169,14 +185,13 @@ impl Quad {
 #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     pub at: [f32; 2],
-    /// Linear RGBA, straight alpha, as in [`Color`].
-    pub color: [f32; 4],
+    pub color: Color,
 }
 
 impl Vertex {
     #[must_use]
     pub const fn new(at: [f32; 2], color: Color) -> Self {
-        Self { at, color: color.0 }
+        Self { at, color }
     }
 }
 
@@ -434,8 +449,16 @@ mod tests {
     }
 
     #[test]
-    fn hex_is_linear() {
-        assert_eq!(Color::hex(0xff_ff_ff), Color([1., 1., 1., 1.]));
-        assert_eq!(Color::hex(0), Color([0., 0., 0., 1.]));
+    fn hex_decodes_to_linear() {
+        assert_eq!(Color::hex(0xff_ff_ff).linear(), [1., 1., 1., 1.]);
+        assert_eq!(Color::hex(0).linear(), [0., 0., 0., 1.]);
+        let [grey, ..] = Color::hex(0x80_80_80).linear();
+        assert!((grey - 0.216).abs() < 1e-3, "{grey}");
+    }
+
+    #[test]
+    fn radii_keep_sixteenths() {
+        let quad = quad().corners([0.5, 4., 1. / 3., 100_000.]);
+        assert_eq!(quad.radii, [8, 64, 5, u16::MAX]);
     }
 }
