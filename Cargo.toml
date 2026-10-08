@@ -20,6 +20,7 @@ tracing = "0.1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 toml = "1"
+toml_writer = "1"
 annotate-snippets = "0.12"
 xxhash-rust = { version = "0.8", features = ["xxh3", "xxh64"] }
 # Pinned: 2.0 is still in alpha and its API moves between releases.

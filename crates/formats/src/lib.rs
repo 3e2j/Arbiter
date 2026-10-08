@@ -3,6 +3,8 @@
 //! Every format implements [`Decode`] and [`Encode`].
 //! Data is big-endian, read through [`Reader`] and written through [`Writer`].
 
+pub mod compression;
+
 mod reader;
 mod writer;
 

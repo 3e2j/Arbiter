@@ -4,16 +4,18 @@
 //! base/
 //! ├─ GZ2E01/          the disc's own tree, every file read-only
 //! │  └─ sys/          what the disc keeps outside its file system, see `pack::disc`
-//! ├─ GZ2E01.toml      each path and its hash
+//! ├─ GZ2E01.toml      each path, its hash, and what came off it
 //! ├─ GZ2P01/
 //! └─ GZ2P01.toml
 //! ```
 //!
-//! Files sit at their disc paths so any program can open them.
+//! Files sit at their disc paths so any program can open them,
+//! with their compression taken off, and archives unpacked (any packaging).
 //! Read-only keeps them from being edited by accident: changes go in `changes/`.
 
 use std::{
     collections::BTreeMap,
+    fmt::{self, Display},
     fs::{self, File},
     io::{self, Write},
     path::{Path, PathBuf},
@@ -21,8 +23,12 @@ use std::{
 };
 
 use game::edition::{self, Edition, Game, Verdict};
-use pack::disc::{self, Disc};
-use serde::{Deserialize, Serialize};
+use pack::{
+    disc::{self, Disc},
+    unpack,
+};
+use serde::Deserialize;
+use toml_writer::{TomlWrite, WriteTomlKey};
 
 use crate::{
     config::{Config, Country, Platform, Recorded, Region},
@@ -41,6 +47,12 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("{path}: {source}")]
+    Decode {
+        path: String,
+        #[source]
+        source: formats::Error,
+    },
     #[error("hashing the disc panicked")]
     HashPanicked,
     #[error("{path}: {source}")]
@@ -52,7 +64,7 @@ pub enum Error {
 }
 
 /// One edition's files. Sorted by path, so the files digest doesn't depend on
-/// disc order. The revision isn't here: `arbiter.toml` is its one home.
+/// disc order. Disc metadata is in `arbiter.toml`, not here.
 ///
 /// The hashes are kept to catch a modified base. Read-only can be undone, so a
 /// base file can still be edited, deleted or added to. Any file that no longer
@@ -66,23 +78,97 @@ pub enum Error {
 ///   `base/modified` error that blocks builds.
 /// - Its fix re-reads just those files from the disc's last known location. If
 ///   the disc moved, ask for `arbiter unpack <disc>`, which updates it.
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(transparent)]
+///
+/// Written by its `Display`, one line per file.
+#[derive(Deserialize, Debug, PartialEq, Eq)]
 pub struct Manifest {
-    pub files: BTreeMap<String, Hash>,
+    pub files: BTreeMap<String, Entry>,
+}
+
+/// What an unpack made of one file.
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Entry {
+    /// Of the stored bytes, with everything taken off.
+    pub hash: Hash,
+    pub compression: Option<Compression>,
+}
+
+/// Mirrors `formats::compression::Compression`. The discriminants feed the
+/// files digest, so they're fixed apart from the variant order. 0 is none.
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+#[repr(u8)]
+pub enum Compression {
+    Yaz0 = 1,
+    Yay0 = 2,
+}
+
+impl Compression {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Yaz0 => "yaz0",
+            Self::Yay0 => "yay0",
+        }
+    }
+}
+
+impl From<formats::compression::Compression> for Compression {
+    fn from(compression: formats::compression::Compression) -> Self {
+        match compression {
+            formats::compression::Compression::Yaz0 => Self::Yaz0,
+            formats::compression::Compression::Yay0 => Self::Yay0,
+        }
+    }
 }
 
 impl Manifest {
+    /// Covers every field of every entry, so two bases that would build
+    /// differently never share a digest.
     #[must_use]
     pub fn files_digest(&self) -> Hash {
         let mut bytes = Vec::new();
-        for (path, hash) in &self.files {
+        for (path, entry) in &self.files {
             bytes.extend_from_slice(path.as_bytes());
             bytes.push(0);
-            bytes.extend_from_slice(&hash.0.to_be_bytes());
+            bytes.extend_from_slice(&entry.hash.0.to_be_bytes());
+            bytes.push(entry.compression.map_or(0, |c| c as u8));
         }
         Hash::of(&bytes)
     }
+}
+
+impl Display for Manifest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.open_table_header()?;
+        f.key("files")?;
+        f.close_table_header()?;
+        f.newline()?;
+        for (path, entry) in &self.files {
+            assign(f, path.as_str())?;
+            f.open_inline_table()?;
+            f.space()?;
+            assign(f, "hash")?;
+            f.value(entry.hash.to_string())?;
+            if let Some(compression) = entry.compression {
+                f.val_sep()?;
+                f.space()?;
+                assign(f, "compression")?;
+                f.value(compression.name())?;
+            }
+            f.space()?;
+            f.close_inline_table()?;
+            f.newline()?;
+        }
+        Ok(())
+    }
+}
+
+/// Writes `key = `.
+fn assign(f: &mut fmt::Formatter<'_>, key: impl WriteTomlKey) -> fmt::Result {
+    f.key(key)?;
+    f.space()?;
+    f.keyval_sep()?;
+    f.space()
 }
 
 /// A disc unpacked to `base/.<id>.partial/`, not yet in place. Either
@@ -198,7 +284,8 @@ pub(crate) fn stage(
     })
 }
 
-/// Writes every file to `tree`. Returns their manifest and total size.
+/// Writes every file to `tree` with its packaging unpacked (compression, archives).
+/// Returns their manifest and total size.
 fn unpack(tree: &Path, disc: &mut Disc) -> Result<(Manifest, u64), Error> {
     let mut files = BTreeMap::new();
     let mut bytes = 0;
@@ -215,17 +302,37 @@ fn unpack(tree: &Path, disc: &mut Disc) -> Result<(Manifest, u64), Error> {
             fs::create_dir_all(parent).map_err(io_err(parent))?;
             made_dir = Some(parent.to_path_buf());
         }
-        write_readonly(&dest, &buf)?;
-        bytes += buf.len() as u64;
-        files.insert(file.path.clone(), Hash::of(&buf));
+
+        let peeled = unpack::peel(&buf).map_err(|source| Error::Decode {
+            path: file.path.clone(),
+            source,
+        })?;
+        write_readonly(&dest, &peeled.bytes)?;
+        bytes += peeled.bytes.len() as u64;
+
+        files.insert(
+            file.path.clone(),
+            Entry {
+                hash: Hash::of(&peeled.bytes),
+                compression: peeled.compression.map(Into::into),
+            },
+        );
     }
+
     let sys = tree.join("sys");
     fs::create_dir_all(&sys).map_err(io_err(&sys))?;
     for file in &disc.sys {
         write_readonly(&tree.join(file.path), &file.bytes)?;
         bytes += file.bytes.len() as u64;
-        files.insert(file.path.to_owned(), Hash::of(&file.bytes));
+        files.insert(
+            file.path.to_owned(),
+            Entry {
+                hash: Hash::of(&file.bytes),
+                compression: None,
+            },
+        );
     }
+
     Ok((Manifest { files }, bytes))
 }
 
@@ -243,11 +350,7 @@ impl Staged {
         fs::rename(&self.tree, &dest).map_err(io_err(&dest))?;
 
         let path = base.join(format!("{}.toml", self.id));
-        let text = toml::to_string(&self.manifest).map_err(|source| Error::Toml {
-            path: path.clone(),
-            source,
-        })?;
-        write_atomic(&path, text.as_bytes())
+        write_atomic(&path, self.manifest.to_string().as_bytes())
     }
 
     /// # Errors
@@ -336,12 +439,53 @@ mod tests {
         remove_tree(&tree).unwrap();
     }
 
+    fn entry(hash: u128, compression: Option<Compression>) -> Entry {
+        Entry {
+            hash: Hash(hash),
+            compression,
+        }
+    }
+
+    #[test]
+    fn manifest_writes_a_line_per_file_and_reads_back() {
+        let manifest = Manifest {
+            files: [
+                ("res/a.arc".to_owned(), entry(1, Some(Compression::Yaz0))),
+                ("sys/main.dol".to_owned(), entry(2, None)),
+            ]
+            .into(),
+        };
+        let text = manifest.to_string();
+        assert_eq!(
+            text,
+            "[files]\n\
+             \"res/a.arc\" = { hash = \"xxh3:00000000000000000000000000000001\", compression = \"yaz0\" }\n\
+             \"sys/main.dol\" = { hash = \"xxh3:00000000000000000000000000000002\" }\n"
+        );
+        assert_eq!(toml::from_str::<Manifest>(&text).unwrap(), manifest);
+    }
+
+    #[test]
+    fn files_digest_follows_compression() {
+        let manifest = |compression| Manifest {
+            files: [("a.arc".to_owned(), entry(1, compression))].into(),
+        };
+        assert_ne!(
+            manifest(None).files_digest(),
+            manifest(Some(Compression::Yaz0)).files_digest()
+        );
+        assert_ne!(
+            manifest(Some(Compression::Yaz0)).files_digest(),
+            manifest(Some(Compression::Yay0)).files_digest()
+        );
+    }
+
     #[test]
     fn files_digest_follows_paths_and_contents() {
         let manifest = |files: &[(&str, u128)]| Manifest {
             files: files
                 .iter()
-                .map(|&(p, h)| (p.to_owned(), Hash(h)))
+                .map(|&(p, h)| (p.to_owned(), entry(h, None)))
                 .collect(),
         };
         let a = manifest(&[("a", 1), ("b", 2)]);

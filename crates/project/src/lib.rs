@@ -370,7 +370,14 @@ mod tests {
         fs::create_dir_all(&tree).unwrap();
         fs::write(tree.join("a.arc"), file).unwrap();
         let manifest = base::Manifest {
-            files: [("a.arc".to_owned(), Hash::of(file))].into(),
+            files: [(
+                "a.arc".to_owned(),
+                base::Entry {
+                    hash: Hash::of(file),
+                    compression: None,
+                },
+            )]
+            .into(),
         };
         let outcome = project.config.record(id, revision, manifest.files_digest());
         Staged {
@@ -403,7 +410,14 @@ mod tests {
         let was = Hash::of(b"rev 0");
         let changed = Recorded::Changed {
             was: base::Manifest {
-                files: [("a.arc".to_owned(), was)].into(),
+                files: [(
+                    "a.arc".to_owned(),
+                    base::Entry {
+                        hash: was,
+                        compression: None,
+                    },
+                )]
+                .into(),
             }
             .files_digest(),
         };
