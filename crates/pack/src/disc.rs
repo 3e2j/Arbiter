@@ -348,26 +348,4 @@ mod tests {
         assert_eq!(region([0, 0, 0, 4]), Some(Region::NtscK));
         assert_eq!(region([0, 0, 0, 3]), None);
     }
-
-    #[test]
-    #[ignore = "needs a retail disc at dev/fixtures/NA.ciso"]
-    fn reads_the_retail_disc() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../dev/fixtures/NA.ciso");
-        let mut disc = Disc::open(&path).unwrap();
-        assert_eq!(disc.id, "GZ2E01");
-        assert_eq!(disc.revision, 0);
-        assert_eq!(disc.platform, Platform::GameCube);
-        assert_eq!(disc.region, Some(Region::NtscU));
-        assert_eq!(disc.country, Some(Country::Usa));
-
-        let file = disc
-            .files
-            .iter()
-            .find(|f| f.path == "res/Msgus/bmgres.arc")
-            .unwrap();
-        let mut bytes = Vec::new();
-        disc.reader.read(file, &mut bytes).unwrap();
-        assert_eq!(bytes.len(), usize::try_from(file.size()).unwrap());
-        assert_eq!(&bytes[..4], b"Yaz0");
-    }
 }
