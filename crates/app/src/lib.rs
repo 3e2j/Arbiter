@@ -9,11 +9,11 @@ mod showcase;
 
 use assets::{Fonts, Icons};
 use gui::{
-    canvas::{Color, Glyphs},
+    canvas::Color,
     host::{App, Startup},
-    input::{Input, Out},
-    layout::{Border, Element, Id, Layout},
+    layout::{Border, Element},
     platform::window,
+    ui::Ui,
 };
 use showcase::Showcase;
 
@@ -66,11 +66,9 @@ impl App for Editor {
         })
     }
 
-    fn ui(&mut self, layout: &mut Layout, glyphs: &mut Glyphs, input: &Input, out: &mut Out) {
+    fn ui(&mut self, ui: &mut Ui) {
         // TODO: a stand-in for the workspace and one dock, until
         // `app::workspace` exists.
-        let id = Id::ROOT.child("stand-in");
-        layout.open(id.child("page"), Element::column().padded(GAP));
         let dock = Element {
             gap: GAP,
             background: Some(Color::hex(RAISED)),
@@ -82,11 +80,8 @@ impl App for Editor {
             clip: true,
             ..Element::column().padded(GAP * 2.)
         };
-        layout.open(id.child("dock"), dock);
-        self.showcase
-            .ui(id.child("showcase"), layout, glyphs, input, out);
-        // TODO: Remove these boilerplate closes when the ui module exists (closure)
-        layout.close();
-        layout.close();
+        ui.element("page", Element::column().padded(GAP), |ui| {
+            ui.element("dock", dock, |ui| self.showcase.ui(ui));
+        });
     }
 }

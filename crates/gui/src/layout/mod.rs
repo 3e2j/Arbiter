@@ -94,7 +94,7 @@ pub struct Element {
 // TODO: a `Ui` derives ids from call sites, so apps don't write salts they
 // never read. Data lists that reorder still pass a key.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct Id(u64);
+pub(crate) struct Id(u64);
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct TextStyle {
@@ -107,7 +107,7 @@ pub struct TextStyle {
 /// One pass's boxes, and last pass's for their rects. Kept between passes,
 /// so a pass allocates nothing once warm.
 #[derive(Default)]
-pub struct Layout {
+pub(crate) struct Layout {
     /// In declaration order. The first is the window.
     nodes: Vec<Node>,
     last: Vec<Node>,
@@ -127,20 +127,6 @@ pub struct Layout {
     /// Scratch for [`Self::emit`].
     floats: Vec<usize>,
     clips: Vec<(usize, Rect)>,
-}
-
-/// Puts shapes into a custom box, at last pass's rect, from [`Layout::custom`].
-///
-/// Only for content whose positions come from data rather than from layout,
-/// such as music notes on a timeline or nodes in a graph.
-///
-/// Anything that could be a row of text and boxes should be elements, which get
-/// layout, clipping and hit testing for free.
-pub struct Painter<'a> {
-    /// `None` the first pass it's declared.
-    pub rect: Option<Rect>,
-    layout: &'a mut Layout,
-    node: usize,
 }
 
 struct Node {
@@ -335,15 +321,36 @@ impl Layout {
         self.push(id, element, Content::Icon(icon, size, color)).1
     }
 
-    /// A box its owner paints into with a [`Painter`]. Use elements first, as
-    /// the painter says.
-    pub fn custom(&mut self, id: Id, element: Element) -> Painter<'_> {
+    /// A box painted into through [`Self::paint_quad`] and
+    /// [`Self::paint_triangles`], until the next box is declared. Returns its
+    /// node and its rect last pass.
+    pub fn custom(&mut self, id: Id, element: Element) -> (usize, Option<Rect>) {
         let start = self.paints.len();
-        let (node, rect) = self.push(id, element, Content::Custom(start..start));
-        Painter {
-            rect,
-            layout: self,
-            node,
+        self.push(id, element, Content::Custom(start..start))
+    }
+
+    pub fn paint_quad(&mut self, node: usize, quad: Quad) {
+        self.paints.push(Paint::Quad(quad));
+        self.grow_paints(node);
+    }
+
+    pub fn paint_triangles(&mut self, node: usize, vertices: &[Vertex], indices: &[u32]) {
+        let v = self.vertices.len();
+        let i = self.indices.len();
+        self.vertices.extend_from_slice(vertices);
+        self.indices.extend_from_slice(indices);
+        self.paints.push(Paint::Triangles {
+            vertices: v..self.vertices.len(),
+            indices: i..self.indices.len(),
+        });
+        self.grow_paints(node);
+    }
+
+    fn grow_paints(&mut self, node: usize) {
+        let end = self.paints.len();
+        if let Some(Content::Custom(range)) = self.nodes.get_mut(node).map(|node| &mut node.content)
+        {
+            range.end = end;
         }
     }
 
@@ -373,39 +380,6 @@ impl Layout {
                 .extend(self.last.iter().map(|node| node.id).zip(0..));
         }
         self.last_ids.get(&id).copied()
-    }
-}
-
-impl Painter<'_> {
-    pub fn quad(&mut self, quad: Quad) {
-        self.layout.paints.push(Paint::Quad(quad));
-        self.grow();
-    }
-
-    /// As [`Canvas::triangles`](crate::canvas::Canvas::triangles).
-    pub fn triangles(&mut self, vertices: &[Vertex], indices: &[u32]) {
-        let layout = &mut *self.layout;
-        let v = layout.vertices.len();
-        let i = layout.indices.len();
-        layout.vertices.extend_from_slice(vertices);
-        layout.indices.extend_from_slice(indices);
-        layout.paints.push(Paint::Triangles {
-            vertices: v..layout.vertices.len(),
-            indices: i..layout.indices.len(),
-        });
-        self.grow();
-    }
-
-    fn grow(&mut self) {
-        let end = self.layout.paints.len();
-        if let Some(Content::Custom(range)) = self
-            .layout
-            .nodes
-            .get_mut(self.node)
-            .map(|node| &mut node.content)
-        {
-            range.end = end;
-        }
     }
 }
 

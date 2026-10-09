@@ -271,8 +271,12 @@ fn a_float_under_a_hidden_clip_still_draws() {
 fn a_custom_box_draws_in_its_place() {
     let mut layout = Layout::default();
     layout.clear();
-    let mut painter = layout.custom(Id::ROOT.child("custom"), fixed(10., 10.));
-    painter.triangles(&[Vertex::new([0., 0.], Color::TRANSPARENT); 3], &[0, 1, 2]);
+    let (node, _) = layout.custom(Id::ROOT.child("custom"), fixed(10., 10.));
+    layout.paint_triangles(
+        node,
+        &[Vertex::new([0., 0.], Color::TRANSPARENT); 3],
+        &[0, 1, 2],
+    );
     layout.solve(WINDOW, 1.);
     let mut canvas = Canvas::default();
     canvas.clear(WINDOW);
