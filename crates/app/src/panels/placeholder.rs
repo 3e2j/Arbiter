@@ -1,18 +1,14 @@
 //! A panel that only shows its title, standing in for one not written yet.
 
-use gui::ui::{Align, Element, TextStyle, Ui};
-
-use crate::assets::Fonts;
-use crate::{DIM, TEXT_SIZE};
+use gui::ui::{Align, Element, Ui};
 
 pub struct Placeholder {
     title: &'static str,
-    fonts: Fonts,
 }
 
 impl Placeholder {
-    pub const fn new(title: &'static str, fonts: Fonts) -> Self {
-        Self { title, fonts }
+    pub const fn new(title: &'static str) -> Self {
+        Self { title }
     }
 
     pub const fn title(&self) -> &str {
@@ -20,17 +16,13 @@ impl Placeholder {
     }
 
     pub fn ui(&mut self, ui: &mut Ui) {
+        let theme = ui.theme();
         let middle = Element {
             align: [Align::Center; 2],
             ..Element::column()
         };
         ui.element(middle, |ui| {
-            let style = TextStyle {
-                font: self.fonts.ui,
-                size: TEXT_SIZE,
-                color: DIM,
-            };
-            ui.text(style, self.title);
+            ui.text(theme.ui_text(theme.color.dim), self.title)
         });
     }
 }

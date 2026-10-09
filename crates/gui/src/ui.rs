@@ -22,9 +22,11 @@ use crate::input::{Button, Cursor, Input, Out};
 use crate::layout::{Layout, Slot};
 
 pub use crate::layout::{Align, Anchor, Border, Direction, Element, Size, TextStyle};
+pub use crate::theme::{Colors, Fonts, Sizes, Theme};
 
 pub struct Ui<'a> {
     open: Open,
+    theme: &'a Theme,
     layout: &'a mut Layout,
     glyphs: &'a mut Glyphs,
     input: &'a Input,
@@ -103,6 +105,7 @@ struct Open {
 impl<'a> Ui<'a> {
     /// In the window's box, which `layout` has open.
     pub(crate) fn root(
+        theme: &'a Theme,
         layout: &'a mut Layout,
         glyphs: &'a mut Glyphs,
         input: &'a Input,
@@ -113,6 +116,7 @@ impl<'a> Ui<'a> {
         slots.sites.clear();
         slots.keys.clear();
         memory.begin();
+        layout.hit_test(input.pointer());
         Self {
             open: Open {
                 node: 0,
@@ -120,6 +124,7 @@ impl<'a> Ui<'a> {
                 rect: None,
                 sites: 0,
             },
+            theme,
             layout,
             glyphs,
             input,
@@ -127,6 +132,12 @@ impl<'a> Ui<'a> {
             slots,
             memory,
         }
+    }
+
+    /// What everything is drawn with.
+    #[must_use]
+    pub const fn theme(&self) -> &'a Theme {
+        self.theme
     }
 
     /// What the user did since the last pass.
@@ -152,13 +163,14 @@ impl<'a> Ui<'a> {
         self.layout.content()
     }
 
-    /// Whether the pointer is over the open box, by its rect last pass.
+    /// Whether the pointer is over the open box, or one of its children,
+    /// where last pass drew it on top and inside its clip.
     #[must_use]
     pub fn hovered(&self) -> bool {
         self.open
-            .rect
+            .last
             .zip(self.input.pointer())
-            .is_some_and(|(rect, at)| rect.contains(at))
+            .is_some_and(|(last, at)| self.layout.under(last, at))
     }
 
     /// Whether `button` went down over the open box.
@@ -356,11 +368,11 @@ impl Painter<'_> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::input::Event;
 
-    const WINDOW: Rect = Rect::new(0., 0., 300., 100.);
+    pub const WINDOW: Rect = Rect::new(0., 0., 300., 100.);
 
     fn fixed(w: f32, h: f32) -> Element {
         Element {
@@ -371,10 +383,11 @@ mod tests {
 
     /// What the host keeps between passes.
     #[derive(Default)]
-    struct Kept {
-        layout: Layout,
-        glyphs: Glyphs,
-        input: Input,
+    pub(crate) struct Kept {
+        pub theme: Theme,
+        pub layout: Layout,
+        pub glyphs: Glyphs,
+        pub input: Input,
         slots: Slots,
         memory: Memory,
     }
@@ -382,10 +395,11 @@ mod tests {
     impl Kept {
         /// Runs one pass and solves it, returning what `body` did. The input
         /// is used up, as the host does.
-        fn pass<R>(&mut self, body: impl FnOnce(&mut Ui) -> R) -> R {
+        pub fn pass<R>(&mut self, body: impl FnOnce(&mut Ui) -> R) -> R {
             self.layout.clear();
             let mut out = Out::default();
             let mut ui = Ui::root(
+                &self.theme,
                 &mut self.layout,
                 &mut self.glyphs,
                 &self.input,
@@ -621,5 +635,50 @@ mod tests {
         kept.input.push(Event::Pressed(Button::Middle));
         pass(&mut kept);
         assert_eq!(pass(&mut kept), [[true, false], [false, true]]);
+    }
+
+    #[test]
+    fn a_floating_box_hides_what_it_covers_from_the_pointer() {
+        let mut kept = Kept::default();
+        let cover = Element {
+            float: Some(Anchor::Parent {
+                parent: [Align::Start; 2],
+                own: [Align::Start; 2],
+                offset: [0.; 2],
+            }),
+            ..fixed(10., 10.)
+        };
+        let pass = |kept: &mut Kept| {
+            kept.pass(|ui| {
+                ui.element(fixed(20., 20.), |ui| {
+                    let row = ui.element(fixed(20., 20.), |ui| ui.hovered());
+                    let float = ui.element(cover, |ui| ui.hovered());
+                    (ui.hovered(), row, float)
+                })
+            })
+        };
+        kept.input.push(Event::Pointer(Some([5., 5.])));
+        pass(&mut kept);
+        // The parent holds the floating box, so it's still under the pointer.
+        assert_eq!(pass(&mut kept), (true, false, true));
+        kept.input.push(Event::Pointer(Some([15., 15.])));
+        assert_eq!(pass(&mut kept), (true, true, false));
+    }
+
+    #[test]
+    fn a_box_past_its_clip_is_not_under_the_pointer() {
+        let mut kept = Kept::default();
+        let clipped = Element {
+            clip: true,
+            ..fixed(20., 10.)
+        };
+        let pass = |kept: &mut Kept| {
+            kept.pass(|ui| ui.element(clipped, |ui| ui.element(fixed(20., 30.), |ui| ui.hovered())))
+        };
+        kept.input.push(Event::Pointer(Some([5., 20.])));
+        pass(&mut kept);
+        assert!(!pass(&mut kept));
+        kept.input.push(Event::Pointer(Some([5., 5.])));
+        assert!(pass(&mut kept));
     }
 }

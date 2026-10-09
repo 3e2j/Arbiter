@@ -4,10 +4,10 @@
 
 use std::error::Error;
 
-use crate::canvas::{AtlasUpdate, Canvas, Color, Glyphs, Rect};
+use crate::canvas::{AtlasUpdate, Canvas, Glyphs, Rect};
 use crate::input::{Event, Input, Out};
 use crate::layout::Layout;
-use crate::ui::{Memory, Slots, Ui};
+use crate::ui::{Memory, Slots, Theme, Ui};
 
 /// The app's side of the host.
 pub trait App: Sized {
@@ -32,15 +32,16 @@ pub trait App: Sized {
 /// What the app sets up before the first pass.
 // TODO: `wake` once something runs off the main thread, such as `app::watch`.
 pub struct Startup<'a> {
-    // TODO: becomes `theme: Theme` from `gui::ui`.
-    pub background: Color,
+    /// What everything is drawn with, and the window cleared to. Black and
+    /// zero sized until the app fills it in.
+    pub theme: Theme,
     /// Where the app adds its fonts and icons.
     pub glyphs: &'a mut Glyphs,
 }
 
 pub struct Host<A> {
     app: A,
-    background: Color,
+    theme: Theme,
     glyphs: Glyphs,
     input: Input,
     layout: Layout,
@@ -55,14 +56,14 @@ impl<A: App> Host<A> {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         let mut glyphs = Glyphs::default();
         let mut start = Startup {
-            background: Color::hex(0),
+            theme: Theme::default(),
             glyphs: &mut glyphs,
         };
         let app = A::new(&mut start)?;
-        let background = start.background;
+        let theme = start.theme;
         Ok(Self {
             app,
-            background,
+            theme,
             glyphs,
             input: Input::default(),
             layout: Layout::default(),
@@ -95,11 +96,9 @@ impl<A: App> Host<A> {
             self.layout.solve(rect, scale);
         }
         canvas.clear(rect);
-        canvas.background = self.background;
-        if let Some(cursor) = self
-            .layout
-            .emit(canvas, &mut self.glyphs, self.input.pointer())
-        {
+        canvas.background = self.theme.color.page;
+        self.layout.emit(canvas, &mut self.glyphs);
+        if let Some(cursor) = self.layout.cursor(self.input.pointer()) {
             out.cursor = cursor;
         }
         out
@@ -109,6 +108,7 @@ impl<A: App> Host<A> {
         let mut out = Out::default();
         self.layout.clear();
         let mut ui = Ui::root(
+            &self.theme,
             &mut self.layout,
             &mut self.glyphs,
             &self.input,

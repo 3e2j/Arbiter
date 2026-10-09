@@ -6,12 +6,10 @@
 
 use gui::{
     input::{Button, Cursor},
-    ui::{Align, Border, Direction, Element, Size, TextStyle, Ui},
+    ui::{Align, Border, Direction, Element, Size, Ui},
 };
 
-use crate::assets::Fonts;
 use crate::panels::Panel;
-use crate::{DIM, GAP, HOVER, LINE, RADIUS, RAISED, ROW, SELECTED, TEXT, TEXT_SIZE};
 
 /// A fixed place in the window that holds tabs.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -115,18 +113,18 @@ pub struct Workspace {
     docks: [Dock; Place::COUNT],
     /// Indexed by [`Band`].
     sizes: [f32; Band::COUNT],
-    fonts: Fonts,
 }
 
-impl Workspace {
-    pub fn new(fonts: Fonts) -> Self {
+impl Default for Workspace {
+    fn default() -> Self {
         Self {
             docks: Default::default(),
             sizes: Band::ALL.map(Band::default_size),
-            fonts,
         }
     }
+}
 
+impl Workspace {
     /// Adds `panel` as the last tab in `place`.
     pub fn add(&mut self, panel: Panel, place: Place) {
         self.docks[place.index()].tabs.push(Tab { panel });
@@ -135,15 +133,16 @@ impl Workspace {
     /// Declares the bands in the order they're cut, outside in, each wrapping
     /// what's left.
     pub fn ui(&mut self, ui: &mut Ui) {
+        let gap = ui.theme().size.gap;
         let column = Element {
-            gap: GAP,
+            gap,
             ..Element::column()
         };
         let row = Element {
-            gap: GAP,
+            gap,
             ..Element::row()
         };
-        ui.element(column.padded(GAP), |ui| {
+        ui.element(column.padded(gap), |ui| {
             ui.element(row, |ui| {
                 self.band(ui, Band::LeftOuter);
                 self.band(ui, Band::LeftInner);
@@ -159,6 +158,7 @@ impl Workspace {
     }
 
     fn band(&mut self, ui: &mut Ui, band: Band) {
+        let theme = ui.theme();
         let docks = band.docks();
         if docks
             .iter()
@@ -178,7 +178,7 @@ impl Workspace {
             } else {
                 [size, Size::Grow]
             },
-            gap: GAP,
+            gap: theme.size.gap,
             ..Element::DEFAULT
         };
         ui.element(element, |ui| {
@@ -191,40 +191,43 @@ impl Workspace {
     }
 
     fn dock(&mut self, ui: &mut Ui, place: Place) {
+        let theme = ui.theme();
         let element = Element {
-            gap: GAP,
-            background: Some(RAISED),
+            gap: theme.size.gap,
+            background: Some(theme.color.surface),
             border: Some(Border {
-                width: 1.,
-                color: LINE,
+                width: theme.size.line,
+                color: theme.color.line,
             }),
-            radius: RADIUS,
+            // Rounder than what sits inside it.
+            radius: theme.size.radius * 2.,
             clip: true,
-            ..Element::column().padded(GAP)
+            ..Element::column().padded(theme.size.gap)
         };
-        let fonts = self.fonts;
         let dock = &mut self.docks[place.index()];
-        ui.element(element, |ui| dock.ui(ui, fonts));
+        ui.element(element, |ui| dock.ui(ui));
     }
 }
 
 impl Dock {
     /// Its tab bar, then the shown tab's panel under it.
-    fn ui(&mut self, ui: &mut Ui, fonts: Fonts) {
+    fn ui(&mut self, ui: &mut Ui) {
         if self.tabs.is_empty() {
             return;
         }
+        let theme = ui.theme();
+        let size = theme.size;
         let bar = Element {
             direction: Direction::LeftToRight,
             size: [Size::Grow, Size::Fit],
-            gap: GAP / 2.,
+            gap: size.gap / 2.,
             ..Element::DEFAULT
         };
         let tab = Element {
-            size: [Size::Fit, Size::Fixed(ROW)],
-            padding: [GAP, 0., GAP, 0.],
+            size: [Size::Fit, Size::Fixed(size.row)],
+            padding: [size.gap, 0., size.gap, 0.],
             align: [Align::Start, Align::Center],
-            radius: RADIUS / 2.,
+            radius: size.radius,
             cursor: Some(Cursor::Pointer),
             ..Element::DEFAULT
         };
@@ -237,16 +240,16 @@ impl Dock {
                     }
                     let current = shown == i;
                     ui.style().background = if current {
-                        Some(SELECTED)
+                        Some(theme.color.selected)
                     } else {
-                        ui.hovered().then_some(HOVER)
+                        ui.hovered().then_some(theme.color.hover)
                     };
-                    let style = TextStyle {
-                        font: fonts.ui,
-                        size: TEXT_SIZE,
-                        color: if current { TEXT } else { DIM },
+                    let color = if current {
+                        theme.color.text
+                    } else {
+                        theme.color.dim
                     };
-                    ui.text(style, tab_of.panel.title());
+                    ui.text(theme.ui_text(color), tab_of.panel.title());
                 });
             }
         });

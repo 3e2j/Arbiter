@@ -11,6 +11,7 @@
 //!   A box is the one from last pass with the same parent and the same [`Slot`].
 
 mod emit;
+mod hit;
 mod solve;
 
 use std::collections::HashMap;
@@ -94,8 +95,8 @@ pub struct Element {
     /// Drawn after the whole tree, outside its parent's clip, and left out of
     /// its parent's size.
     pub float: Option<Anchor>,
-    /// The pointer's shape over it, unless a box drawn later over the same spot
-    /// sets its own.
+    /// The pointer's shape over it and over its children, unless the box on
+    /// top there, or one between them, sets its own.
     pub cursor: Option<Cursor>,
 }
 
@@ -147,6 +148,12 @@ pub(crate) struct Layout {
     /// Scratch for [`Self::emit`].
     floats: Vec<usize>,
     clips: Vec<(usize, Rect)>,
+    /// The box last pass drew on top under the pointer, set by
+    /// [`Self::hit_test`].
+    hit: Option<usize>,
+    /// Scratch for finding the top box: each box's clip, and how many
+    /// floating boxes it's under, counting itself.
+    reach: Vec<(Rect, u32)>,
 }
 
 struct Node {

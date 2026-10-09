@@ -6,9 +6,11 @@
 
 pub mod canvas;
 mod cast;
+pub mod components;
 pub mod host;
 pub mod input;
 mod layout;
 pub mod platform;
 pub mod render;
+mod theme;
 pub mod ui;

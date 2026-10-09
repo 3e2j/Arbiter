@@ -6,31 +6,17 @@
 
 mod assets;
 mod panels;
+mod theme;
 mod workspace;
 
-use assets::{Fonts, Icons};
+use assets::Icons;
 use gui::{
-    canvas::Color,
     host::{App, Startup},
     platform::window,
     ui::Ui,
 };
 use panels::{Panel, Placeholder, Showcase};
 use workspace::{Place, Workspace};
-
-// TODO: from the user's Settings, once the editor reads them.
-const PAGE: Color = Color::hex(0x0e_0f_11);
-const RAISED: Color = Color::hex(0x17_18_1b);
-const LINE: Color = Color::hex(0x2a_2c_31);
-const TEXT: Color = Color::hex(0xe6_e6_e4);
-const DIM: Color = Color::hex(0x9a_9b_98);
-const HOVER: Color = Color::hex(0x24_26_2b);
-const SELECTED: Color = Color::hex(0x33_36_3d);
-const GAP: f32 = 8.;
-const RADIUS: f32 = 8.;
-const TEXT_SIZE: f32 = 13.;
-const ICON_SIZE: f32 = 16.;
-const ROW: f32 = 22.;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -59,13 +45,12 @@ impl App for Editor {
     const MIN_SIZE: [f32; 2] = [1024., 600.];
 
     fn new(start: &mut Startup) -> Result<Self, Box<dyn std::error::Error>> {
-        start.background = PAGE;
-        let fonts = Fonts::load(start.glyphs)?;
+        start.theme = theme::theme(assets::fonts(start.glyphs)?);
         let icons = Icons::load(start.glyphs)?;
         // TODO: from the session, once the workspace is saved.
-        let mut workspace = Workspace::new(fonts);
-        let placeholder = |title| Panel::Placeholder(Placeholder::new(title, fonts));
-        workspace.add(Panel::Showcase(Showcase::new(fonts, icons)), Place::Main);
+        let mut workspace = Workspace::default();
+        let placeholder = |title| Panel::Placeholder(Placeholder::new(title));
+        workspace.add(Panel::Showcase(Showcase::new(icons)), Place::Main);
         workspace.add(placeholder("Messages"), Place::Main);
         workspace.add(placeholder("Files"), Place::LeftInnerTop);
         workspace.add(placeholder("Search"), Place::LeftInnerTop);

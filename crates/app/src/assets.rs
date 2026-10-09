@@ -1,7 +1,8 @@
 //! The fonts and icons built into the editor, from the workspace's `assets/`.
 //! Each folder there carries its license.
 
-use gui::canvas::{Error, FontFile, FontId, Glyphs, IconId};
+use gui::canvas::{Error, FontFile, Glyphs, IconId};
+use gui::ui::Fonts;
 
 /// A file under `assets/`.
 macro_rules! asset {
@@ -14,46 +15,35 @@ macro_rules! asset {
 // defaults to its thinnest weight, so the weight is always set.
 const WEIGHT: f32 = 400.;
 
-/// The fonts text is drawn in.
-#[derive(Clone, Copy)]
-pub struct Fonts {
-    /// Labels, tabs and the file tree.
-    pub ui: FontId,
-    /// Code and logs, where text lines up in columns.
-    pub buffer: FontId,
-}
-
-impl Fonts {
-    /// Adds the fonts to `glyphs`. UI text falls back to Noto Sans JP, such as
-    /// for Japanese file names, and code to Noto Sans then Noto Sans JP, so a
-    /// missing character keeps the closest style there is. The system's fonts
-    /// take what all of them lack.
-    pub fn load(glyphs: &mut Glyphs) -> Result<Self, Error> {
-        let ui = glyphs.add_font(
-            FontFile {
-                name: "Noto Sans",
-                data: asset!("fonts/noto-sans/NotoSans[wdth,wght].ttf"),
-            },
-            WEIGHT,
-        )?;
-        let buffer = glyphs.add_font(
-            FontFile {
-                name: "JetBrains Mono",
-                data: asset!("fonts/jetbrains-mono/JetBrainsMono[wght].ttf"),
-            },
-            WEIGHT,
-        )?;
-        let jp = glyphs.add_font(
-            FontFile {
-                name: "Noto Sans JP",
-                data: asset!("fonts/noto-sans-jp/NotoSansJP[wght].ttf"),
-            },
-            WEIGHT,
-        )?;
-        glyphs.set_fallbacks(ui, &[jp]);
-        glyphs.set_fallbacks(buffer, &[ui, jp]);
-        Ok(Self { ui, buffer })
-    }
+/// Adds the fonts to `glyphs`. UI text falls back to Noto Sans JP, such as
+/// for Japanese file names, and code to Noto Sans then Noto Sans JP, so a
+/// missing character keeps the closest style there is. The system's fonts
+/// take what all of them lack.
+pub fn fonts(glyphs: &mut Glyphs) -> Result<Fonts, Error> {
+    let ui = glyphs.add_font(
+        FontFile {
+            name: "Noto Sans",
+            data: asset!("fonts/noto-sans/NotoSans[wdth,wght].ttf"),
+        },
+        WEIGHT,
+    )?;
+    let buffer = glyphs.add_font(
+        FontFile {
+            name: "JetBrains Mono",
+            data: asset!("fonts/jetbrains-mono/JetBrainsMono[wght].ttf"),
+        },
+        WEIGHT,
+    )?;
+    let jp = glyphs.add_font(
+        FontFile {
+            name: "Noto Sans JP",
+            data: asset!("fonts/noto-sans-jp/NotoSansJP[wght].ttf"),
+        },
+        WEIGHT,
+    )?;
+    glyphs.set_fallbacks(ui, &[jp]);
+    glyphs.set_fallbacks(buffer, &[ui, jp]);
+    Ok(Fonts { ui, buffer })
 }
 
 /// The icons in `assets/icons`, all drawn on a 24 unit grid.
