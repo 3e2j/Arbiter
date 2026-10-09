@@ -28,7 +28,8 @@ pub enum Size {
     /// Just big enough for its children and padding.
     Fit,
     /// Fits, then takes an equal share of what its parent has left along the
-    /// parent's direction, or all of it across.
+    /// parent's direction, or all of it across. A box that clips starts from
+    /// its padding instead of fitting, so its children can't make it bigger.
     Grow,
 }
 
@@ -85,7 +86,8 @@ pub struct Element {
     pub background: Option<Color>,
     pub border: Option<Border>,
     pub radius: f32,
-    /// Cuts its children off at its edge.
+    /// Cuts its children off at its edge. A [`Size::Grow`] box that clips
+    /// doesn't fit them.
     pub clip: bool,
     /// Shifts its children, for scrolling.
     pub offset: [f32; 2],

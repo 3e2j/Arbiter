@@ -269,6 +269,23 @@ fn a_float_meets_its_parent_at_the_points_it_picks() {
 }
 
 #[test]
+fn a_growing_clip_takes_only_what_its_given() {
+    let mut layout = Layout::default();
+    layout.clear();
+    let list = Element {
+        clip: true,
+        ..Element::column()
+    };
+    layout.open(slot(0), list);
+    for n in 0..3 {
+        leaf(&mut layout, n, fixed(10., 60.));
+    }
+    layout.close();
+    layout.solve(WINDOW, 1.);
+    assert_eq!(rects(&layout)[1], WINDOW);
+}
+
+#[test]
 fn boxes_outside_the_clip_draw_nothing() {
     let mut layout = Layout::default();
     layout.clear();

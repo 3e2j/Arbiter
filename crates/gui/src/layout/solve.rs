@@ -57,6 +57,9 @@ impl Layout {
             let node = &mut self.nodes[index];
             let size = match node.element.size[axis] {
                 Size::Fixed(size) => size,
+                // Cut off at its edge anyway, so it takes only what it's
+                // given and what's past that can scroll.
+                Size::Grow if node.element.clip => padding(node, axis),
                 Size::Fit | Size::Grow => used + padding(node, axis),
             };
             node.size[axis] = size.max(node.element.min[axis]);
