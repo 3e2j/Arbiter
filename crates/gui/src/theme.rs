@@ -34,6 +34,8 @@ pub struct Colors {
     pub thumb: Color,
     /// A scroll thumb under the pointer, or while it's dragged.
     pub thumb_hover: Color,
+    /// Marks where something dragged will land.
+    pub accent: Color,
 }
 
 /// In logical pixels.

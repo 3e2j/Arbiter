@@ -90,6 +90,10 @@ pub enum Cursor {
     ResizeV,
     /// Over something that can be dragged.
     Grab,
+    /// While something is dragged.
+    Grabbing,
+    /// While something dragged can't be dropped here.
+    NotAllowed,
 }
 
 /// One thing the user did.

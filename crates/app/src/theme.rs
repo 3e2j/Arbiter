@@ -15,6 +15,7 @@ const COLORS: Colors = Colors {
     selected: Color::hex(0x33_36_3d),
     thumb: Color::hex(0xe6_e6_e4).alpha(0x30),
     thumb_hover: Color::hex(0xe6_e6_e4).alpha(0x60),
+    accent: Color::hex(0x44_d4_d8),
 };
 
 const SIZES: Sizes = Sizes {

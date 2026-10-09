@@ -6,6 +6,8 @@ mod showcase;
 
 use gui::ui::Ui;
 
+use crate::workspace::Places;
+
 pub use placeholder::Placeholder;
 pub use showcase::Showcase;
 
@@ -20,6 +22,14 @@ impl Panel {
         match self {
             Self::Placeholder(panel) => panel.title(),
             Self::Showcase(_) => Showcase::TITLE,
+        }
+    }
+
+    /// Where its tab may sit.
+    pub const fn places(&self) -> Places {
+        match self {
+            Self::Placeholder(panel) => panel.places(),
+            Self::Showcase(_) => Places::ALL,
         }
     }
 

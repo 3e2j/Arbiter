@@ -341,6 +341,8 @@ const fn cursor_icon(cursor: Cursor) -> CursorIcon {
         Cursor::ResizeH => CursorIcon::EwResize,
         Cursor::ResizeV => CursorIcon::NsResize,
         Cursor::Grab => CursorIcon::Grab,
+        Cursor::Grabbing => CursorIcon::Grabbing,
+        Cursor::NotAllowed => CursorIcon::NotAllowed,
     }
 }
 

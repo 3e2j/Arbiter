@@ -16,7 +16,7 @@ use gui::{
     ui::Ui,
 };
 use panels::{Panel, Placeholder, Showcase};
-use workspace::{Place, Workspace};
+use workspace::{Place, Places, Workspace};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -49,15 +49,16 @@ impl App for Editor {
         let icons = Icons::load(start.glyphs)?;
         // TODO: from the session, once the workspace is saved.
         let mut workspace = Workspace::new(icons);
-        let placeholder = |title| Panel::Placeholder(Placeholder::new(title));
+        let editor = |title| Panel::Placeholder(Placeholder::new(title, Places::MAIN));
+        let tool = |title| Panel::Placeholder(Placeholder::new(title, Places::BANDS));
         workspace.add(Panel::Showcase(Showcase::new(icons)), Place::Main);
-        workspace.add(placeholder("Messages"), Place::Main);
-        workspace.add(placeholder("Files"), Place::LeftInnerTop);
-        workspace.add(placeholder("Search"), Place::LeftInnerTop);
-        workspace.add(placeholder("Outline"), Place::LeftInnerBottom);
-        workspace.add(placeholder("Inspector"), Place::RightInnerTop);
-        workspace.add(placeholder("Log"), Place::BelowMain);
-        workspace.add(placeholder("Diagnostics"), Place::BelowMain);
+        workspace.add(editor("Messages"), Place::Main);
+        workspace.add(tool("Files"), Place::LeftInnerTop);
+        workspace.add(tool("Search"), Place::LeftInnerTop);
+        workspace.add(tool("Outline"), Place::LeftInnerBottom);
+        workspace.add(tool("Inspector"), Place::RightInnerTop);
+        workspace.add(tool("Log"), Place::BelowMain);
+        workspace.add(tool("Diagnostics"), Place::BelowMain);
         Ok(Self { workspace })
     }
 
