@@ -139,8 +139,8 @@ fn a_box_finds_its_rect_after_one_is_inserted_before_it() {
     layout.solve(WINDOW, 1.);
     layout.clear();
     leaf(&mut layout, 1, fixed(10., 30.));
-    let (_, rect) = layout.open(slot(0), fixed(10., 10.));
-    assert_eq!(rect, Some(Rect::new(0., 0., 10., 10.)));
+    let (_, last) = layout.open(slot(0), fixed(10., 10.));
+    assert_eq!(layout.last_rect(last), Some(Rect::new(0., 0., 10., 10.)));
 }
 
 #[test]
@@ -154,8 +154,8 @@ fn a_box_under_a_new_parent_is_new() {
     layout.clear();
     // Takes the old parent's index, so its child is looked up by slot.
     layout.open(slot(1), Element::DEFAULT);
-    let (_, rect) = layout.open(slot(0), fixed(10., 10.));
-    assert_eq!(rect, None);
+    let (_, last) = layout.open(slot(0), fixed(10., 10.));
+    assert_eq!(last, None);
 }
 
 #[test]

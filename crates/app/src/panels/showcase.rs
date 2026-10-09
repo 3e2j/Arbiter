@@ -5,7 +5,7 @@
 
 use gui::{
     canvas::{Color, Rect, Vertex},
-    input::Cursor,
+    input::{Button, Cursor},
     ui::{Align, Direction, Element, Size, TextStyle, Ui},
 };
 
@@ -44,7 +44,7 @@ impl Showcase {
         ui.element(strip, |ui| {
             for icon in Icon::ALL {
                 ui.element(cell, |ui| {
-                    if ui.pressed() {
+                    if ui.pressed(Button::Left) {
                         self.selected = Some(icon);
                     }
                     ui.style().background = if self.selected == Some(icon) {

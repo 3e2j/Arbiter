@@ -16,6 +16,28 @@ pub enum Button {
     Forward = 1 << 4,
 }
 
+impl Button {
+    pub const ALL: [Self; 5] = [
+        Self::Left,
+        Self::Right,
+        Self::Middle,
+        Self::Back,
+        Self::Forward,
+    ];
+
+    /// Its place in [`Self::ALL`].
+    #[must_use]
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Left => 0,
+            Self::Right => 1,
+            Self::Middle => 2,
+            Self::Back => 3,
+            Self::Forward => 4,
+        }
+    }
+}
+
 /// The keys the editor acts on. Any other key with a character is
 /// [`Key::Char`], and the rest aren't reported.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

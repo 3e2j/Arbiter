@@ -7,7 +7,7 @@ use std::error::Error;
 use crate::canvas::{AtlasUpdate, Canvas, Color, Glyphs, Rect};
 use crate::input::{Event, Input, Out};
 use crate::layout::Layout;
-use crate::ui::{Slots, Ui};
+use crate::ui::{Memory, Slots, Ui};
 
 /// The app's side of the host.
 pub trait App: Sized {
@@ -22,7 +22,8 @@ pub trait App: Sized {
     /// When the app can't start. The window doesn't open.
     fn new(start: &mut Startup) -> Result<Self, Box<dyn Error>>;
     /// Declares one pass's boxes through `ui`, which starts in the window's
-    /// box. Runs twice when a box moved, the second time with no new input.
+    /// box. Can run twice in a frame, as [`Host::draw`] says, and only the
+    /// second is drawn.
     fn ui(&mut self, ui: &mut Ui);
     /// After the last pass.
     fn on_close(&mut self) {}
@@ -37,7 +38,6 @@ pub struct Startup<'a> {
     pub glyphs: &'a mut Glyphs,
 }
 
-// TODO: memory, once responses track presses.
 pub struct Host<A> {
     app: A,
     background: Color,
@@ -45,6 +45,7 @@ pub struct Host<A> {
     input: Input,
     layout: Layout,
     slots: Slots,
+    memory: Memory,
 }
 
 impl<A: App> Host<A> {
@@ -66,6 +67,7 @@ impl<A: App> Host<A> {
             input: Input::default(),
             layout: Layout::default(),
             slots: Slots::default(),
+            memory: Memory::default(),
         })
     }
 
@@ -77,14 +79,18 @@ impl<A: App> Host<A> {
     /// Runs one pass over `rect`, the window in logical pixels, with `scale`
     /// physical pixels per logical one, using up the events pushed since the
     /// last.
+    ///
+    /// A pass answers from last frame's rects. If a box moved or a button
+    /// changed hands, those answers are stale, such as a row that landed under
+    /// the pointer without its hover (which is incorrect), so the pass runs again
+    /// with no new input and that one is drawn instead.
     pub fn draw(&mut self, rect: Rect, scale: f32, canvas: &mut Canvas) -> Out {
         self.glyphs.set_scale(scale);
         self.glyphs.next_frame();
         let mut out = self.pass();
         self.input.clear();
-        // The pass read rects that have since moved. Running it again with the
-        // input used up keeps a click from landing twice.
-        if self.layout.solve(rect, scale) {
+        let shifted = self.layout.solve(rect, scale);
+        if shifted || self.memory.changed() {
             out = self.pass();
             self.layout.solve(rect, scale);
         }
@@ -108,8 +114,10 @@ impl<A: App> Host<A> {
             &self.input,
             &mut out,
             &mut self.slots,
+            &mut self.memory,
         );
         self.app.ui(&mut ui);
+        self.memory.end(&self.input);
         out
     }
 

@@ -298,11 +298,11 @@ impl Layout {
     }
 
     /// Opens a box, whose children are declared until [`Self::close`].
-    /// Returns its node and its rect last pass.
-    pub fn open(&mut self, slot: Slot, element: Element) -> (usize, Option<Rect>) {
+    /// Returns its node and the node it matches last pass.
+    pub fn open(&mut self, slot: Slot, element: Element) -> (usize, Option<usize>) {
         let (index, last) = self.push(slot, element, Content::Box);
         self.open.push((index, last));
-        (index, self.last_rect(last))
+        (index, last)
     }
 
     /// Closes the box opened last.
@@ -445,7 +445,7 @@ impl Layout {
         self.last_slots.get(&(parent, slot)).copied()
     }
 
-    fn last_rect(&self, last: Option<usize>) -> Option<Rect> {
+    pub fn last_rect(&self, last: Option<usize>) -> Option<Rect> {
         last.map(|last| self.last[last].rect)
     }
 }

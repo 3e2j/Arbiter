@@ -5,7 +5,7 @@
 //! with no tabs takes no space.
 
 use gui::{
-    input::Cursor,
+    input::{Button, Cursor},
     ui::{Align, Border, Direction, Element, Size, TextStyle, Ui},
 };
 
@@ -232,7 +232,7 @@ impl Dock {
         ui.element(bar, |ui| {
             for (i, tab_of) in (0..).zip(&self.tabs) {
                 ui.element(tab, |ui| {
-                    if ui.pressed() {
+                    if ui.pressed(Button::Left) {
                         shown = i;
                     }
                     let current = shown == i;

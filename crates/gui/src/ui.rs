@@ -3,7 +3,7 @@
 //!
 //! ```ignore
 //! ui.element(Element::row(), |ui| {
-//!     if ui.pressed() {
+//!     if ui.pressed(Button::Left) {
 //!         // ...
 //!     }
 //!     ui.text(style, "Open");
@@ -30,6 +30,7 @@ pub struct Ui<'a> {
     input: &'a Input,
     out: &'a mut Out,
     slots: &'a mut Slots,
+    memory: &'a mut Memory,
 }
 
 /// What a pass needs to give each box its own [`Slot`]: the line that declared
@@ -42,6 +43,35 @@ pub(crate) struct Slots {
     /// How many boxes each key has had in each parent, so a key given twice
     /// still makes two.
     keys: HashMap<(usize, Slot), u32>,
+}
+
+/// Which box holds each button, kept between passes. A box takes a button by
+/// asking about it in the pass it goes down over the box, and keeps it until
+/// it comes up, wherever the pointer goes. Each button is held on its own.
+#[derive(Default)]
+pub(crate) struct Memory {
+    /// Indexed by [`Button::index`].
+    // TODO: a short `Vec` keyed by a `Source` enum once keys, touch, gamepad
+    // buttons, MIDI can be held too, those found by focus rather than position.
+    // Sticks and other axes stay in `Input`, read by the holder or the focus.
+    holds: [Hold; Button::ALL.len()],
+    /// Where the pointer was at the end of last pass.
+    pointer: Option<[f32; 2]>,
+    /// Whether a button changed hands or was let go of.
+    changed: bool,
+}
+
+#[derive(Clone, Copy, Default)]
+struct Hold {
+    /// The box holding the button, by its index last pass.
+    held: Option<usize>,
+    /// The button came up, so this pass is the holder's last.
+    let_go: bool,
+    /// The holder's index this pass.
+    found: Option<usize>,
+    /// The last declared box this pass to ask about a press that went down
+    /// over it.
+    claim: Option<usize>,
 }
 
 /// Puts shapes into a custom box, at last pass's rect, from [`Ui::custom`].
@@ -62,6 +92,8 @@ pub struct Painter<'a> {
 #[derive(Clone, Copy)]
 struct Open {
     node: usize,
+    /// The node it matches last pass.
+    last: Option<usize>,
     /// Its rect last pass.
     rect: Option<Rect>,
     /// Where its children's lines start in [`Slots::sites`].
@@ -76,12 +108,15 @@ impl<'a> Ui<'a> {
         input: &'a Input,
         out: &'a mut Out,
         slots: &'a mut Slots,
+        memory: &'a mut Memory,
     ) -> Self {
         slots.sites.clear();
         slots.keys.clear();
+        memory.begin();
         Self {
             open: Open {
                 node: 0,
+                last: None,
                 rect: None,
                 sites: 0,
             },
@@ -90,6 +125,7 @@ impl<'a> Ui<'a> {
             input,
             out,
             slots,
+            memory,
         }
     }
 
@@ -125,10 +161,32 @@ impl<'a> Ui<'a> {
             .is_some_and(|(rect, at)| rect.contains(at))
     }
 
-    /// Whether the left button went down over the open box.
+    /// Whether `button` went down over the open box.
     #[must_use]
-    pub fn pressed(&self) -> bool {
-        self.hovered() && self.input.pressed(Button::Left)
+    pub fn pressed(&self, button: Button) -> bool {
+        self.hovered() && self.input.pressed(button)
+    }
+
+    /// Whether the open box holds `button`: it went down over it and hasn't
+    /// come up. Starts the pass after the press, since a box declared later
+    /// in the press pass, such as one inside it, takes the button instead.
+    pub fn held(&mut self, button: Button) -> bool {
+        self.holds(button) && !self.memory.holds[button.index()].let_go
+    }
+
+    /// Whether `button` came up over the open box after going down over it.
+    pub fn clicked(&mut self, button: Button) -> bool {
+        self.holds(button) && self.memory.holds[button.index()].let_go && self.hovered()
+    }
+
+    /// How far the pointer moved since last pass while the open box holds
+    /// `button`.
+    pub fn dragged(&mut self, button: Button) -> Option<[f32; 2]> {
+        if !self.held(button) {
+            return None;
+        }
+        let ([x, y], [from_x, from_y]) = (self.input.pointer()?, self.memory.pointer?);
+        Some([x - from_x, y - from_y])
     }
 
     /// The open box, to change from what its queries say.
@@ -187,10 +245,18 @@ impl<'a> Ui<'a> {
     }
 
     fn open<R>(&mut self, slot: Slot, element: Element, body: impl FnOnce(&mut Self) -> R) -> R {
-        let (node, rect) = self.layout.open(slot, element);
+        let (node, last) = self.layout.open(slot, element);
+        if last.is_some() {
+            for hold in &mut self.memory.holds {
+                if hold.held == last {
+                    hold.found = Some(node);
+                }
+            }
+        }
         let open = Open {
             node,
-            rect,
+            last,
+            rect: self.layout.last_rect(last),
             sites: self.slots.sites.len(),
         };
         let parent = std::mem::replace(&mut self.open, open);
@@ -216,9 +282,65 @@ impl<'a> Ui<'a> {
         Slot { site, n, dup: 0 }
     }
 
+    /// Whether the open box holds `button`, or let go of it this pass. Asks
+    /// for it if the button went down over it.
+    fn holds(&mut self, button: Button) -> bool {
+        let pressed = self.pressed(button);
+        let hold = &mut self.memory.holds[button.index()];
+        if pressed {
+            hold.claim = hold.claim.max(Some(self.open.node));
+        }
+        self.open.last.is_some() && self.open.last == hold.held
+    }
+
     fn leave(&mut self, parent: Open) {
         self.slots.sites.truncate(self.open.sites);
         self.open = parent;
+    }
+}
+
+impl Memory {
+    fn begin(&mut self) {
+        for hold in &mut self.holds {
+            hold.found = None;
+            hold.claim = None;
+        }
+        self.changed = false;
+    }
+
+    /// After a pass, hands each button to the box that asked for it, and lets
+    /// go once it's up. Losing focus lets go without a click.
+    pub fn end(&mut self, input: &Input) {
+        for (hold, button) in self.holds.iter_mut().zip(Button::ALL) {
+            self.changed |= hold.end(input, button);
+        }
+        self.pointer = input.pointer();
+    }
+
+    /// Whether the last pass gave a button to a box or let go of one, so it
+    /// should run again before drawing.
+    pub const fn changed(&self) -> bool {
+        self.changed
+    }
+}
+
+impl Hold {
+    /// Returns whether it changed hands or was let go of.
+    fn end(&mut self, input: &Input, button: Button) -> bool {
+        let holder = self.claim.or(self.found.filter(|_| !self.let_go));
+        let mut changed = self.claim.is_some();
+        self.held = None;
+        self.let_go = false;
+        if let Some(holder) = holder {
+            if input.held(button) {
+                self.held = Some(holder);
+            } else if input.released(button) {
+                self.held = Some(holder);
+                self.let_go = true;
+                changed = true;
+            }
+        }
+        changed
     }
 }
 
@@ -254,10 +376,12 @@ mod tests {
         glyphs: Glyphs,
         input: Input,
         slots: Slots,
+        memory: Memory,
     }
 
     impl Kept {
-        /// Runs one pass and solves it, returning what `body` did.
+        /// Runs one pass and solves it, returning what `body` did. The input
+        /// is used up, as the host does.
         fn pass<R>(&mut self, body: impl FnOnce(&mut Ui) -> R) -> R {
             self.layout.clear();
             let mut out = Out::default();
@@ -267,8 +391,11 @@ mod tests {
                 &self.input,
                 &mut out,
                 &mut self.slots,
+                &mut self.memory,
             );
             let r = body(&mut ui);
+            self.memory.end(&self.input);
+            self.input.clear();
             self.layout.solve(WINDOW, 1.);
             r
         }
@@ -365,5 +492,134 @@ mod tests {
             kept.layout.element_mut(1).background,
             Some(Color::hex(0xff_ff_ff))
         );
+    }
+    /// What a box ten wide asked of the left button in one pass.
+    #[derive(PartialEq, Debug, Default)]
+    struct Asked {
+        held: bool,
+        clicked: bool,
+        dragged: Option<[f32; 2]>,
+    }
+
+    fn ask(kept: &mut Kept) -> Asked {
+        kept.pass(|ui| {
+            ui.element(fixed(10., 10.), |ui| Asked {
+                held: ui.held(Button::Left),
+                clicked: ui.clicked(Button::Left),
+                dragged: ui.dragged(Button::Left),
+            })
+        })
+    }
+
+    const HELD: Asked = Asked {
+        held: true,
+        clicked: false,
+        dragged: Some([0.; 2]),
+    };
+
+    const CLICKED: Asked = Asked {
+        held: false,
+        clicked: true,
+        dragged: None,
+    };
+
+    /// Gives the box a rect, then presses over it.
+    fn press(kept: &mut Kept) {
+        kept.input.push(Event::Pointer(Some([5., 5.])));
+        ask(kept);
+        kept.input.push(Event::Pressed(Button::Left));
+        assert_eq!(ask(kept), Asked::default());
+    }
+
+    #[test]
+    fn a_box_holds_the_button_until_it_comes_up_over_it() {
+        let mut kept = Kept::default();
+        press(&mut kept);
+        assert_eq!(ask(&mut kept), HELD);
+        kept.input.push(Event::Released(Button::Left));
+        assert_eq!(ask(&mut kept), HELD);
+        assert_eq!(ask(&mut kept), CLICKED);
+        assert_eq!(ask(&mut kept), Asked::default());
+    }
+
+    #[test]
+    fn a_press_and_release_in_one_pass_clicks() {
+        let mut kept = Kept::default();
+        kept.input.push(Event::Pointer(Some([5., 5.])));
+        ask(&mut kept);
+        kept.input.push(Event::Pressed(Button::Left));
+        kept.input.push(Event::Released(Button::Left));
+        assert_eq!(ask(&mut kept), Asked::default());
+        assert_eq!(ask(&mut kept), CLICKED);
+        assert_eq!(ask(&mut kept), Asked::default());
+    }
+
+    #[test]
+    fn letting_go_away_from_the_box_is_not_a_click() {
+        let mut kept = Kept::default();
+        press(&mut kept);
+        kept.input.push(Event::Pointer(Some([50., 50.])));
+        kept.input.push(Event::Released(Button::Left));
+        ask(&mut kept);
+        assert_eq!(ask(&mut kept), Asked::default());
+    }
+
+    #[test]
+    fn losing_focus_lets_go_without_a_click() {
+        let mut kept = Kept::default();
+        press(&mut kept);
+        kept.input.push(Event::Unfocused);
+        ask(&mut kept);
+        assert_eq!(ask(&mut kept), Asked::default());
+    }
+
+    #[test]
+    fn a_drag_follows_the_pointer_outside_the_box() {
+        let mut kept = Kept::default();
+        press(&mut kept);
+        kept.input.push(Event::Pointer(Some([40., 25.])));
+        assert_eq!(ask(&mut kept).dragged, Some([35., 20.]));
+        // A pass run again with no new input moved nothing.
+        assert_eq!(ask(&mut kept).dragged, Some([0.; 2]));
+    }
+
+    #[test]
+    fn the_box_declared_last_takes_the_press() {
+        let mut kept = Kept::default();
+        let pass = |kept: &mut Kept| {
+            kept.pass(|ui| {
+                ui.element(fixed(20., 20.), |ui| {
+                    let inner = ui.element(fixed(10., 10.), |ui| ui.held(Button::Left));
+                    // Asking after what's inside it still loses to it.
+                    (ui.held(Button::Left), inner)
+                })
+            })
+        };
+        kept.input.push(Event::Pointer(Some([5., 5.])));
+        pass(&mut kept);
+        kept.input.push(Event::Pressed(Button::Left));
+        pass(&mut kept);
+        assert_eq!(pass(&mut kept), (false, true));
+    }
+    #[test]
+    fn each_button_is_held_on_its_own() {
+        let mut kept = Kept::default();
+        let pass = |kept: &mut Kept| {
+            kept.pass(|ui| {
+                [10., 20.].map(|h| {
+                    ui.element(fixed(10., h), |ui| {
+                        [ui.held(Button::Left), ui.held(Button::Middle)]
+                    })
+                })
+            })
+        };
+        kept.input.push(Event::Pointer(Some([5., 5.])));
+        pass(&mut kept);
+        kept.input.push(Event::Pressed(Button::Left));
+        pass(&mut kept);
+        kept.input.push(Event::Pointer(Some([5., 15.])));
+        kept.input.push(Event::Pressed(Button::Middle));
+        pass(&mut kept);
+        assert_eq!(pass(&mut kept), [[true, false], [false, true]]);
     }
 }
