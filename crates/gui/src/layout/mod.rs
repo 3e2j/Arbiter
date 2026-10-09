@@ -318,6 +318,13 @@ impl Layout {
         }
     }
 
+    /// How far the open box's children reached last pass along each axis,
+    /// without its padding.
+    pub fn content(&self) -> Option<[f32; 2]> {
+        let (_, last) = self.open.last()?;
+        Some(self.last.get((*last)?)?.used)
+    }
+
     /// What `node` was declared as, to change before the pass is solved.
     pub fn element_mut(&mut self, node: usize) -> &mut Element {
         &mut self.nodes[node].element

@@ -103,6 +103,19 @@ impl<'a> Ui<'a> {
         self.out.cursor = cursor;
     }
 
+    /// The open box's rect last pass. `None` the first pass it's declared.
+    #[must_use]
+    pub const fn rect(&self) -> Option<Rect> {
+        self.open.rect
+    }
+
+    /// How far the open box's children reached last pass along each axis,
+    /// without its padding.
+    #[must_use]
+    pub fn content(&self) -> Option<[f32; 2]> {
+        self.layout.content()
+    }
+
     /// Whether the pointer is over the open box, by its rect last pass.
     #[must_use]
     pub fn hovered(&self) -> bool {
@@ -263,7 +276,7 @@ mod tests {
 
     /// The open box's rect last pass.
     fn rect(ui: &mut Ui) -> Option<Rect> {
-        ui.open.rect
+        ui.rect()
     }
 
     #[test]
