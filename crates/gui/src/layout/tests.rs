@@ -417,6 +417,28 @@ fn a_custom_box_draws_in_its_place() {
     assert_eq!(kinds, [Kind::Triangles]);
 }
 
+#[test]
+fn a_custom_box_paints_from_where_it_is_this_pass() {
+    let mut layout = Layout::default();
+    let mut canvas = Canvas::default();
+    for width in [20., 50.] {
+        layout.clear();
+        layout.open(slot(0), Element::row());
+        leaf(&mut layout, 1, fixed(width, 10.));
+        let (node, _) = layout.custom(slot(2), fixed(10., 10.));
+        layout.paint_triangles(
+            node,
+            &[Vertex::new([1., 2.], Color::TRANSPARENT); 3],
+            &[0, 1, 2],
+        );
+        layout.close();
+        layout.solve(WINDOW, 1.);
+        canvas.clear(WINDOW);
+        layout.emit(&mut canvas, &mut Glyphs::default());
+        assert_eq!(canvas.vertices()[0].at, [width + 1., 2.]);
+    }
+}
+
 const SANS: FontFile = FontFile {
     name: "Noto Sans",
     data: include_bytes!("../../../../assets/fonts/noto-sans/NotoSans[wdth,wght].ttf"),

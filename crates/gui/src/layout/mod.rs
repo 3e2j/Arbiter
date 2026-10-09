@@ -398,8 +398,9 @@ impl Layout {
     }
 
     /// A box painted into through [`Self::paint_quad`] and
-    /// [`Self::paint_triangles`], until the next box is declared. Returns its
-    /// node and its rect last pass.
+    /// [`Self::paint_triangles`], until the next box is declared, from its
+    /// top left as laid out this pass. Returns its node and its rect last
+    /// pass.
     pub fn custom(&mut self, slot: Slot, element: Element) -> (usize, Option<Rect>) {
         let start = self.paints.len();
         let (index, last) = self.push(slot, element, Content::Custom(start..start));

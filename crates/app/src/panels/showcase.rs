@@ -5,7 +5,7 @@
 //! To be deleted when a proper workspace / panels gets going
 
 use gui::{
-    canvas::{Color, Rect, Vertex},
+    canvas::{Color, Vertex},
     components::{ListScroll, Row, button, icon_button, list, row},
     ui::{Align, Direction, Element, Size, TextStyle, Ui},
 };
@@ -87,16 +87,14 @@ impl Showcase {
             ..Element::DEFAULT
         };
         let mut painter = ui.custom(triangle);
-        if let Some(Rect { x, y, .. }) = painter.rect {
-            painter.triangles(
-                &[
-                    Vertex::new([x + edge / 2., y], Color::hex(0xfa_4d_56)),
-                    Vertex::new([x + edge, y + edge], Color::hex(0x42_be_65)),
-                    Vertex::new([x, y + edge], Color::hex(0x78_a9_ff)),
-                ],
-                &[0, 1, 2],
-            );
-        }
+        painter.triangles(
+            &[
+                Vertex::new([edge / 2., 0.], Color::hex(0xfa_4d_56)),
+                Vertex::new([edge, edge], Color::hex(0x42_be_65)),
+                Vertex::new([0., edge], Color::hex(0x78_a9_ff)),
+            ],
+            &[0, 1, 2],
+        );
         ui.element(strip, |ui| {
             if button(ui, "Add a row") {
                 self.add_row();

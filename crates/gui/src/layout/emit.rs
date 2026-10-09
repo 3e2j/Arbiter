@@ -129,15 +129,16 @@ fn draw(node: &Node, texts: &mut [Text], drawn: &Drawn, canvas: &mut Canvas, gly
             glyphs.icon(canvas, *icon, [rect.x, rect.y], *size, *color);
         }
         Content::Custom(range) => {
+            let origin = [rect.x, rect.y];
             for paint in drawn.paints.get(range.clone()).unwrap_or_default() {
                 match paint {
-                    Paint::Quad(quad) => canvas.quad(*quad),
+                    Paint::Quad(quad) => canvas.quad(quad.moved(origin)),
                     Paint::Triangles { vertices, indices } => {
                         if let (Some(vertices), Some(indices)) = (
                             drawn.vertices.get(vertices.clone()),
                             drawn.indices.get(indices.clone()),
                         ) {
-                            canvas.triangles(vertices, indices);
+                            canvas.triangles_at(origin, vertices, indices);
                         }
                     }
                 }

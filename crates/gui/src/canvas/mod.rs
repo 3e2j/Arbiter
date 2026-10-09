@@ -187,6 +187,14 @@ impl Quad {
         self
     }
 
+    /// Shifted `[x, y]` right and down.
+    #[must_use]
+    pub(crate) const fn moved(mut self, [x, y]: [f32; 2]) -> Self {
+        self.rect[0] += x;
+        self.rect[1] += y;
+        self
+    }
+
     /// Drawn inside the rect, so a border never changes a quad's size.
     #[must_use]
     pub const fn bordered(mut self, width: f32, color: Color) -> Self {
@@ -270,11 +278,20 @@ impl Canvas {
     /// Every three indices are one triangle, indexing into `vertices`.
     /// Triangles drawn one after another under the same clip share a batch.
     pub fn triangles(&mut self, vertices: &[Vertex], indices: &[u32]) {
+        self.triangles_at([0., 0.], vertices, indices);
+    }
+
+    /// As [`Self::triangles`], with each vertex shifted by `origin`.
+    pub(crate) fn triangles_at(&mut self, origin: [f32; 2], vertices: &[Vertex], indices: &[u32]) {
         self.switch(Kind::Triangles);
         // A canvas past u32::MAX vertices is refused by the renderer, so a
         // saturated index is never drawn.
         let base = u32::try_from(self.vertices.len()).unwrap_or(u32::MAX);
-        self.vertices.extend_from_slice(vertices);
+        let [x, y] = origin;
+        self.vertices.extend(vertices.iter().map(|vertex| Vertex {
+            at: [vertex.at[0] + x, vertex.at[1] + y],
+            ..*vertex
+        }));
         self.indices
             .extend(indices.iter().map(|&i| base.saturating_add(i)));
     }

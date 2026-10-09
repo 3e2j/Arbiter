@@ -79,7 +79,11 @@ struct Hold {
     claim: Option<usize>,
 }
 
-/// Puts shapes into a custom box, at last pass's rect, from [`Ui::custom`].
+/// Puts shapes into a custom box, from [`Ui::custom`].
+///
+/// Shapes are placed from the box's top left, so they move with it the pass
+/// it moves. Its size is last pass's, so shapes that scale with it lag a pass
+/// behind a resize.
 ///
 /// Only for content whose positions come from data rather than from layout,
 /// such as music notes on a timeline or nodes in a graph.
@@ -87,8 +91,8 @@ struct Hold {
 /// Anything that could be a row of text and boxes should be elements, which get
 /// layout, clipping and hit testing for free.
 pub struct Painter<'a> {
-    /// `None` the first pass it's declared.
-    pub rect: Option<Rect>,
+    /// As `[width, height]` last pass, `None` the first pass it's declared.
+    pub size: Option<[f32; 2]>,
     layout: &'a mut Layout,
     node: usize,
 }
@@ -278,7 +282,7 @@ impl<'a> Ui<'a> {
         let slot = self.next_slot(Location::caller());
         let (node, rect) = self.layout.custom(slot, element);
         Painter {
-            rect,
+            size: rect.map(|rect| [rect.w, rect.h]),
             layout: self.layout,
             node,
         }
