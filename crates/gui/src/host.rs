@@ -1,12 +1,12 @@
 //! Runs an [`App`], keeping what it needs between passes.
 //!
 //! The window drives a [`Host`] and never calls the app itself.
-// TODO: For now a pass draws straight into the canvas. Context comes later.
 
 use std::error::Error;
 
 use crate::canvas::{AtlasUpdate, Canvas, Color, Glyphs, Rect};
 use crate::input::{Event, Input, Out};
+use crate::layout::Layout;
 
 /// The app's side of the host.
 pub trait App: Sized {
@@ -17,17 +17,11 @@ pub trait App: Sized {
     ///
     /// When the app can't start. The window doesn't open.
     fn new(start: &mut Startup) -> Result<Self, Box<dyn Error>>;
-    /// Draws one pass into `canvas`, which covers `rect`, reading what the
-    /// user did since the last pass from `input`.
+    /// Declares one pass's boxes into `layout`, which starts in the window's
+    /// box, reading what the user did since the last pass from `input`. Runs
+    /// twice when a box moved, the second time with no new input.
     // TODO: take `&mut Context` once `gui::context` exists.
-    fn ui(
-        &mut self,
-        rect: Rect,
-        canvas: &mut Canvas,
-        glyphs: &mut Glyphs,
-        input: &Input,
-        out: &mut Out,
-    );
+    fn ui(&mut self, layout: &mut Layout, glyphs: &mut Glyphs, input: &Input, out: &mut Out);
     /// After the last pass.
     fn on_close(&mut self) {}
 }
@@ -41,12 +35,13 @@ pub struct Startup<'a> {
     pub glyphs: &'a mut Glyphs,
 }
 
-// TODO: layout and memory, once `gui::layout` and `gui::context` exist.
+// TODO: memory, once `gui::context` exists.
 pub struct Host<A> {
     app: A,
     background: Color,
     glyphs: Glyphs,
     input: Input,
+    layout: Layout,
 }
 
 impl<A: App> Host<A> {
@@ -66,6 +61,7 @@ impl<A: App> Host<A> {
             background,
             glyphs,
             input: Input::default(),
+            layout: Layout::default(),
         })
     }
 
@@ -80,12 +76,25 @@ impl<A: App> Host<A> {
     pub fn draw(&mut self, rect: Rect, scale: f32, canvas: &mut Canvas) -> Out {
         self.glyphs.set_scale(scale);
         self.glyphs.next_frame();
+        let mut out = self.pass();
+        self.input.clear();
+        // The pass read rects that have since moved. Running it again with the
+        // input used up keeps a click from landing twice.
+        if self.layout.solve(rect, scale) {
+            out = self.pass();
+            self.layout.solve(rect, scale);
+        }
         canvas.clear(rect);
         canvas.background = self.background;
+        self.layout.emit(canvas, &mut self.glyphs);
+        out
+    }
+
+    fn pass(&mut self) -> Out {
         let mut out = Out::default();
+        self.layout.clear();
         self.app
-            .ui(rect, canvas, &mut self.glyphs, &self.input, &mut out);
-        self.input.clear();
+            .ui(&mut self.layout, &mut self.glyphs, &self.input, &mut out);
         out
     }
 

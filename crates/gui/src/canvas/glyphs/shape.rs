@@ -17,7 +17,8 @@ use super::fonts::Fonts;
 use super::ink::Ink;
 use crate::cast::narrow;
 
-/// Shaped lines, kept while they're drawn every frame.
+/// Shaped lines, kept while they're drawn every frame. A line held elsewhere,
+/// such as by a text element, is shaped here and kept by its holder.
 #[derive(Default)]
 pub(super) struct Lines {
     /// The lines shaped or drawn this frame, by [`line_hash`].
@@ -27,15 +28,23 @@ pub(super) struct Lines {
     last_frame: HashMap<u64, Line>,
     /// Kept between runs so shaping one allocates nothing new.
     buffer: Option<UnicodeBuffer>,
+    /// Counts each [`Self::clear`], so a line held elsewhere can tell it was
+    /// shaped by fonts that have changed since.
+    version: u32,
 }
 
 /// A line of text in one font and size, shaped. In physical pixels from a pen
 /// starting at zero on the baseline.
-pub(super) struct Line {
-    /// To tell lines apart whose hashes collide.
+pub struct Line {
     text: Box<str>,
-    pub glyphs: Vec<Placed>,
-    pub width: f32,
+    font: FontId,
+    pixels: u16,
+    /// [`line_hash`] of the three above.
+    hash: u64,
+    /// [`Lines::version`] when it was shaped.
+    version: u32,
+    pub(super) glyphs: Vec<Placed>,
+    pub(super) width: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -60,19 +69,46 @@ struct Run {
     bytes: Range<usize>,
 }
 
+impl Line {
+    /// Its size in pixels per em.
+    pub(super) const fn pixels(&self) -> u16 {
+        self.pixels
+    }
+
+    /// Whether every glyph holds the ink it was last drawn with.
+    #[cfg(test)]
+    pub(crate) fn inked(&self) -> bool {
+        self.glyphs.iter().all(|glyph| glyph.ink.is_some())
+    }
+}
+
 impl Lines {
     /// `text` shaped in `font` at `pixels` per em, from this frame, else last
-    /// frame, else shaped now.
-    pub fn get(&mut self, fonts: &mut Fonts, font: FontId, pixels: u16, text: &str) -> &mut Line {
+    /// frame, else shaped now. [`Self::keep`] puts it back.
+    pub fn take(&mut self, fonts: &mut Fonts, font: FontId, pixels: u16, text: &str) -> Line {
         let hash = line_hash(font, pixels, text);
-        let line = match self.this_frame.remove(&hash) {
-            Some(line) if *line.text == *text => line,
+        let same = |line: &Line| *line.text == *text && line.font == font && line.pixels == pixels;
+        match self.this_frame.remove(&hash) {
+            Some(line) if same(&line) => line,
             _ => match self.last_frame.remove(&hash) {
-                Some(line) if *line.text == *text => line,
+                Some(line) if same(&line) => line,
                 _ => self.shape(fonts, font, pixels, text),
             },
-        };
-        self.this_frame.entry(hash).insert_entry(line).into_mut()
+        }
+    }
+
+    /// Keeps `line` this frame and the next.
+    pub fn keep(&mut self, line: Line) {
+        self.this_frame.insert(line.hash, line);
+    }
+
+    /// Whether `line` is `text` in `font` at `pixels`, shaped by the fonts as
+    /// they are now.
+    pub fn holds(&self, line: &Line, font: FontId, pixels: u16, text: &str) -> bool {
+        line.version == self.version
+            && line.font == font
+            && line.pixels == pixels
+            && *line.text == *text
     }
 
     /// Starts a frame, dropping the lines last frame didn't draw.
@@ -85,9 +121,10 @@ impl Lines {
     pub fn clear(&mut self) {
         self.this_frame.clear();
         self.last_frame.clear();
+        self.version = self.version.wrapping_add(1);
     }
 
-    fn shape(&mut self, fonts: &mut Fonts, font: FontId, pixels: u16, text: &str) -> Line {
+    pub fn shape(&mut self, fonts: &mut Fonts, font: FontId, pixels: u16, text: &str) -> Line {
         let mut glyphs = Vec::new();
         let mut pen = 0.;
         for run in runs(fonts, font, text) {
@@ -98,6 +135,10 @@ impl Lines {
         }
         Line {
             text: text.into(),
+            font,
+            pixels,
+            hash: line_hash(font, pixels, text),
+            version: self.version,
             glyphs,
             width: pen,
         }
@@ -207,7 +248,7 @@ mod tests {
     fn kerning_pulls_pairs_together() {
         let (mut fonts, sans) = sans();
         let mut lines = Lines::default();
-        let mut width = |text| lines.get(&mut fonts, sans, 40, text).width;
+        let mut width = |text| lines.shape(&mut fonts, sans, 40, text).width;
         let apart = width("A") + width("V");
         assert!(width("AV") < apart - 1.);
     }
@@ -216,10 +257,14 @@ mod tests {
     fn a_line_is_kept_while_its_drawn() {
         let (mut fonts, sans) = sans();
         let mut lines = Lines::default();
-        lines.get(&mut fonts, sans, 14, "kept");
-        lines.get(&mut fonts, sans, 14, "dropped");
+        let mut draw = |lines: &mut Lines, text| {
+            let line = lines.take(&mut fonts, sans, 14, text);
+            lines.keep(line);
+        };
+        draw(&mut lines, "kept");
+        draw(&mut lines, "dropped");
         lines.next_frame();
-        lines.get(&mut fonts, sans, 14, "kept");
+        draw(&mut lines, "kept");
         assert_eq!(lines.this_frame.len() + lines.last_frame.len(), 2);
         lines.next_frame();
         assert_eq!(lines.last_frame.len(), 1);

@@ -26,6 +26,7 @@ use skrifa::instance::Size;
 pub use atlas::{AtlasUpdate, Format, PageWrite};
 use fonts::Fonts;
 use ink::{Ink, Inks, Key};
+pub use shape::Line;
 use shape::Lines;
 
 use super::{Canvas, Color, Quad, Rect};
@@ -198,16 +199,52 @@ impl Glyphs {
         &mut self,
         canvas: &mut Canvas,
         font: FontId,
-        [x, y]: [f32; 2],
+        at: [f32; 2],
         size: f32,
         text: &str,
         color: Color,
     ) -> f32 {
         let pixels = self.pixels(size);
+        let mut line = self.lines.take(&mut self.fonts, font, pixels, text);
+        let end = self.draw_line(canvas, &mut line, at, color);
+        self.lines.keep(line);
+        end
+    }
+
+    /// `text` in `font` at `size` logical pixels, shaped for a holder that
+    /// keeps it instead of this frame's lines. Reused while
+    /// [`Self::holds_line`].
+    #[must_use]
+    pub fn shape_line(&mut self, font: FontId, size: f32, text: &str) -> Line {
+        let pixels = self.pixels(size);
+        self.lines.shape(&mut self.fonts, font, pixels, text)
+    }
+
+    /// Whether `line` is still `text` in `font` at `size`, as it would be
+    /// shaped now.
+    #[must_use]
+    pub fn holds_line(&self, line: &Line, font: FontId, size: f32, text: &str) -> bool {
+        self.lines.holds(line, font, self.pixels(size), text)
+    }
+
+    /// How far `line` moves the pen, in logical pixels.
+    #[must_use]
+    pub fn line_width(&self, line: &Line) -> f32 {
+        line.width / self.scale
+    }
+
+    /// Draws `line` as [`Self::text`] does.
+    pub fn draw_line(
+        &mut self,
+        canvas: &mut Canvas,
+        line: &mut Line,
+        [x, y]: [f32; 2],
+        color: Color,
+    ) -> f32 {
+        let pixels = line.pixels();
         let start = self.to_physical(x);
         let baseline = self.to_physical(y);
         let height = (f32::from(pixels) * BOX_HEIGHT).round();
-        let line = self.lines.get(&mut self.fonts, font, pixels, text);
         for glyph in &mut line.glyphs {
             let ink = match glyph.ink {
                 Some(ink) if self.inks.holds(ink) => ink,
@@ -235,7 +272,10 @@ impl Glyphs {
     /// in logical pixels. Shapes the line, so drawing it after is free.
     pub fn text_width(&mut self, font: FontId, size: f32, text: &str) -> f32 {
         let pixels = self.pixels(size);
-        self.lines.get(&mut self.fonts, font, pixels, text).width / self.scale
+        let line = self.lines.take(&mut self.fonts, font, pixels, text);
+        let width = line.width;
+        self.lines.keep(line);
+        width / self.scale
     }
 
     /// Draws `icon` in a square `size` logical pixels wide, top left at

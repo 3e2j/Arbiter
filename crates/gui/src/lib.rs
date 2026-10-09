@@ -8,5 +8,6 @@ pub mod canvas;
 mod cast;
 pub mod host;
 pub mod input;
+pub mod layout;
 pub mod platform;
 pub mod render;

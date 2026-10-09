@@ -5,14 +5,17 @@
 //! slows the build.
 
 mod assets;
+mod showcase;
 
-use assets::{Fonts, Icon, Icons};
+use assets::{Fonts, Icons};
 use gui::{
-    canvas::{Canvas, Color, FontId, Glyphs, Quad, Rect, Vertex},
+    canvas::{Color, Glyphs},
     host::{App, Startup},
-    input::{Button, Cursor, Input, Out},
+    input::{Input, Out},
+    layout::{Border, Element, Id, Layout},
     platform::window,
 };
+use showcase::Showcase;
 
 // TODO: from the user's Settings, once the editor reads them.
 const PAGE: u32 = 0x0e_0f_11;
@@ -47,10 +50,8 @@ pub fn run() -> Result<(), Error> {
 /// The editor, as one [`App`]. Owns what only Arbiter knows about.
 // TODO: owns `Workspace` and `Watch` once `app::workspace` and `app::watch` exist.
 struct Editor {
-    fonts: Fonts,
-    icons: Icons,
-    /// The icon last clicked, a stand-in for something to select.
-    selected: Option<Icon>,
+    // TODO: becomes a panel in the workspace.
+    showcase: Showcase,
 }
 
 impl App for Editor {
@@ -58,92 +59,34 @@ impl App for Editor {
 
     fn new(start: &mut Startup) -> Result<Self, Box<dyn std::error::Error>> {
         start.background = Color::hex(PAGE);
+        let fonts = Fonts::load(start.glyphs)?;
+        let icons = Icons::load(start.glyphs)?;
         Ok(Self {
-            fonts: Fonts::load(start.glyphs)?,
-            icons: Icons::load(start.glyphs)?,
-            selected: None,
+            showcase: Showcase::new(fonts, icons),
         })
     }
 
-    // TODO: everything below is a stand-in for the workspace, placed by hand until `gui::layout` exists.
-    fn ui(
-        &mut self,
-        rect: Rect,
-        canvas: &mut Canvas,
-        glyphs: &mut Glyphs,
-        input: &Input,
-        out: &mut Out,
-    ) {
-        let panel = rect.inset(GAP);
-        canvas.quad(
-            Quad::new(panel, Color::hex(RAISED))
-                .rounded(RADIUS)
-                .bordered(1., Color::hex(LINE)),
-        );
-        let body = panel.inset(GAP * 2.);
-        canvas.clip(body);
-        let mut x = body.x;
-        for icon in Icon::ALL {
-            let cell = Rect::new(x, body.y, ICON_SIZE, ICON_SIZE).inset(-GAP / 4.);
-            let hovered = input.pointer().is_some_and(|at| cell.contains(at));
-            if hovered {
-                out.cursor = Cursor::Pointer;
-                if input.pressed(Button::Left) {
-                    self.selected = Some(icon);
-                }
-            }
-            let fill = if self.selected == Some(icon) {
-                Some(SELECTED)
-            } else {
-                hovered.then_some(HOVER)
-            };
-            if let Some(fill) = fill {
-                canvas.quad(Quad::new(cell, Color::hex(fill)).rounded(RADIUS / 2.));
-            }
-            glyphs.icon(
-                canvas,
-                self.icons.get(icon),
-                [x, body.y],
-                ICON_SIZE,
-                Color::hex(DIM),
-            );
-            x += ICON_SIZE + GAP;
-        }
-        let lines = [
-            (self.fonts.ui, "The quick brown fox jumps over the lazy dog"),
-            (self.fonts.ui, "いろはにほへと ちりぬるを わかよたれそ"),
-            (self.fonts.buffer, "0O 1lI {}[]() => != 0x1f4"),
-            (self.fonts.ui, "From a system font: 한국어"),
-            (self.fonts.ui, "Colour emoji (color atlas): 🦀"),
-        ];
-        let mut y = body.y + ICON_SIZE + GAP;
-        for (font, line) in lines {
-            let row = Rect::new(body.x, y, body.w, ROW);
-            glyphs.text(
-                canvas,
-                font,
-                [row.x, baseline(glyphs, font, row)],
-                TEXT_SIZE,
-                line,
-                Color::hex(TEXT),
-            );
-            y += ROW;
-        }
-        let [left, top] = [body.x, y + GAP];
-        let size = ICON_SIZE * 3.;
-        canvas.triangles(
-            &[
-                Vertex::new([left + size / 2., top], Color::hex(0xfa_4d_56)),
-                Vertex::new([left + size, top + size], Color::hex(0x42_be_65)),
-                Vertex::new([left, top + size], Color::hex(0x78_a9_ff)),
-            ],
-            &[0, 1, 2],
-        );
+    fn ui(&mut self, layout: &mut Layout, glyphs: &mut Glyphs, input: &Input, out: &mut Out) {
+        // TODO: a stand-in for the workspace and one dock, until
+        // `app::workspace` exists.
+        let id = Id::ROOT.child("stand-in");
+        layout.open(id.child("page"), Element::column().padded(GAP));
+        let dock = Element {
+            gap: GAP,
+            background: Some(Color::hex(RAISED)),
+            border: Some(Border {
+                width: 1.,
+                color: Color::hex(LINE),
+            }),
+            radius: RADIUS,
+            clip: true,
+            ..Element::column().padded(GAP * 2.)
+        };
+        layout.open(id.child("dock"), dock);
+        self.showcase
+            .ui(id.child("showcase"), layout, glyphs, input, out);
+        // TODO: Remove these boilerplate closes when the ui module exists (closure)
+        layout.close();
+        layout.close();
     }
-}
-
-/// The baseline that centres a line of `font` down `rect`.
-fn baseline(glyphs: &Glyphs, font: FontId, rect: Rect) -> f32 {
-    let line = glyphs.line_metrics(font, TEXT_SIZE);
-    rect.y + (rect.h + line.ascent - line.descent) / 2.
 }

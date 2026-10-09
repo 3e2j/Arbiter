@@ -15,6 +15,7 @@ macro_rules! asset {
 const WEIGHT: f32 = 400.;
 
 /// The fonts text is drawn in.
+#[derive(Clone, Copy)]
 pub struct Fonts {
     /// Labels, tabs and the file tree.
     pub ui: FontId,
@@ -56,7 +57,7 @@ impl Fonts {
 }
 
 /// The icons in `assets/icons`, all drawn on a 24 unit grid.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Icon {
     Alert,
     Check,
@@ -139,6 +140,7 @@ impl Icon {
 }
 
 /// Each [`Icon`]'s id in the glyphs, indexed by the icon.
+#[derive(Clone, Copy)]
 pub struct Icons([IconId; Icon::ALL.len()]);
 
 impl Icons {

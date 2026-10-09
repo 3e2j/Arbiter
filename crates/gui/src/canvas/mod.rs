@@ -11,7 +11,7 @@ mod glyphs;
 use std::ops::Range;
 
 pub use glyphs::{
-    AtlasUpdate, Error, FontFile, FontId, Format, Glyphs, IconId, LineMetrics, PageWrite,
+    AtlasUpdate, Error, FontFile, FontId, Format, Glyphs, IconId, Line, LineMetrics, PageWrite,
 };
 
 use crate::cast::sixteenths;
