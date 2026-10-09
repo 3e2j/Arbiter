@@ -57,6 +57,11 @@ pub(crate) struct Memory {
     // buttons, MIDI can be held too, those found by focus rather than position.
     // Sticks and other axes stay in `Input`, read by the holder or the focus.
     holds: [Hold; Button::ALL.len()],
+    /// The box that takes the wheel, by its index last pass: the innermost
+    /// under the pointer to ask for it.
+    wheel: Option<usize>,
+    /// The last declared box this pass to ask for the wheel while hovered.
+    wheel_claim: Option<usize>,
     /// Where the pointer was at the end of last pass.
     pointer: Option<[f32; 2]>,
     /// Whether a button changed hands or was let go of.
@@ -171,6 +176,21 @@ impl<'a> Ui<'a> {
             .last
             .zip(self.input.pointer())
             .is_some_and(|(last, at)| self.layout.under(last, at))
+    }
+
+    /// How far the wheel scrolled over the open box since last pass. Nothing
+    /// unless it was the innermost box under the pointer to ask last pass, so
+    /// nested scrolling boxes don't all move.
+    pub fn wheel(&mut self) -> [f32; 2] {
+        if self.hovered() {
+            let claim = &mut self.memory.wheel_claim;
+            *claim = (*claim).max(Some(self.open.node));
+        }
+        if self.open.last.is_some() && self.open.last == self.memory.wheel {
+            self.input.scroll()
+        } else {
+            [0.; 2]
+        }
     }
 
     /// Whether `button` went down over the open box.
@@ -317,6 +337,7 @@ impl Memory {
             hold.found = None;
             hold.claim = None;
         }
+        self.wheel_claim = None;
         self.changed = false;
     }
 
@@ -326,6 +347,7 @@ impl Memory {
         for (hold, button) in self.holds.iter_mut().zip(Button::ALL) {
             self.changed |= hold.end(input, button);
         }
+        self.wheel = self.wheel_claim;
         self.pointer = input.pointer();
     }
 
@@ -645,6 +667,7 @@ pub(crate) mod tests {
                 parent: [Align::Start; 2],
                 own: [Align::Start; 2],
                 offset: [0.; 2],
+                clipped: false,
             }),
             ..fixed(10., 10.)
         };

@@ -29,7 +29,9 @@ fn a_list_declares_only_the_rows_in_view() {
         list_pass(&mut kept, &mut state),
         (0..10).collect::<Vec<_>>()
     );
+    // The wheel goes to the box the pointer was over last pass.
     kept.input.push(Event::Pointer(Some([5., 5.])));
+    list_pass(&mut kept, &mut state);
     kept.input.push(Event::Scroll([0., -25.]));
     // The top row is half out of view, so one more shows at the bottom.
     assert_eq!(
@@ -45,6 +47,7 @@ fn a_list_stops_at_both_ends() {
     let mut state = ListScroll::TOP;
     list_pass(&mut kept, &mut state);
     kept.input.push(Event::Pointer(Some([5., 5.])));
+    list_pass(&mut kept, &mut state);
     kept.input.push(Event::Scroll([0., -10_000.]));
     list_pass(&mut kept, &mut state);
     assert!(state.at_end(100., 10., 100));
@@ -101,9 +104,42 @@ fn a_scroll_box_stops_where_its_content_ends() {
     };
     pass(&mut kept, &mut state);
     kept.input.push(Event::Pointer(Some([5., 5.])));
+    pass(&mut kept, &mut state);
     kept.input.push(Event::Scroll([0., -1000.]));
     pass(&mut kept, &mut state);
     assert_eq!(state.offset, 200.);
+}
+
+#[test]
+fn only_the_innermost_scroll_box_takes_the_wheel() {
+    let mut kept = Kept::default();
+    let mut outer = Scroll::default();
+    let mut inner = Scroll::default();
+    let pass = |kept: &mut Kept, outer: &mut Scroll, inner: &mut Scroll| {
+        kept.pass(|ui| {
+            scroll(ui, outer, Element::column(), |ui| {
+                scroll(ui, inner, fixed(100., 50.), |ui| {
+                    for _ in 0..10 {
+                        ui.element(fixed(10., 30.), |_| ());
+                    }
+                });
+                ui.element(fixed(10., 200.), |_| ());
+            });
+        });
+    };
+    pass(&mut kept, &mut outer, &mut inner);
+    pass(&mut kept, &mut outer, &mut inner);
+    kept.input.push(Event::Pointer(Some([5., 5.])));
+    pass(&mut kept, &mut outer, &mut inner);
+    kept.input.push(Event::Scroll([0., -20.]));
+    pass(&mut kept, &mut outer, &mut inner);
+    assert_eq!((outer.offset, inner.offset), (0., 20.));
+    // Past the inner box, the outer one takes it.
+    kept.input.push(Event::Pointer(Some([200., 5.])));
+    pass(&mut kept, &mut outer, &mut inner);
+    kept.input.push(Event::Scroll([0., -20.]));
+    pass(&mut kept, &mut outer, &mut inner);
+    assert_eq!((outer.offset, inner.offset), (20., 20.));
 }
 
 #[test]

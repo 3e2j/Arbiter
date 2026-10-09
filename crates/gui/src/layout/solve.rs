@@ -135,6 +135,7 @@ impl Layout {
                         parent: on,
                         own,
                         offset,
+                        ..
                     }) => {
                         let start = [parent.x, parent.y];
                         let extent = [parent.w, parent.h];

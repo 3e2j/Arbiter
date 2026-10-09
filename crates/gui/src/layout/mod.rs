@@ -58,6 +58,9 @@ pub enum Anchor {
         parent: [Align; 2],
         own: [Align; 2],
         offset: [f32; 2],
+        /// Stays inside the clips its parent is in, as a scroll thumb does,
+        /// rather than escaping them as a menu does.
+        clipped: bool,
     },
     /// Its top left at a point, such as the pointer.
     At([f32; 2]),
@@ -92,8 +95,8 @@ pub struct Element {
     pub clip: bool,
     /// Shifts its children, for scrolling.
     pub offset: [f32; 2],
-    /// Drawn after the whole tree, outside its parent's clip, and left out of
-    /// its parent's size.
+    /// Drawn after the whole tree, outside its parent's clip unless the anchor
+    /// is `clipped`, and left out of its parent's size.
     pub float: Option<Anchor>,
     /// The pointer's shape over it and over its children, unless the box on
     /// top there, or one between them, sets its own.
@@ -146,7 +149,8 @@ pub(crate) struct Layout {
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
     /// Scratch for [`Self::emit`].
-    floats: Vec<usize>,
+    /// Each floating box left for later, and the clip it's drawn in.
+    floats: Vec<(usize, Rect)>,
     clips: Vec<(usize, Rect)>,
     /// The box last pass drew on top under the pointer, set by
     /// [`Self::hit_test`].
@@ -203,13 +207,20 @@ impl Anchor {
         parent: [Align::Start, Align::End],
         own: [Align::Start; 2],
         offset: [0.; 2],
+        clipped: false,
     };
     /// Its top left at its parent's top right.
     pub const RIGHT: Self = Self::Parent {
         parent: [Align::End, Align::Start],
         own: [Align::Start; 2],
         offset: [0.; 2],
+        clipped: false,
     };
+
+    /// Whether it keeps its box inside the clips its parent is in.
+    const fn clipped(self) -> bool {
+        matches!(self, Self::Parent { clipped: true, .. })
+    }
 }
 
 impl Element {

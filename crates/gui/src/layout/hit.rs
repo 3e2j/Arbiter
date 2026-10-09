@@ -47,12 +47,15 @@ fn top(nodes: &[Node], reach: &mut Vec<(Rect, u32)>, at: [f32; 2]) -> Option<usi
         } else {
             let parent = &nodes[node.parent];
             let (clip, floats) = reach[node.parent];
-            if node.element.float.is_some() {
-                (window, floats + 1)
-            } else if parent.element.clip {
-                (clip.intersect(parent.rect), floats)
+            let clip = if parent.element.clip {
+                clip.intersect(parent.rect)
             } else {
-                (clip, floats)
+                clip
+            };
+            match node.element.float {
+                Some(anchor) if anchor.clipped() => (clip, floats + 1),
+                Some(_) => (window, floats + 1),
+                None => (clip, floats),
             }
         };
         reach.push((clip, floats));

@@ -41,11 +41,10 @@ pub fn scroll<R>(
         let padding = element.padding[1] + element.padding[3];
         let view = ui.rect().map(|rect| rect.h);
         let content = ui.content().map_or(0., |[_, h]| h + padding);
+        let wheel = ui.wheel()[1];
         // The first pass has no size to stop at, so it keeps the offset.
         if let Some(view) = view {
-            if ui.hovered() {
-                state.offset -= ui.input().scroll()[1];
-            }
+            state.offset -= wheel;
             state.offset += thumb(ui, state.offset, content, view);
             state.offset = state.offset.clamp(0., (content - view).max(0.));
         }
@@ -74,21 +73,18 @@ pub fn list<T>(
         ..Element::DEFAULT
     };
     ui.element(element, |ui| {
+        let wheel = ui.wheel()[1];
         // Nothing to place rows against until the list has a size.
         let Some(view) = ui.rect() else { return };
         let len = items.len();
         let content = count(len) * height;
-        let mut pixels = if ui.hovered() {
-            -ui.input().scroll()[1]
-        } else {
-            0.
-        };
-        pixels += thumb(
-            ui,
-            count(state.top) * height + state.offset,
-            content,
-            view.h,
-        );
+        let pixels = -wheel
+            + thumb(
+                ui,
+                count(state.top) * height + state.offset,
+                content,
+                view.h,
+            );
         state.by(view.h, height, pixels, len);
         ui.style().offset[1] = -state.offset;
         let mut top = -state.offset;
@@ -127,6 +123,7 @@ fn thumb(ui: &mut Ui, offset: f32, content: f32, view: f32) -> f32 {
             parent: [Align::End, Align::Start],
             own: [Align::End, Align::Start],
             offset: at(offset),
+            clipped: true,
         }),
         ..Element::DEFAULT
     };

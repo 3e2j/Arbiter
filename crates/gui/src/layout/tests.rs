@@ -243,6 +243,39 @@ fn a_float_draws_last_outside_its_parents_clip() {
 }
 
 #[test]
+fn a_clipped_float_stays_inside_its_parents_clip() {
+    let mut layout = Layout::default();
+    layout.clear();
+    let clipped = Element {
+        clip: true,
+        ..fixed(40., 20.)
+    };
+    layout.open(slot(0), clipped);
+    let thumb = Element {
+        float: Some(Anchor::Parent {
+            parent: [Align::Start; 2],
+            own: [Align::Start; 2],
+            offset: [20., 10.],
+            clipped: true,
+        }),
+        background: Some(Color::hex(0xff_ff_ff)),
+        cursor: Some(Cursor::Text),
+        ..fixed(60., 60.)
+    };
+    leaf(&mut layout, 1, thumb);
+    layout.close();
+    layout.solve(WINDOW, 1.);
+    let mut canvas = Canvas::default();
+    canvas.clear(WINDOW);
+    layout.emit(&mut canvas, &mut Glyphs::default());
+    let clips: Vec<_> = canvas.batches().map(|(clip, _, _)| clip).collect();
+    assert_eq!(clips, [Rect::new(0., 0., 40., 20.)]);
+    assert_eq!(layout.cursor(Some([30., 15.])), Some(Cursor::Text));
+    // Past the clip, the float isn't drawn there.
+    assert_eq!(layout.cursor(Some([50., 15.])), None);
+}
+
+#[test]
 fn a_float_meets_its_parent_at_the_points_it_picks() {
     let mut layout = Layout::default();
     layout.clear();
@@ -258,6 +291,7 @@ fn a_float_meets_its_parent_at_the_points_it_picks() {
             parent: [Align::Center, Align::Start],
             own: [Align::Center, Align::End],
             offset: [0., -4.],
+            clipped: false,
         }),
         ..fixed(60., 10.)
     };
