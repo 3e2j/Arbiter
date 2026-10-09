@@ -33,7 +33,7 @@ enum Choice {
     Show(usize),
     Close(usize),
     MoveTo(Place),
-    /// A press outside the menu, or Escape.
+    /// A press outside the menu.
     Dismiss,
 }
 
@@ -96,19 +96,20 @@ impl Workspace {
         let (Some(mut menu), Some(window)) = (self.menu, window) else {
             return;
         };
-        let dock = &self.docks[menu.place.index()];
-        if menu.tab >= dock.tabs.len() {
-            self.menu = None;
-            return;
-        }
         let escaped = ui
             .input()
             .keys()
             .iter()
             .any(|press| press.key == Key::Escape);
+        // Before it's declared, since nothing makes the pass run again to
+        // drop it.
+        if escaped || menu.tab >= self.docks[menu.place.index()].tabs.len() {
+            self.menu = None;
+            return;
+        }
         let choice = menu_ui(ui, menu, &self.docks, &self.icons, window);
         let dock = &mut self.docks[menu.place.index()];
-        match choice.or(escaped.then_some(Choice::Dismiss)) {
+        match choice {
             None => return,
             Some(Choice::Show(index)) => {
                 dock.active = index;
