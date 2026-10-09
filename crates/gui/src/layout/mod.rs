@@ -46,14 +46,18 @@ pub enum Align {
     End,
 }
 
-/// Where a floating box's top left corner goes.
+/// Where a floating box goes.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Anchor {
-    /// At its parent's bottom left.
-    Below,
-    /// At its parent's top right.
-    Right,
-    /// At a point, such as the pointer.
+    /// A point on its parent's rect meets a point on its own, each picked per
+    /// axis, then it shifts by `offset`. The parent's padding and scroll offset
+    /// don't move it.
+    Parent {
+        parent: [Align; 2],
+        own: [Align; 2],
+        offset: [f32; 2],
+    },
+    /// Its top left at a point, such as the pointer.
     At([f32; 2]),
 }
 
@@ -182,6 +186,21 @@ enum Paint {
         vertices: Range<usize>,
         indices: Range<usize>,
     },
+}
+
+impl Anchor {
+    /// Its top left at its parent's bottom left.
+    pub const BELOW: Self = Self::Parent {
+        parent: [Align::Start, Align::End],
+        own: [Align::Start; 2],
+        offset: [0.; 2],
+    };
+    /// Its top left at its parent's top right.
+    pub const RIGHT: Self = Self::Parent {
+        parent: [Align::End, Align::Start],
+        own: [Align::Start; 2],
+        offset: [0.; 2],
+    };
 }
 
 impl Element {

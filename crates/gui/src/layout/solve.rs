@@ -128,8 +128,19 @@ impl Layout {
             self.each_child(index, |child| {
                 let size = child.size;
                 let at = match child.element.float {
-                    Some(Anchor::Below) => [parent.x, parent.bottom()],
-                    Some(Anchor::Right) => [parent.right(), parent.y],
+                    Some(Anchor::Parent {
+                        parent: on,
+                        own,
+                        offset,
+                    }) => {
+                        let start = [parent.x, parent.y];
+                        let extent = [parent.w, parent.h];
+                        std::array::from_fn(|axis| {
+                            start[axis] + point(on[axis], extent[axis])
+                                - point(own[axis], size[axis])
+                                + offset[axis]
+                        })
+                    }
                     Some(Anchor::At(at)) => at,
                     None => {
                         let mut at = [0.; 2];
@@ -182,6 +193,15 @@ fn share(align: Align, free: f32) -> f32 {
         Align::Start => 0.,
         Align::Center => (free / 2.).max(0.),
         Align::End => free.max(0.),
+    }
+}
+
+/// How far along a `length` an attach point is.
+fn point(align: Align, length: f32) -> f32 {
+    match align {
+        Align::Start => 0.,
+        Align::Center => length / 2.,
+        Align::End => length,
     }
 }
 

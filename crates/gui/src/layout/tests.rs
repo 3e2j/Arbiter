@@ -213,7 +213,7 @@ fn a_float_draws_last_outside_its_parents_clip() {
     };
     layout.open(slot(0), menu);
     let popup = Element {
-        float: Some(Anchor::Below),
+        float: Some(Anchor::BELOW),
         background: Some(Color::hex(0xff_ff_ff)),
         ..fixed(60., 60.)
     };
@@ -240,6 +240,32 @@ fn a_float_draws_last_outside_its_parents_clip() {
     assert_eq!(canvas.quads(), [after, popup]);
     let (clip, ..) = canvas.batches().last().unwrap();
     assert_eq!(clip, WINDOW);
+}
+
+#[test]
+fn a_float_meets_its_parent_at_the_points_it_picks() {
+    let mut layout = Layout::default();
+    layout.clear();
+    let button = Element {
+        padding: [5.; 4],
+        offset: [0., -30.],
+        ..fixed(40., 20.)
+    };
+    leaf(&mut layout, 0, fixed(10., 50.));
+    layout.open(slot(1), button);
+    let tooltip = Element {
+        float: Some(Anchor::Parent {
+            parent: [Align::Center, Align::Start],
+            own: [Align::Center, Align::End],
+            offset: [0., -4.],
+        }),
+        ..fixed(60., 10.)
+    };
+    leaf(&mut layout, 2, tooltip);
+    layout.close();
+    layout.solve(WINDOW, 1.);
+    // Centred over the button, ignoring its padding and scroll offset.
+    assert_eq!(rects(&layout)[3], Rect::new(-10., 36., 60., 10.));
 }
 
 #[test]
