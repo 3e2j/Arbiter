@@ -16,6 +16,7 @@ use crate::{
 };
 use winit::{
     application::ApplicationHandler,
+    dpi::LogicalSize,
     event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{self, NamedKey},
@@ -78,9 +79,14 @@ struct Open {
 }
 
 impl Open {
-    fn new(event_loop: &ActiveEventLoop, title: &str) -> Result<Self, Error> {
-        let window =
-            Arc::new(event_loop.create_window(Window::default_attributes().with_title(title))?);
+    /// Opens at `min`, in logical pixels, and never smaller.
+    fn new(event_loop: &ActiveEventLoop, title: &str, min: [f32; 2]) -> Result<Self, Error> {
+        let min = LogicalSize::new(min[0], min[1]);
+        let attributes = Window::default_attributes()
+            .with_title(title)
+            .with_inner_size(min)
+            .with_min_inner_size(min);
+        let window = Arc::new(event_loop.create_window(attributes)?);
         let gpu = gpu(&window)?;
         let pacer = Pacer::new((!compositor_paced(event_loop)).then(|| interval(&window)));
         Ok(Self {
@@ -125,7 +131,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
         if self.open.is_some() {
             return;
         }
-        match Open::new(event_loop, A::TITLE) {
+        match Open::new(event_loop, A::TITLE, A::MIN_SIZE) {
             Ok(open) => self.open = Some(open),
             Err(error) => self.fail(event_loop, error),
         }

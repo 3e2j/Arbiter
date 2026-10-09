@@ -20,6 +20,8 @@ pub struct Showcase {
 }
 
 impl Showcase {
+    pub const TITLE: &str = "Showcase";
+
     pub fn new(fonts: Fonts, icons: Icons) -> Self {
         Self {
             fonts,
@@ -28,7 +30,6 @@ impl Showcase {
         }
     }
 
-    /// Declares the panel's contents into the box `ui` has open.
     pub fn ui(&mut self, ui: &mut Ui) {
         let strip = Element {
             direction: Direction::LeftToRight,

@@ -14,6 +14,9 @@ pub trait App: Sized {
     /// The window's title.
     // TODO: an `Out` field too, so the app can change it after startup.
     const TITLE: &'static str;
+    /// The smallest the window can be, in logical pixels. It opens at this
+    /// size.
+    const MIN_SIZE: [f32; 2];
     /// # Errors
     ///
     /// When the app can't start. The window doesn't open.
