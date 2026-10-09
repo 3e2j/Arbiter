@@ -7,16 +7,16 @@
 //!   ends, so walking the tree is walking an array.
 //! - Draw order is declaration order. Floating boxes draw after the whole
 //!   tree, outside their parent's clip, in the order they were declared.
-//! - A pass reads last pass's rects, since its own aren't solved yet. Each
-//!   node is matched to last pass's node at the same index, or by id when
-//!   that index holds a different id, such as after an insert.
+//! - A pass reads last pass's rects, since its own aren't solved yet.
+//!   A box is the one from last pass with the same parent and the same [`Slot`].
 
 mod emit;
 mod solve;
 
 use std::collections::HashMap;
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::{Hash, Hasher};
 use std::ops::Range;
+use std::panic::Location;
 
 use crate::canvas::{Color, FontId, Glyphs, IconId, Line, Quad, Rect, Vertex};
 use crate::input::Cursor;
@@ -93,10 +93,18 @@ pub struct Element {
     pub cursor: Option<Cursor>,
 }
 
-/// Which box an element is, hashed from its parent's id, so it stays the same
-/// between passes.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub(crate) struct Id(u64);
+/// Which of its parent's children a box is. A box is the one last pass
+/// declared under the same parent with an equal slot, compared exactly.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Slot {
+    /// The line that declared it.
+    pub site: &'static Location<'static>,
+    /// How many boxes that line declared before it under the same parent, or
+    /// its key.
+    pub n: u32,
+    /// Among boxes sharing a key, how many came before it.
+    pub dup: u32,
+}
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct TextStyle {
@@ -117,11 +125,15 @@ pub(crate) struct Layout {
     texts: Vec<Text>,
     /// Taken by the node that matches the one holding it.
     last_texts: Vec<Option<Text>>,
-    /// Last pass's index for each id, built the first time a pass misses.
-    last_ids: HashMap<Id, usize>,
+    /// Last pass's index for each parent and slot, built the first time a pass
+    /// misses.
+    last_slots: HashMap<(usize, Slot), usize>,
     mapped: bool,
-    /// The boxes opened and not yet closed.
-    open: Vec<usize>,
+    /// Whether a box isn't at its index last pass.
+    shifted: bool,
+    /// The boxes opened and not yet closed, with the node each matches last
+    /// pass.
+    open: Vec<(usize, Option<usize>)>,
     /// What custom boxes drew, indexed by [`Content::Custom`].
     paints: Vec<Paint>,
     vertices: Vec<Vertex>,
@@ -132,7 +144,9 @@ pub(crate) struct Layout {
 }
 
 struct Node {
-    id: Id,
+    /// The window's box is its own.
+    parent: usize,
+    slot: Slot,
     element: Element,
     content: Content,
     /// One past its last descendant. Its first child is right after it, and
@@ -221,15 +235,20 @@ impl Default for Element {
     }
 }
 
-impl Id {
-    /// The window's box, which every pass starts in.
-    pub const ROOT: Self = Self(0);
+impl PartialEq for Slot {
+    fn eq(&self, other: &Self) -> bool {
+        self.n == other.n
+            && self.dup == other.dup
+            && (std::ptr::eq(self.site, other.site) || self.site == other.site)
+    }
+}
 
-    #[must_use]
-    pub fn child(self, salt: impl Hash) -> Self {
-        let mut hasher = DefaultHasher::new();
-        (self.0, salt).hash(&mut hasher);
-        Self(hasher.finish())
+impl Eq for Slot {}
+
+impl Hash for Slot {
+    /// Leaves out the file, which equal slots share anyway.
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        (self.site.line(), self.site.column(), self.n, self.dup).hash(state);
     }
 }
 
@@ -240,29 +259,36 @@ impl Layout {
         self.nodes.clear();
         self.last_texts.clear();
         self.last_texts.extend(self.texts.drain(..).map(Some));
-        self.last_ids.clear();
+        self.last_slots.clear();
         self.mapped = false;
+        self.shifted = false;
         self.open.clear();
         self.paints.clear();
         self.vertices.clear();
         self.indices.clear();
-        self.open.push(0);
-        self.push(Id::ROOT, Element::DEFAULT, Content::Box);
+        let window = Slot {
+            site: Location::caller(),
+            n: 0,
+            dup: 0,
+        };
+        self.open.push((0, (!self.last.is_empty()).then_some(0)));
+        self.nodes
+            .push(Node::new(0, 0, window, Element::DEFAULT, Content::Box));
     }
 
     /// Opens a box, whose children are declared until [`Self::close`].
     /// Returns its node and its rect last pass.
-    pub fn open(&mut self, id: Id, element: Element) -> (usize, Option<Rect>) {
-        let (index, rect) = self.push(id, element, Content::Box);
-        self.open.push(index);
-        (index, rect)
+    pub fn open(&mut self, slot: Slot, element: Element) -> (usize, Option<Rect>) {
+        let (index, last) = self.push(slot, element, Content::Box);
+        self.open.push((index, last));
+        (index, self.last_rect(last))
     }
 
     /// Closes the box opened last.
     pub fn close(&mut self) {
         // The window's box stays open until the pass is solved.
         if self.open.len() > 1
-            && let Some(index) = self.open.pop()
+            && let Some((index, _)) = self.open.pop()
         {
             let end = self.nodes.len();
             if let Some(node) = self.nodes.get_mut(index) {
@@ -281,13 +307,12 @@ impl Layout {
     pub fn text(
         &mut self,
         glyphs: &mut Glyphs,
-        id: Id,
+        slot: Slot,
         style: TextStyle,
         text: &str,
     ) -> Option<Rect> {
-        let index = self.nodes.len();
-        let held = self
-            .last_index(index, id)
+        let last = self.matches(slot);
+        let held = last
             .and_then(|last| match self.last[last].content {
                 Content::Text(at) => self.last_texts.get_mut(at).and_then(Option::take),
                 _ => None,
@@ -311,24 +336,27 @@ impl Layout {
         };
         self.texts.push(text);
         let at = self.texts.len() - 1;
-        self.push(id, Element::DEFAULT, Content::Text(at)).1
+        let (_, last) = self.push(slot, Element::DEFAULT, Content::Text(at));
+        self.last_rect(last)
     }
 
     /// `icon` in a square `size` logical pixels wide.
-    pub fn icon(&mut self, id: Id, icon: IconId, size: f32, color: Color) -> Option<Rect> {
+    pub fn icon(&mut self, slot: Slot, icon: IconId, size: f32, color: Color) -> Option<Rect> {
         let element = Element {
             size: [Size::Fixed(size); 2],
             ..Element::DEFAULT
         };
-        self.push(id, element, Content::Icon(icon, size, color)).1
+        let (_, last) = self.push(slot, element, Content::Icon(icon, size, color));
+        self.last_rect(last)
     }
 
     /// A box painted into through [`Self::paint_quad`] and
     /// [`Self::paint_triangles`], until the next box is declared. Returns its
     /// node and its rect last pass.
-    pub fn custom(&mut self, id: Id, element: Element) -> (usize, Option<Rect>) {
+    pub fn custom(&mut self, slot: Slot, element: Element) -> (usize, Option<Rect>) {
         let start = self.paints.len();
-        self.push(id, element, Content::Custom(start..start))
+        let (index, last) = self.push(slot, element, Content::Custom(start..start));
+        (index, self.last_rect(last))
     }
 
     pub fn paint_quad(&mut self, node: usize, quad: Quad) {
@@ -356,32 +384,57 @@ impl Layout {
         }
     }
 
-    fn push(&mut self, id: Id, element: Element, content: Content) -> (usize, Option<Rect>) {
+    /// Adds a box under the open one. Returns its index, and the node it
+    /// matches last pass.
+    fn push(&mut self, slot: Slot, element: Element, content: Content) -> (usize, Option<usize>) {
         let index = self.nodes.len();
-        let rect = self.last_index(index, id).map(|last| self.last[last].rect);
-        self.nodes.push(Node {
-            id,
+        let last = self.matches(slot);
+        self.shifted |= last != Some(index);
+        let parent = self.open.last().map_or(0, |&(parent, _)| parent);
+        self.nodes
+            .push(Node::new(index, parent, slot, element, content));
+        (index, last)
+    }
+
+    /// The node last pass that a box declared next with `slot` is: the one at
+    /// its index, or else wherever it was.
+    fn matches(&mut self, slot: Slot) -> Option<usize> {
+        let index = self.nodes.len();
+        let parent = self.open.last().and_then(|&(_, last)| last)?;
+        if self
+            .last
+            .get(index)
+            .is_some_and(|node| node.parent == parent && node.slot == slot)
+        {
+            return Some(index);
+        }
+        if !self.mapped {
+            self.mapped = true;
+            // The window's box is matched by `clear`, and has no parent.
+            let slots = self.last.iter().map(|node| (node.parent, node.slot));
+            self.last_slots.extend(slots.zip(0..).skip(1));
+        }
+        self.last_slots.get(&(parent, slot)).copied()
+    }
+
+    fn last_rect(&self, last: Option<usize>) -> Option<Rect> {
+        last.map(|last| self.last[last].rect)
+    }
+}
+
+impl Node {
+    /// A box at `index`, with no children yet.
+    fn new(index: usize, parent: usize, slot: Slot, element: Element, content: Content) -> Self {
+        Self {
+            parent,
+            slot,
             element,
             content,
             end: index + 1,
             size: [0.; 2],
             used: [0.; 2],
             rect: Rect::default(),
-        });
-        (index, rect)
-    }
-
-    /// The node last pass that `id` at `index` matches.
-    fn last_index(&mut self, index: usize, id: Id) -> Option<usize> {
-        if self.last.get(index).is_some_and(|node| node.id == id) {
-            return Some(index);
         }
-        if !self.mapped {
-            self.mapped = true;
-            self.last_ids
-                .extend(self.last.iter().map(|node| node.id).zip(0..));
-        }
-        self.last_ids.get(&id).copied()
     }
 }
 

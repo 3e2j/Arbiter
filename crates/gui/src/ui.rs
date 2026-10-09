@@ -14,13 +14,12 @@
 //! - Each item of a list that can insert or reorder goes in [`Ui::keyed`].
 //! - A component called from several places can take `#[track_caller]`.
 
-use std::collections::HashSet;
-use std::hash::Hash;
+use std::collections::HashMap;
 use std::panic::Location;
 
 use crate::canvas::{Color, Glyphs, IconId, Quad, Rect, Vertex};
 use crate::input::{Button, Cursor, Input, Out};
-use crate::layout::{Id, Layout};
+use crate::layout::{Layout, Slot};
 
 pub use crate::layout::{Align, Anchor, Border, Direction, Element, Size, TextStyle};
 
@@ -30,18 +29,19 @@ pub struct Ui<'a> {
     glyphs: &'a mut Glyphs,
     input: &'a Input,
     out: &'a mut Out,
-    ids: &'a mut Ids,
+    slots: &'a mut Slots,
 }
 
-/// What a pass needs to give each box its own id: its parent's, hashed with the
-/// line that declared it and how many boxes that line has declared in the same
-/// parent. Kept between passes, so a pass allocates nothing once warm.
+/// What a pass needs to give each box its own [`Slot`]: the line that declared
+/// it, and how many boxes that line has declared in the same parent or its key.
+/// Kept between passes, so a pass allocates nothing once warm.
 #[derive(Default)]
-pub(crate) struct Ids {
+pub(crate) struct Slots {
     /// How many boxes each line has declared in each open box, innermost last.
     sites: Vec<(&'static Location<'static>, u32)>,
-    /// Every key scope this pass, so a key given twice still makes two.
-    keyed: HashSet<Id>,
+    /// How many boxes each key has had in each parent, so a key given twice
+    /// still makes two.
+    keys: HashMap<(usize, Slot), u32>,
 }
 
 /// Puts shapes into a custom box, at last pass's rect, from [`Ui::custom`].
@@ -61,11 +61,10 @@ pub struct Painter<'a> {
 /// The box a [`Ui`] stands in.
 #[derive(Clone, Copy)]
 struct Open {
-    id: Id,
     node: usize,
     /// Its rect last pass.
     rect: Option<Rect>,
-    /// Where its children's lines start in [`Ids::sites`].
+    /// Where its children's lines start in [`Slots::sites`].
     sites: usize,
 }
 
@@ -76,13 +75,12 @@ impl<'a> Ui<'a> {
         glyphs: &'a mut Glyphs,
         input: &'a Input,
         out: &'a mut Out,
-        ids: &'a mut Ids,
+        slots: &'a mut Slots,
     ) -> Self {
-        ids.sites.clear();
-        ids.keyed.clear();
+        slots.sites.clear();
+        slots.keys.clear();
         Self {
             open: Open {
-                id: Id::ROOT,
                 node: 0,
                 rect: None,
                 sites: 0,
@@ -91,7 +89,7 @@ impl<'a> Ui<'a> {
             glyphs,
             input,
             out,
-            ids,
+            slots,
         }
     }
 
@@ -128,58 +126,46 @@ impl<'a> Ui<'a> {
     /// A box, with what `body` declares as its children.
     #[track_caller]
     pub fn element<R>(&mut self, element: Element, body: impl FnOnce(&mut Self) -> R) -> R {
-        let id = self.next_id(Location::caller());
-        let (node, rect) = self.layout.open(id, element);
-        let parent = self.enter(Open {
-            id,
-            node,
-            rect,
-            sites: 0,
-        });
-        let out = body(self);
-        self.leave(parent);
-        self.layout.close();
-        out
+        let slot = self.next_slot(Location::caller());
+        self.open(slot, element, body)
     }
 
-    /// Declares `body`'s boxes under `key` rather than by count, so they keep
-    /// their ids when the list they're in inserts or reorders. Adds no box. A
-    /// key given twice falls back to its order among the items sharing it.
+    /// A box found by `key` rather than by count, so its state follows it when
+    /// the list it's in inserts or reorders. A key given twice falls back to
+    /// its order among the boxes sharing it.
     #[track_caller]
-    pub fn keyed<R>(&mut self, key: impl Hash, body: impl FnOnce(&mut Self) -> R) -> R {
-        let keyed = self.open.id.child((Location::caller(), key));
-        let mut id = keyed;
-        let mut seen = 0u32;
-        while !self.ids.keyed.insert(id) {
-            seen += 1;
-            id = keyed.child(seen);
-        }
-        let parent = self.enter(Open { id, ..self.open });
-        let out = body(self);
-        self.leave(parent);
-        out
+    pub fn keyed<R>(&mut self, key: u32, element: Element, body: impl FnOnce(&mut Self) -> R) -> R {
+        let slot = Slot {
+            site: Location::caller(),
+            n: key,
+            dup: 0,
+        };
+        let dups = self.slots.keys.entry((self.open.node, slot)).or_insert(0);
+        let slot = Slot { dup: *dups, ..slot };
+        *dups += 1;
+        self.open(slot, element, body)
     }
 
     /// A line of text, as wide as it's shaped. Returns its rect last pass.
     #[track_caller]
     pub fn text(&mut self, style: TextStyle, text: &str) -> Option<Rect> {
-        let id = self.next_id(Location::caller());
-        self.layout.text(self.glyphs, id, style, text)
+        let slot = self.next_slot(Location::caller());
+        self.layout.text(self.glyphs, slot, style, text)
     }
 
     /// `icon` in a square `size` logical pixels wide. Returns its rect last
     /// pass.
     #[track_caller]
     pub fn icon(&mut self, icon: IconId, size: f32, color: Color) -> Option<Rect> {
-        let id = self.next_id(Location::caller());
-        self.layout.icon(id, icon, size, color)
+        let slot = self.next_slot(Location::caller());
+        self.layout.icon(slot, icon, size, color)
     }
 
     /// A box its owner paints into. Use elements first, as [`Painter`] says.
     #[track_caller]
     pub fn custom(&mut self, element: Element) -> Painter<'_> {
-        let id = self.next_id(Location::caller());
-        let (node, rect) = self.layout.custom(id, element);
+        let slot = self.next_slot(Location::caller());
+        let (node, rect) = self.layout.custom(slot, element);
         Painter {
             rect,
             layout: self.layout,
@@ -187,10 +173,24 @@ impl<'a> Ui<'a> {
         }
     }
 
-    fn next_id(&mut self, site: &'static Location<'static>) -> Id {
-        let sites = &mut self.ids.sites;
+    fn open<R>(&mut self, slot: Slot, element: Element, body: impl FnOnce(&mut Self) -> R) -> R {
+        let (node, rect) = self.layout.open(slot, element);
+        let open = Open {
+            node,
+            rect,
+            sites: self.slots.sites.len(),
+        };
+        let parent = std::mem::replace(&mut self.open, open);
+        let out = body(self);
+        self.leave(parent);
+        self.layout.close();
+        out
+    }
+
+    fn next_slot(&mut self, site: &'static Location<'static>) -> Slot {
+        let sites = &mut self.slots.sites;
         let start = self.open.sites.min(sites.len());
-        let count = if let Some((_, count)) = sites
+        let n = if let Some((_, count)) = sites
             .get_mut(start..)
             .and_then(|open| open.iter_mut().find(|(at, _)| *at == site))
         {
@@ -200,17 +200,11 @@ impl<'a> Ui<'a> {
             sites.push((site, 0));
             0
         };
-        self.open.id.child((site, count))
-    }
-
-    /// Makes `open` the open box, returning the one it's under.
-    fn enter(&mut self, open: Open) -> Open {
-        let sites = self.ids.sites.len();
-        std::mem::replace(&mut self.open, Open { sites, ..open })
+        Slot { site, n, dup: 0 }
     }
 
     fn leave(&mut self, parent: Open) {
-        self.ids.sites.truncate(self.open.sites);
+        self.slots.sites.truncate(self.open.sites);
         self.open = parent;
     }
 }
@@ -246,7 +240,7 @@ mod tests {
         layout: Layout,
         glyphs: Glyphs,
         input: Input,
-        ids: Ids,
+        slots: Slots,
     }
 
     impl Kept {
@@ -259,7 +253,7 @@ mod tests {
                 &mut self.glyphs,
                 &self.input,
                 &mut out,
-                &mut self.ids,
+                &mut self.slots,
             );
             let r = body(&mut ui);
             self.layout.solve(WINDOW, 1.);
@@ -273,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn a_box_keeps_its_id_when_one_is_inserted_before_it() {
+    fn a_box_keeps_its_slot_when_one_is_inserted_before_it() {
         let mut kept = Kept::default();
         let pass = |kept: &mut Kept, insert: bool| {
             kept.pass(|ui| {
@@ -288,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn boxes_from_one_line_each_get_their_own_id() {
+    fn boxes_from_one_line_each_get_their_own_slot() {
         let mut kept = Kept::default();
         let pass =
             |kept: &mut Kept| kept.pass(|ui| [10., 20.].map(|h| ui.element(fixed(10., h), rect)));
@@ -304,27 +298,27 @@ mod tests {
     }
 
     #[test]
-    fn keyed_items_keep_their_ids_when_reordered() {
+    fn keyed_boxes_keep_their_slots_when_reordered() {
         let mut kept = Kept::default();
-        let pass = |kept: &mut Kept, keys: [(&str, f32); 2]| {
-            kept.pass(|ui| keys.map(|(key, h)| ui.keyed(key, |ui| ui.element(fixed(10., h), rect))))
+        let pass = |kept: &mut Kept, keys: [(u32, f32); 2]| {
+            kept.pass(|ui| keys.map(|(key, h)| ui.keyed(key, fixed(10., h), rect)))
         };
-        pass(&mut kept, [("a", 10.), ("b", 20.)]);
-        let [b, a] = pass(&mut kept, [("b", 20.), ("a", 10.)]);
+        pass(&mut kept, [(0, 10.), (1, 20.)]);
+        let [b, a] = pass(&mut kept, [(1, 20.), (0, 10.)]);
         assert_eq!(b, Some(Rect::new(0., 10., 10., 20.)));
         assert_eq!(a, Some(Rect::new(0., 0., 10., 10.)));
     }
 
     #[test]
-    fn items_sharing_a_key_each_get_their_own_id() {
+    fn boxes_sharing_a_key_each_get_their_own_slot() {
         let mut kept = Kept::default();
         let pass = |kept: &mut Kept, insert: bool| {
             kept.pass(|ui| {
-                // Moves the items off their last index, so they're found by id.
+                // Moves the items off their last index, so they're found by slot.
                 if insert {
                     ui.element(fixed(10., 30.), |_| ());
                 }
-                [10., 20.].map(|h| ui.keyed("same", |ui| ui.element(fixed(10., h), rect)))
+                [10., 20.].map(|h| ui.keyed(7, fixed(10., h), rect))
             })
         };
         pass(&mut kept, false);

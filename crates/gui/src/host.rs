@@ -7,7 +7,7 @@ use std::error::Error;
 use crate::canvas::{AtlasUpdate, Canvas, Color, Glyphs, Rect};
 use crate::input::{Event, Input, Out};
 use crate::layout::Layout;
-use crate::ui::{Ids, Ui};
+use crate::ui::{Slots, Ui};
 
 /// The app's side of the host.
 pub trait App: Sized {
@@ -41,7 +41,7 @@ pub struct Host<A> {
     glyphs: Glyphs,
     input: Input,
     layout: Layout,
-    ids: Ids,
+    slots: Slots,
 }
 
 impl<A: App> Host<A> {
@@ -62,7 +62,7 @@ impl<A: App> Host<A> {
             glyphs,
             input: Input::default(),
             layout: Layout::default(),
-            ids: Ids::default(),
+            slots: Slots::default(),
         })
     }
 
@@ -104,7 +104,7 @@ impl<A: App> Host<A> {
             &mut self.glyphs,
             &self.input,
             &mut out,
-            &mut self.ids,
+            &mut self.slots,
         );
         self.app.ui(&mut ui);
         out

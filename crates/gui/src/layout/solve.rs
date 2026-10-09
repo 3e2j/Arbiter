@@ -26,12 +26,13 @@ impl Layout {
         }
         self.nodes[0].rect = root;
         self.place(scale);
-        self.nodes.len() != self.last.len()
+        self.shifted
+            || self.nodes.len() != self.last.len()
             || self
                 .nodes
                 .iter()
                 .zip(&self.last)
-                .any(|(node, last)| node.id != last.id || node.rect != last.rect)
+                .any(|(node, last)| node.rect != last.rect)
     }
 
     /// Leaves first, so each box's children are sized before it is.

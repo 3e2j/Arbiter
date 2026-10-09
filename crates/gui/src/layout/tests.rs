@@ -1,3 +1,5 @@
+use std::panic::Location;
+
 use super::*;
 use crate::canvas::{Canvas, FontFile, Kind};
 use crate::input::Cursor;
@@ -23,8 +25,17 @@ fn rects(layout: &Layout) -> Vec<Rect> {
     layout.nodes.iter().map(|node| node.rect).collect()
 }
 
-fn leaf(layout: &mut Layout, salt: &str, element: Element) {
-    layout.open(Id::ROOT.child(salt), element);
+/// The `n`th box from one line, so tests tell boxes apart by number.
+fn slot(n: u32) -> Slot {
+    Slot {
+        site: Location::caller(),
+        n,
+        dup: 0,
+    }
+}
+
+fn leaf(layout: &mut Layout, n: u32, element: Element) {
+    layout.open(slot(n), element);
     layout.close();
 }
 
@@ -33,15 +44,15 @@ fn grow_shares_what_is_left() {
     let mut layout = Layout::default();
     layout.clear();
     layout.open(
-        Id::ROOT.child("row"),
+        slot(0),
         Element {
             gap: 10.,
             ..Element::row()
         },
     );
-    leaf(&mut layout, "a", fixed(80., 20.));
-    leaf(&mut layout, "b", grow());
-    leaf(&mut layout, "c", grow());
+    leaf(&mut layout, 1, fixed(80., 20.));
+    leaf(&mut layout, 2, grow());
+    leaf(&mut layout, 3, grow());
     layout.close();
     layout.solve(WINDOW, 1.);
     let [_, row, a, b, c] = rects(&layout)[..] else {
@@ -61,9 +72,9 @@ fn fit_wraps_children_and_padding() {
         gap: 4.,
         ..Element::DEFAULT.padded(3.)
     };
-    layout.open(Id::ROOT.child("column"), column);
-    leaf(&mut layout, "a", fixed(10., 5.));
-    leaf(&mut layout, "b", fixed(20., 5.));
+    layout.open(slot(0), column);
+    leaf(&mut layout, 1, fixed(10., 5.));
+    leaf(&mut layout, 2, fixed(20., 5.));
     layout.close();
     layout.solve(WINDOW, 1.);
     let [_, column, a, b] = rects(&layout)[..] else {
@@ -81,8 +92,8 @@ fn children_align_in_the_space_left() {
         align: [Align::End, Align::Center],
         ..Element::row()
     };
-    layout.open(Id::ROOT.child("row"), row);
-    leaf(&mut layout, "a", fixed(50., 20.));
+    layout.open(slot(0), row);
+    leaf(&mut layout, 1, fixed(50., 20.));
     layout.close();
     layout.solve(WINDOW, 1.);
     assert_eq!(rects(&layout)[2], Rect::new(250., 40., 50., 20.));
@@ -92,9 +103,9 @@ fn children_align_in_the_space_left() {
 fn edges_land_on_physical_pixels() {
     let mut layout = Layout::default();
     layout.clear();
-    layout.open(Id::ROOT.child("row"), Element::row());
-    for salt in ["a", "b", "c"] {
-        leaf(&mut layout, salt, grow());
+    layout.open(slot(0), Element::row());
+    for n in 0..3 {
+        leaf(&mut layout, n, grow());
     }
     layout.close();
     layout.solve(Rect::new(0., 0., 100., 10.), 1.5);
@@ -113,7 +124,7 @@ fn an_unchanged_pass_hasnt_moved() {
     let mut layout = Layout::default();
     let pass = |layout: &mut Layout| {
         layout.clear();
-        leaf(layout, "a", fixed(10., 10.));
+        leaf(layout, 0, fixed(10., 10.));
         layout.solve(WINDOW, 1.)
     };
     assert!(pass(&mut layout));
@@ -124,12 +135,27 @@ fn an_unchanged_pass_hasnt_moved() {
 fn a_box_finds_its_rect_after_one_is_inserted_before_it() {
     let mut layout = Layout::default();
     layout.clear();
-    leaf(&mut layout, "a", fixed(10., 10.));
+    leaf(&mut layout, 0, fixed(10., 10.));
     layout.solve(WINDOW, 1.);
     layout.clear();
-    leaf(&mut layout, "new", fixed(10., 30.));
-    let (_, rect) = layout.open(Id::ROOT.child("a"), fixed(10., 10.));
+    leaf(&mut layout, 1, fixed(10., 30.));
+    let (_, rect) = layout.open(slot(0), fixed(10., 10.));
     assert_eq!(rect, Some(Rect::new(0., 0., 10., 10.)));
+}
+
+#[test]
+fn a_box_under_a_new_parent_is_new() {
+    let mut layout = Layout::default();
+    layout.clear();
+    layout.open(slot(0), Element::DEFAULT);
+    leaf(&mut layout, 0, fixed(10., 10.));
+    layout.close();
+    layout.solve(WINDOW, 1.);
+    layout.clear();
+    // Takes the old parent's index, so its child is looked up by slot.
+    layout.open(slot(1), Element::DEFAULT);
+    let (_, rect) = layout.open(slot(0), fixed(10., 10.));
+    assert_eq!(rect, None);
 }
 
 #[test]
@@ -141,10 +167,10 @@ fn a_clip_cuts_its_children_but_not_itself() {
         background: Some(Color::hex(0x10_20_30)),
         ..fixed(50., 50.)
     };
-    layout.open(Id::ROOT.child("clipped"), clipped);
+    layout.open(slot(0), clipped);
     leaf(
         &mut layout,
-        "inside",
+        99,
         Element {
             background: Some(Color::hex(0xff_ff_ff)),
             ..fixed(80., 80.)
@@ -153,7 +179,7 @@ fn a_clip_cuts_its_children_but_not_itself() {
     layout.close();
     leaf(
         &mut layout,
-        "after",
+        99,
         Element {
             background: Some(Color::hex(0xff_ff_ff)),
             ..fixed(10., 10.)
@@ -185,17 +211,17 @@ fn a_float_draws_last_outside_its_parents_clip() {
         clip: true,
         ..fixed(40., 20.)
     };
-    layout.open(Id::ROOT.child("menu"), menu);
+    layout.open(slot(0), menu);
     let popup = Element {
         float: Some(Anchor::Below),
         background: Some(Color::hex(0xff_ff_ff)),
         ..fixed(60., 60.)
     };
-    leaf(&mut layout, "popup", popup);
+    leaf(&mut layout, 1, popup);
     layout.close();
     leaf(
         &mut layout,
-        "after",
+        99,
         Element {
             background: Some(Color::hex(0x10_20_30)),
             ..fixed(10., 10.)
@@ -224,13 +250,13 @@ fn boxes_outside_the_clip_draw_nothing() {
         clip: true,
         ..fixed(50., 50.)
     };
-    layout.open(Id::ROOT.child("list"), list);
+    layout.open(slot(0), list);
     let row = Element {
         background: Some(Color::hex(0xff_ff_ff)),
         ..fixed(10., 30.)
     };
-    for salt in ["a", "b", "c"] {
-        leaf(&mut layout, salt, row);
+    for n in 0..3 {
+        leaf(&mut layout, n, row);
     }
     layout.close();
     layout.solve(WINDOW, 1.);
@@ -245,18 +271,18 @@ fn boxes_outside_the_clip_draw_nothing() {
 fn a_float_under_a_hidden_clip_still_draws() {
     let mut layout = Layout::default();
     layout.clear();
-    leaf(&mut layout, "spacer", fixed(10., 100.));
+    leaf(&mut layout, 0, fixed(10., 100.));
     let below = Element {
         clip: true,
         ..fixed(40., 20.)
     };
-    layout.open(Id::ROOT.child("below"), below);
+    layout.open(slot(1), below);
     let popup = Element {
         float: Some(Anchor::At([0., 0.])),
         background: Some(Color::hex(0xff_ff_ff)),
         ..fixed(60., 60.)
     };
-    leaf(&mut layout, "popup", popup);
+    leaf(&mut layout, 2, popup);
     layout.close();
     layout.solve(WINDOW, 1.);
     let mut canvas = Canvas::default();
@@ -274,18 +300,18 @@ fn the_cursor_comes_from_the_last_box_drawn_under_the_pointer() {
         clip: true,
         ..fixed(40., 20.)
     };
-    layout.open(Id::ROOT.child("clipped"), clipped);
+    layout.open(slot(0), clipped);
     let link = Element {
         cursor: Some(Cursor::Pointer),
         ..fixed(80., 20.)
     };
-    leaf(&mut layout, "link", link);
+    leaf(&mut layout, 1, link);
     let field = Element {
         float: Some(Anchor::At([0., 0.])),
         cursor: Some(Cursor::Text),
         ..fixed(10., 10.)
     };
-    leaf(&mut layout, "field", field);
+    leaf(&mut layout, 2, field);
     layout.close();
     layout.solve(WINDOW, 1.);
     let mut cursor_at = |at| layout.emit(&mut Canvas::default(), &mut Glyphs::default(), Some(at));
@@ -300,7 +326,7 @@ fn the_cursor_comes_from_the_last_box_drawn_under_the_pointer() {
 fn a_custom_box_draws_in_its_place() {
     let mut layout = Layout::default();
     layout.clear();
-    let (node, _) = layout.custom(Id::ROOT.child("custom"), fixed(10., 10.));
+    let (node, _) = layout.custom(slot(0), fixed(10., 10.));
     layout.paint_triangles(
         node,
         &[Vertex::new([0., 0.], Color::TRANSPARENT); 3],
@@ -332,7 +358,7 @@ fn text_keeps_its_line_and_inks_between_passes() {
     let mut canvas = Canvas::default();
     let mut pass = |text: &str| {
         layout.clear();
-        layout.text(&mut glyphs, Id::ROOT.child("label"), style, text);
+        layout.text(&mut glyphs, slot(0), style, text);
         layout.solve(WINDOW, 1.);
         canvas.clear(WINDOW);
         layout.emit(&mut canvas, &mut glyphs, None);
