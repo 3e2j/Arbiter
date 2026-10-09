@@ -4,6 +4,8 @@
 //!
 //! Positions and distances are in logical pixels from the window's top left.
 
+use std::ops::Range;
+
 /// A pointer button.
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -111,6 +113,10 @@ pub enum Event<'a> {
 
 /// Everything since the last pass. Kept between passes, so a pass allocates
 /// nothing once warm.
+///
+/// Each button goes down or up at most once a pass, so a box that takes a
+/// press has it before the release. A second change waits for the next pass,
+/// with every event after it.
 #[derive(Default)]
 pub struct Input {
     pointer: Option<[f32; 2]>,
@@ -122,12 +128,24 @@ pub struct Input {
     modifiers: Modifiers,
     keys: Vec<KeyPress>,
     text: String,
+    /// What waits for the next pass, in order.
+    later: Vec<Later>,
+    /// What the text in `later` typed.
+    later_text: String,
+}
+
+/// An [`Event`] waiting for the next pass, its text kept apart.
+enum Later {
+    Event(Event<'static>),
+    Text(Range<usize>),
 }
 
 /// What a pass asks of the window.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct Out {
     pub cursor: Cursor,
+    /// Input waited for the next frame, so it should draw again straight away.
+    pub again: bool,
 }
 
 impl Modifiers {
@@ -150,6 +168,64 @@ impl Modifiers {
 
 impl Input {
     pub fn push(&mut self, event: Event) {
+        if self.later.is_empty() && !self.changes_twice(event) {
+            self.apply(event);
+            return;
+        }
+        let later = match event {
+            Event::Pointer(at) => Event::Pointer(at),
+            Event::Pressed(button) => Event::Pressed(button),
+            Event::Released(button) => Event::Released(button),
+            Event::Scroll(by) => Event::Scroll(by),
+            Event::Key(press) => Event::Key(press),
+            Event::Text(text) => {
+                let start = self.later_text.len();
+                self.later_text.push_str(text);
+                self.later.push(Later::Text(start..self.later_text.len()));
+                return;
+            }
+            Event::Modifiers(modifiers) => Event::Modifiers(modifiers),
+            Event::Unfocused => Event::Unfocused,
+        };
+        self.later.push(Later::Event(later));
+    }
+
+    /// After a frame, takes in what waited for it, up to the next button that
+    /// would change twice. Returns whether anything came in, so the window
+    /// should draw again.
+    pub fn trickle(&mut self) -> bool {
+        let mut later = std::mem::take(&mut self.later);
+        let text = std::mem::take(&mut self.later_text);
+        let mut taken = 0;
+        for waiting in &later {
+            let event = match waiting {
+                Later::Event(event) => *event,
+                Later::Text(range) => Event::Text(text.get(range.clone()).unwrap_or_default()),
+            };
+            if self.changes_twice(event) {
+                break;
+            }
+            self.apply(event);
+            taken += 1;
+        }
+        later.drain(..taken);
+        self.later = later;
+        self.later_text = text;
+        if self.later.is_empty() {
+            self.later_text.clear();
+        }
+        taken > 0
+    }
+
+    /// Whether `event` presses or releases a button that already went down
+    /// or up this pass.
+    fn changes_twice(&self, event: Event) -> bool {
+        let changed = self.pressed | self.released;
+        matches!(event, Event::Pressed(button) | Event::Released(button)
+            if changed & button as u8 != 0)
+    }
+
+    fn apply(&mut self, event: Event) {
         match event {
             Event::Pointer(at) => self.pointer = at,
             Event::Pressed(button) => {
@@ -175,7 +251,8 @@ impl Input {
     }
 
     /// After a pass, so the next one only sees new events. What's held and
-    /// where the pointer is stay.
+    /// where the pointer is stay, and what waits stays waiting until
+    /// [`Self::trickle`].
     pub fn clear(&mut self) {
         self.pressed = 0;
         self.released = 0;
@@ -235,13 +312,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_click_inside_one_pass_is_seen() {
+    fn a_click_inside_one_pass_waits_to_come_up() {
         let mut input = Input::default();
         input.push(Event::Pressed(Button::Left));
-        input.push(Event::Released(Button::Left));
         input.push(Event::Pressed(Button::Right));
-        assert!(input.pressed(Button::Left) && input.released(Button::Left));
-        assert!(!input.held(Button::Left) && input.held(Button::Right));
+        input.push(Event::Released(Button::Left));
+        // After the release, so it waits too.
+        input.push(Event::Text("a"));
+        assert!(input.pressed(Button::Left) && input.held(Button::Left));
+        assert!(input.held(Button::Right) && input.text().is_empty());
+        input.clear();
+        assert!(input.trickle());
+        assert!(input.released(Button::Left) && !input.held(Button::Left));
+        assert_eq!(input.text(), "a");
+        input.clear();
+        assert!(!input.trickle());
+    }
+
+    #[test]
+    fn each_trickle_takes_one_change_of_a_button() {
+        let mut input = Input::default();
+        for _ in 0..2 {
+            input.push(Event::Pressed(Button::Left));
+            input.push(Event::Released(Button::Left));
+        }
+        let mut changes = 1;
+        while {
+            input.clear();
+            input.trickle()
+        } {
+            changes += 1;
+        }
+        assert_eq!(changes, 4);
+        assert!(!input.held(Button::Left));
     }
 
     #[test]

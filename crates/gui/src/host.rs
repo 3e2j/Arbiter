@@ -84,7 +84,9 @@ impl<A: App> Host<A> {
     /// A pass answers from last frame's rects. If a box moved or a button
     /// changed hands, those answers are stale, such as a row that landed under
     /// the pointer without its hover (which is incorrect), so the pass runs again
-    /// with no new input and that one is drawn instead.
+    /// with no new input and that one is drawn instead. So a frame never runs
+    /// more than two passes, a button that changes twice since the last waits
+    /// for the next frame, which [`Out::again`] asks for.
     pub fn draw(&mut self, rect: Rect, scale: f32, canvas: &mut Canvas) -> Out {
         self.glyphs.set_scale(scale);
         self.glyphs.next_frame();
@@ -101,6 +103,7 @@ impl<A: App> Host<A> {
         if let Some(cursor) = self.layout.cursor(self.input.pointer()) {
             out.cursor = cursor;
         }
+        out.again = self.input.trickle();
         out
     }
 

@@ -156,6 +156,9 @@ impl<A: App> ApplicationHandler for Runner<A> {
                     .resize([size.width, size.height], open.window.scale_factor());
                 let scale = narrow(open.window.scale_factor());
                 let out = self.host.draw(open.rect(), scale, &mut self.canvas);
+                if out.again {
+                    open.pacer.request();
+                }
                 if out.cursor != open.cursor {
                     open.cursor = out.cursor;
                     open.window.set_cursor(cursor_icon(out.cursor));

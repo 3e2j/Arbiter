@@ -72,9 +72,6 @@ pub(crate) struct Memory {
 struct Hold {
     /// The box holding the button, by its index last pass.
     held: Option<usize>,
-    /// The button came up in the pass the holder took it, so this pass is
-    /// its last, and where it clicks.
-    let_go: bool,
     /// The holder's index this pass.
     found: Option<usize>,
     /// The last declared box this pass to ask about a press that went down
@@ -204,22 +201,20 @@ impl<'a> Ui<'a> {
     /// come up. Starts the pass after the press, since a box declared later
     /// in the press pass, such as one inside it, takes the button instead.
     pub fn held(&mut self, button: Button) -> bool {
-        self.holding(button) && !self.input.released(button)
+        self.holds(button) && self.input.held(button)
     }
 
-    /// Whether `button` came up over the open box after going down over it.
-    /// In the pass it comes up, so what the click changes is seen by the pass
-    /// that runs again before drawing. A press and release in one pass clicks
-    /// the pass after, once the box has taken the button.
+    /// Whether `button` came up over the open box after going down over it,
+    /// in the pass it comes up, so the pass run again before drawing shows
+    /// what the click changed.
     pub fn clicked(&mut self, button: Button) -> bool {
-        let let_go = self.memory.holds[button.index()].let_go;
-        self.holds(button) && (let_go || self.input.released(button)) && self.hovered()
+        self.holds(button) && self.input.released(button) && self.hovered()
     }
 
     /// How far the pointer moved since last pass while the open box holds
     /// `button`, including the pass it comes up.
     pub fn dragged(&mut self, button: Button) -> Option<[f32; 2]> {
-        if !self.holding(button) {
+        if !self.holds(button) {
             return None;
         }
         let ([x, y], [from_x, from_y]) = (self.input.pointer()?, self.memory.pointer?);
@@ -338,12 +333,6 @@ impl<'a> Ui<'a> {
         self.open.last.is_some() && self.open.last == hold.held
     }
 
-    /// Whether the open box holds `button` and hasn't been let go of before
-    /// this pass.
-    fn holding(&mut self, button: Button) -> bool {
-        self.holds(button) && !self.memory.holds[button.index()].let_go
-    }
-
     fn leave(&mut self, parent: Open) {
         self.slots.sites.truncate(self.open.sites);
         self.open = parent;
@@ -380,24 +369,9 @@ impl Memory {
 impl Hold {
     /// Returns whether it changed hands or was let go of.
     fn end(&mut self, input: &Input, button: Button) -> bool {
-        let holder = self.claim.or(self.found.filter(|_| !self.let_go));
-        let mut changed = self.claim.is_some();
-        self.held = None;
-        self.let_go = false;
-        if let Some(holder) = holder {
-            if input.held(button) {
-                self.held = Some(holder);
-            } else if input.released(button) {
-                // A box that held it before this pass clicked in it, but one
-                // that only just took it clicks next pass.
-                if self.claim.is_some() {
-                    self.held = Some(holder);
-                    self.let_go = true;
-                }
-                changed = true;
-            }
-        }
-        changed
+        let holder = self.claim.or(self.found);
+        self.held = holder.filter(|_| input.held(button));
+        self.claim.is_some() || (holder.is_some() && input.released(button))
     }
 }
 
@@ -439,7 +413,7 @@ pub(crate) mod tests {
 
     impl Kept {
         /// Runs one pass and solves it, returning what `body` did. The input
-        /// is used up, as the host does.
+        /// is used up and what waited comes in, as between the host's frames.
         pub fn pass<R>(&mut self, body: impl FnOnce(&mut Ui) -> R) -> R {
             self.layout.clear();
             let mut out = Out::default();
@@ -455,6 +429,7 @@ pub(crate) mod tests {
             let r = body(&mut ui);
             self.memory.end(&self.input);
             self.input.clear();
+            self.input.trickle();
             self.layout.solve(WINDOW, 1.);
             r
         }
@@ -576,10 +551,11 @@ pub(crate) mod tests {
         dragged: Some([0.; 2]),
     };
 
+    /// Still dragged, so the last move before the release counts.
     const CLICKED: Asked = Asked {
         held: false,
         clicked: true,
-        dragged: None,
+        dragged: Some([0.; 2]),
     };
 
     /// Gives the box a rect, then presses over it.
@@ -596,18 +572,12 @@ pub(crate) mod tests {
         press(&mut kept);
         assert_eq!(ask(&mut kept), HELD);
         kept.input.push(Event::Released(Button::Left));
-        assert_eq!(
-            ask(&mut kept),
-            Asked {
-                dragged: Some([0.; 2]),
-                ..CLICKED
-            }
-        );
+        assert_eq!(ask(&mut kept), CLICKED);
         assert_eq!(ask(&mut kept), Asked::default());
     }
 
     #[test]
-    fn a_press_and_release_in_one_pass_clicks() {
+    fn a_press_and_release_in_one_pass_click_the_pass_after() {
         let mut kept = Kept::default();
         kept.input.push(Event::Pointer(Some([5., 5.])));
         ask(&mut kept);
