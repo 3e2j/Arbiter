@@ -2,28 +2,42 @@
 
 use super::{Content, Layout, Node, Paint, Text};
 use crate::canvas::{Canvas, Color, Glyphs, Quad, Rect, Vertex};
+use crate::input::Cursor;
 
 impl Layout {
     /// Draws each box's background, border and content into `canvas`: the
-    /// tree in declaration order, then each floating box over it.
-    pub fn emit(&mut self, canvas: &mut Canvas, glyphs: &mut Glyphs) {
-        let Some(window) = self.nodes.first() else {
-            return;
-        };
-        let root = window.rect;
+    /// tree in declaration order, then each floating box over it. Returns the
+    /// cursor of the last box drawn with one under `pointer`.
+    pub fn emit(
+        &mut self,
+        canvas: &mut Canvas,
+        glyphs: &mut Glyphs,
+        pointer: Option<[f32; 2]>,
+    ) -> Option<Cursor> {
+        let root = self.nodes.first()?.rect;
+        let mut cursor = None;
         self.floats.clear();
-        self.emit_tree(0, root, canvas, glyphs);
+        self.emit_tree(0, root, canvas, glyphs, pointer, &mut cursor);
         // A floating box inside a floating box joins the list as it's drawn.
         let mut next = 0;
         while let Some(&float) = self.floats.get(next) {
-            self.emit_tree(float, root, canvas, glyphs);
+            self.emit_tree(float, root, canvas, glyphs, pointer, &mut cursor);
             next += 1;
         }
+        cursor
     }
 
     /// Draws `top` and what's under it, clipped to `clip`, leaving its
     /// floating boxes for later. Boxes outside the clip are skipped.
-    fn emit_tree(&mut self, top: usize, clip: Rect, canvas: &mut Canvas, glyphs: &mut Glyphs) {
+    fn emit_tree(
+        &mut self,
+        top: usize,
+        clip: Rect,
+        canvas: &mut Canvas,
+        glyphs: &mut Glyphs,
+        pointer: Option<[f32; 2]>,
+        cursor: &mut Option<Cursor>,
+    ) {
         canvas.clip(clip);
         self.clips.clear();
         let mut current = clip;
@@ -59,6 +73,11 @@ impl Layout {
                 indices: &self.indices,
             };
             draw(node, &mut self.texts, &drawn, canvas, glyphs);
+            if node.element.cursor.is_some()
+                && pointer.is_some_and(|at| current.contains(at) && node.rect.contains(at))
+            {
+                *cursor = node.element.cursor;
+            }
             if node.element.clip && node.end > index + 1 {
                 self.clips.push((node.end, current));
                 current = current.intersect(node.rect);

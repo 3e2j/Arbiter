@@ -19,6 +19,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::Range;
 
 use crate::canvas::{Color, FontId, Glyphs, IconId, Line, Quad, Rect, Vertex};
+use crate::input::Cursor;
 
 /// How big a box is along one axis.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -87,12 +88,13 @@ pub struct Element {
     /// Drawn after the whole tree, outside its parent's clip, and left out of
     /// its parent's size.
     pub float: Option<Anchor>,
+    /// The pointer's shape over it, unless a box drawn later over the same spot
+    /// sets its own.
+    pub cursor: Option<Cursor>,
 }
 
-/// Which box an element is, from its parent's id and a salt the parent
-/// gives it, so it stays the same between passes.
-// TODO: a `Ui` derives ids from call sites, so apps don't write salts they
-// never read. Data lists that reorder still pass a key.
+/// Which box an element is, hashed from its parent's id, so it stays the same
+/// between passes.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct Id(u64);
 
@@ -183,6 +185,7 @@ impl Element {
         clip: false,
         offset: [0.; 2],
         float: None,
+        cursor: None,
     };
 
     /// Fills its parent and stacks its children left to right.
@@ -248,11 +251,11 @@ impl Layout {
     }
 
     /// Opens a box, whose children are declared until [`Self::close`].
-    /// Returns its rect last pass.
-    pub fn open(&mut self, id: Id, element: Element) -> Option<Rect> {
+    /// Returns its node and its rect last pass.
+    pub fn open(&mut self, id: Id, element: Element) -> (usize, Option<Rect>) {
         let (index, rect) = self.push(id, element, Content::Box);
         self.open.push(index);
-        rect
+        (index, rect)
     }
 
     /// Closes the box opened last.
@@ -268,10 +271,9 @@ impl Layout {
         }
     }
 
-    /// The rect last pass gave the box declared next, if it has `id`.
-    pub fn peek(&mut self, id: Id) -> Option<Rect> {
-        let index = self.nodes.len();
-        self.last_index(index, id).map(|last| self.last[last].rect)
+    /// What `node` was declared as, to change before the pass is solved.
+    pub fn element_mut(&mut self, node: usize) -> &mut Element {
+        &mut self.nodes[node].element
     }
 
     /// A line of text, as wide as it's shaped. The line shaped last pass is

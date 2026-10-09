@@ -5,9 +5,8 @@
 
 use gui::{
     canvas::{Color, Rect, Vertex},
-    input::{Button, Cursor},
-    layout::{Align, Direction, Element, Size, TextStyle},
-    ui::Ui,
+    input::Cursor,
+    ui::{Align, Direction, Element, Size, TextStyle, Ui},
 };
 
 use crate::assets::{Fonts, Icon, Icons};
@@ -31,60 +30,51 @@ impl Showcase {
 
     /// Declares the panel's contents into the box `ui` has open.
     pub fn ui(&mut self, ui: &mut Ui) {
-        let Self { fonts, icons, .. } = *self;
-        let input = ui.input();
         let strip = Element {
             direction: Direction::LeftToRight,
             gap: GAP / 2.,
             ..Element::DEFAULT
         };
-        ui.element("icons", strip, |ui| {
+        let cell = Element {
+            radius: RADIUS / 2.,
+            cursor: Some(Cursor::Pointer),
+            ..Element::DEFAULT.padded(GAP / 4.)
+        };
+        ui.element(strip, |ui| {
             for icon in Icon::ALL {
-                let hovered = ui
-                    .peek(icon)
-                    .zip(input.pointer())
-                    .is_some_and(|(rect, at)| rect.contains(at));
-                if hovered {
-                    ui.cursor(Cursor::Pointer);
-                    if input.pressed(Button::Left) {
+                ui.element(cell, |ui| {
+                    if ui.pressed() {
                         self.selected = Some(icon);
                     }
-                }
-                let fill = if self.selected == Some(icon) {
-                    Some(SELECTED)
-                } else {
-                    hovered.then_some(HOVER)
-                };
-                let cell = Element {
-                    background: fill.map(Color::hex),
-                    radius: RADIUS / 2.,
-                    ..Element::DEFAULT.padded(GAP / 4.)
-                };
-                ui.element(icon, cell, |ui| {
-                    ui.icon("icon", icons.get(icon), ICON_SIZE, Color::hex(DIM));
+                    ui.style().background = if self.selected == Some(icon) {
+                        Some(SELECTED)
+                    } else {
+                        ui.hovered().then_some(HOVER)
+                    };
+                    ui.icon(self.icons.get(icon), ICON_SIZE, DIM);
                 });
             }
         });
         let lines = [
-            (fonts.ui, "The quick brown fox jumps over the lazy dog"),
-            (fonts.ui, "いろはにほへと ちりぬるを わかよたれそ"),
-            (fonts.buffer, "0O 1lI {}[]() => != 0x1f4"),
-            (fonts.ui, "From a system font: 한국어"),
-            (fonts.ui, "Colour emoji (color atlas): 🦀"),
+            (self.fonts.ui, "The quick brown fox jumps over the lazy dog"),
+            (self.fonts.ui, "いろはにほへと ちりぬるを わかよたれそ"),
+            (self.fonts.buffer, "0O 1lI {}[]() => != 0x1f4"),
+            (self.fonts.ui, "From a system font: 한국어"),
+            (self.fonts.ui, "Colour emoji (color atlas): 🦀"),
         ];
         let row = Element {
             size: [Size::Grow, Size::Fixed(ROW)],
             align: [Align::Start, Align::Center],
             ..Element::row()
         };
-        for ((font, line), salt) in lines.into_iter().zip(0u8..) {
-            ui.element(("line", salt), row, |ui| {
+        for (font, line) in lines {
+            ui.element(row, |ui| {
                 let style = TextStyle {
                     font,
                     size: TEXT_SIZE,
-                    color: Color::hex(TEXT),
+                    color: TEXT,
                 };
-                ui.text("text", style, line);
+                ui.text(style, line);
             });
         }
         let size = ICON_SIZE * 3.;
@@ -92,7 +82,7 @@ impl Showcase {
             size: [Size::Fixed(size); 2],
             ..Element::DEFAULT
         };
-        let mut painter = ui.custom("triangle", triangle);
+        let mut painter = ui.custom(triangle);
         if let Some(Rect { x, y, .. }) = painter.rect {
             painter.triangles(
                 &[

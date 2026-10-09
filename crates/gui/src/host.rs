@@ -7,7 +7,7 @@ use std::error::Error;
 use crate::canvas::{AtlasUpdate, Canvas, Color, Glyphs, Rect};
 use crate::input::{Event, Input, Out};
 use crate::layout::Layout;
-use crate::ui::Ui;
+use crate::ui::{Ids, Ui};
 
 /// The app's side of the host.
 pub trait App: Sized {
@@ -41,6 +41,7 @@ pub struct Host<A> {
     glyphs: Glyphs,
     input: Input,
     layout: Layout,
+    ids: Ids,
 }
 
 impl<A: App> Host<A> {
@@ -61,6 +62,7 @@ impl<A: App> Host<A> {
             glyphs,
             input: Input::default(),
             layout: Layout::default(),
+            ids: Ids::default(),
         })
     }
 
@@ -85,14 +87,25 @@ impl<A: App> Host<A> {
         }
         canvas.clear(rect);
         canvas.background = self.background;
-        self.layout.emit(canvas, &mut self.glyphs);
+        if let Some(cursor) = self
+            .layout
+            .emit(canvas, &mut self.glyphs, self.input.pointer())
+        {
+            out.cursor = cursor;
+        }
         out
     }
 
     fn pass(&mut self) -> Out {
         let mut out = Out::default();
         self.layout.clear();
-        let mut ui = Ui::root(&mut self.layout, &mut self.glyphs, &self.input, &mut out);
+        let mut ui = Ui::root(
+            &mut self.layout,
+            &mut self.glyphs,
+            &self.input,
+            &mut out,
+            &mut self.ids,
+        );
         self.app.ui(&mut ui);
         out
     }

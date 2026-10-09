@@ -1,5 +1,6 @@
 use super::*;
 use crate::canvas::{Canvas, FontFile, Kind};
+use crate::input::Cursor;
 
 const WINDOW: Rect = Rect::new(0., 0., 300., 100.);
 
@@ -127,10 +128,8 @@ fn a_box_finds_its_rect_after_one_is_inserted_before_it() {
     layout.solve(WINDOW, 1.);
     layout.clear();
     leaf(&mut layout, "new", fixed(10., 30.));
-    assert_eq!(
-        layout.peek(Id::ROOT.child("a")),
-        Some(Rect::new(0., 0., 10., 10.))
-    );
+    let (_, rect) = layout.open(Id::ROOT.child("a"), fixed(10., 10.));
+    assert_eq!(rect, Some(Rect::new(0., 0., 10., 10.)));
 }
 
 #[test]
@@ -163,7 +162,7 @@ fn a_clip_cuts_its_children_but_not_itself() {
     layout.solve(WINDOW, 1.);
     let mut canvas = Canvas::default();
     canvas.clear(WINDOW);
-    layout.emit(&mut canvas, &mut Glyphs::default());
+    layout.emit(&mut canvas, &mut Glyphs::default(), None);
     let batches: Vec<_> = canvas
         .batches()
         .map(|(clip, _, range)| (clip, range))
@@ -209,7 +208,7 @@ fn a_float_draws_last_outside_its_parents_clip() {
     assert_eq!(rects[3].y, 20.);
     let mut canvas = Canvas::default();
     canvas.clear(WINDOW);
-    layout.emit(&mut canvas, &mut Glyphs::default());
+    layout.emit(&mut canvas, &mut Glyphs::default(), None);
     let after = Quad::new(Rect::new(0., 20., 10., 10.), Color::hex(0x10_20_30));
     let popup = Quad::new(rects[2], Color::hex(0xff_ff_ff));
     assert_eq!(canvas.quads(), [after, popup]);
@@ -237,7 +236,7 @@ fn boxes_outside_the_clip_draw_nothing() {
     layout.solve(WINDOW, 1.);
     let mut canvas = Canvas::default();
     canvas.clear(WINDOW);
-    layout.emit(&mut canvas, &mut Glyphs::default());
+    layout.emit(&mut canvas, &mut Glyphs::default(), None);
     // The third row starts at the clip's bottom edge.
     assert_eq!(canvas.quads().len(), 2);
 }
@@ -262,9 +261,39 @@ fn a_float_under_a_hidden_clip_still_draws() {
     layout.solve(WINDOW, 1.);
     let mut canvas = Canvas::default();
     canvas.clear(WINDOW);
-    layout.emit(&mut canvas, &mut Glyphs::default());
+    layout.emit(&mut canvas, &mut Glyphs::default(), None);
     let popup = Quad::new(Rect::new(0., 0., 60., 60.), Color::hex(0xff_ff_ff));
     assert_eq!(canvas.quads(), [popup]);
+}
+
+#[test]
+fn the_cursor_comes_from_the_last_box_drawn_under_the_pointer() {
+    let mut layout = Layout::default();
+    layout.clear();
+    let clipped = Element {
+        clip: true,
+        ..fixed(40., 20.)
+    };
+    layout.open(Id::ROOT.child("clipped"), clipped);
+    let link = Element {
+        cursor: Some(Cursor::Pointer),
+        ..fixed(80., 20.)
+    };
+    leaf(&mut layout, "link", link);
+    let field = Element {
+        float: Some(Anchor::At([0., 0.])),
+        cursor: Some(Cursor::Text),
+        ..fixed(10., 10.)
+    };
+    leaf(&mut layout, "field", field);
+    layout.close();
+    layout.solve(WINDOW, 1.);
+    let mut cursor_at = |at| layout.emit(&mut Canvas::default(), &mut Glyphs::default(), Some(at));
+    assert_eq!(cursor_at([20., 15.]), Some(Cursor::Pointer));
+    // Past the clip, the link isn't drawn there.
+    assert_eq!(cursor_at([60., 15.]), None);
+    // The floating box draws over the link.
+    assert_eq!(cursor_at([5., 5.]), Some(Cursor::Text));
 }
 
 #[test]
@@ -280,7 +309,7 @@ fn a_custom_box_draws_in_its_place() {
     layout.solve(WINDOW, 1.);
     let mut canvas = Canvas::default();
     canvas.clear(WINDOW);
-    layout.emit(&mut canvas, &mut Glyphs::default());
+    layout.emit(&mut canvas, &mut Glyphs::default(), None);
     let kinds: Vec<_> = canvas.batches().map(|(_, kind, _)| kind).collect();
     assert_eq!(kinds, [Kind::Triangles]);
 }
@@ -306,7 +335,7 @@ fn text_keeps_its_line_and_inks_between_passes() {
         layout.text(&mut glyphs, Id::ROOT.child("label"), style, text);
         layout.solve(WINDOW, 1.);
         canvas.clear(WINDOW);
-        layout.emit(&mut canvas, &mut glyphs);
+        layout.emit(&mut canvas, &mut glyphs, None);
         let line = &layout.texts[0].line;
         (line.inked(), glyphs.line_width(line))
     };
