@@ -111,7 +111,7 @@ fn draw(node: &Node, texts: &mut [Text], drawn: &Drawn, canvas: &mut Canvas, gly
     let rect = node.rect;
     if element.background.is_some() || element.border.is_some() {
         let fill = element.background.unwrap_or(Color::TRANSPARENT);
-        let mut quad = Quad::new(rect, fill).rounded(element.radius);
+        let mut quad = Quad::new(rect, fill).corners(element.radius);
         if let Some(border) = element.border {
             quad = quad.bordered(border.width, border.color);
         }

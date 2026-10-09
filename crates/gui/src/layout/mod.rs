@@ -89,7 +89,8 @@ pub struct Element {
     pub align: [Align; 2],
     pub background: Option<Color>,
     pub border: Option<Border>,
-    pub radius: f32,
+    /// Top left, top right, bottom right, bottom left.
+    pub radius: [f32; 4],
     /// Cuts its children off at its edge. A [`Size::Grow`] box that clips
     /// doesn't fit them.
     pub clip: bool,
@@ -234,7 +235,7 @@ impl Element {
         align: [Align::Start; 2],
         background: None,
         border: None,
-        radius: 0.,
+        radius: [0.; 4],
         clip: false,
         offset: [0.; 2],
         float: None,

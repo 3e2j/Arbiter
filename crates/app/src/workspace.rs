@@ -9,10 +9,16 @@
 //! bands shrink to keep [`MIN_MAIN`] when the window does.
 
 use gui::{
+    canvas::IconId,
     input::{Button, Cursor},
-    ui::{Align, Border, Direction, Element, Size, Ui},
+    ui::{Align, Border, Direction, Element, Size, Sizes, Ui},
 };
 
+use std::ops::Range;
+
+use gui::components::icon_button;
+
+use crate::assets::{Icon, Icons};
 use crate::panels::Panel;
 
 /// The smallest a dock gets, as `[width, height]` in logical pixels.
@@ -176,7 +182,9 @@ struct Tab {
 struct Dock {
     tabs: Vec<Tab>,
     /// The tab whose panel is drawn.
-    shown: usize,
+    active: usize,
+    /// Each tab's width this pass, kept so a pass allocates nothing.
+    widths: Vec<f32>,
 }
 
 pub struct Workspace {
@@ -187,20 +195,21 @@ pub struct Workspace {
     /// Indexed by [`Band`].
     ratios: [f32; Band::COUNT],
     drag: Option<Drag>,
+    icons: Icons,
 }
 
-impl Default for Workspace {
-    fn default() -> Self {
+impl Workspace {
+    /// With no tabs, each band at its default size.
+    pub fn new(icons: Icons) -> Self {
         Self {
             docks: Default::default(),
             sizes: Band::ALL.map(Band::default_size),
             ratios: [0.5; Band::COUNT],
             drag: None,
+            icons,
         }
     }
-}
 
-impl Workspace {
     /// Adds `panel` as the last tab in `place`.
     pub fn add(&mut self, panel: Panel, place: Place) {
         self.docks[place.index()].tabs.push(Tab { panel });
@@ -358,21 +367,20 @@ impl Workspace {
 
     fn dock(&mut self, ui: &mut Ui, place: Place, size: [Size; 2]) {
         let theme = ui.theme();
+        // Its border is the padding, so the tab bar meets it.
         let element = Element {
             size,
-            gap: theme.size.gap,
             background: Some(theme.color.surface),
             border: Some(Border {
                 width: theme.size.line,
                 color: theme.color.line,
             }),
-            // Rounder than what sits inside it.
-            radius: theme.size.radius * 2.,
+            radius: [dock_radius(theme.size); 4],
             clip: true,
-            ..Element::column().padded(theme.size.gap)
+            ..Element::column().padded(theme.size.line)
         };
-        let dock = &mut self.docks[place.index()];
-        ui.element(element, |ui| dock.ui(ui));
+        let (dock, icons) = (&mut self.docks[place.index()], &self.icons);
+        ui.element(element, |ui| dock.ui(ui, icons));
     }
 }
 
@@ -471,55 +479,231 @@ fn fit(
     (sizes, spare)
 }
 
+/// Rounder than what sits inside it.
+const fn dock_radius(size: Sizes) -> f32 {
+    size.radius * 2.
+}
+
+/// A tab holds a row, with a little room above and below it.
+const fn tab_height(size: Sizes) -> f32 {
+    size.row + 2.
+}
+
+/// Between two tabs, and after the last one.
+const TAB_GAP: f32 = 2.;
+/// Inside each end of the tab bar.
+const TAB_PADDING: f32 = 6.;
+
 impl Dock {
-    /// Its tab bar, then the shown tab's panel under it.
-    fn ui(&mut self, ui: &mut Ui) {
+    /// Its tab bar, then the active tab's panel under it.
+    ///
+    /// The bar is darker than the dock, with a line along its bottom that the
+    /// tabs sit on. The active tab is the dock's colour and covers the line
+    /// under it, so it reads as part of the panel below. The menu button sits
+    /// at the right end. Tabs that would be cut off there are left out, the
+    /// active one never, and arrows beside the menu step through them all.
+    fn ui(&mut self, ui: &mut Ui, icons: &Icons) {
         if self.tabs.is_empty() {
             return;
         }
         let theme = ui.theme();
-        let size = theme.size;
+        let (color, size) = (theme.color, theme.size);
+        let tab_height = tab_height(size);
+        let top = dock_radius(size) - size.line;
         let bar = Element {
             direction: Direction::LeftToRight,
-            size: [Size::Grow, Size::Fit],
-            gap: size.gap / 2.,
+            size: [Size::Grow, Size::Fixed(tab_height + 4. - size.line)],
+            align: [Align::Start, Align::End],
+            background: Some(color.page),
+            radius: [top, top, 0., 0.],
+            // Otherwise it's as wide as its tabs, so they'd always fit.
+            clip: true,
             ..Element::DEFAULT
         };
-        let tab = Element {
-            size: [Size::Fit, Size::Fixed(size.row)],
-            padding: [size.gap, 0., size.gap, 0.],
-            align: [Align::Start, Align::Center],
-            radius: size.radius,
+        // Room for a close button either side, so the title stays centred.
+        let sides = 2. * (tab_height + size.icon_gap);
+        let text = theme.ui_text(color.text);
+        self.widths.clear();
+        let mut active = self.active;
+        ui.element(bar, |ui| {
+            for tab in &self.tabs {
+                let width = ui.measure(text, tab.panel.title())[0] + sides;
+                self.widths.push(width.ceil());
+            }
+            let room = |buttons: f32| {
+                ui.rect()
+                    .map_or(f32::INFINITY, |bar| bar.w - 2. * TAB_PADDING - buttons)
+            };
+            let (room, crowded) = (room(size.row), room(3. * size.row));
+            let range = visible(&self.widths, TAB_GAP, room, crowded, active);
+            let all = range.len() == self.tabs.len();
+            let room = if all { room } else { crowded };
+            on_line(ui, Size::Fixed(TAB_PADDING), |_| {});
+            let tabs = (0..).zip(self.tabs.iter().zip(&self.widths).enumerate());
+            for (key, (i, (tab, &width))) in tabs.skip(range.start).take(range.len()) {
+                let fits = (room - TAB_GAP).max(0.);
+                if Self::tab(ui, key, tab.panel.title(), width.min(fits), i == active) {
+                    active = i;
+                }
+                on_line(ui, Size::Fixed(TAB_GAP), |_| {});
+            }
+            on_line(ui, Size::Grow, |_| {});
+            let buttons = Element {
+                direction: Direction::LeftToRight,
+                ..Element::DEFAULT
+            };
+            on_line(ui, Size::Fit, |ui| {
+                ui.element(buttons, |ui| {
+                    if !all {
+                        let last = self.tabs.len() - 1;
+                        if arrow(ui, icons.get(Icon::ChevronLeft), active > 0) {
+                            active -= 1;
+                        }
+                        if arrow(ui, icons.get(Icon::ChevronRight), active < last) {
+                            active += 1;
+                        }
+                    }
+                    // TODO: the menu that moves tabs between docks.
+                    icon_button(ui, icons.get(Icon::Menu));
+                });
+            });
+            on_line(ui, Size::Fixed(TAB_PADDING), |_| {});
+        });
+        self.active = active;
+        if let Some(tab) = self.tabs.get_mut(self.active) {
+            ui.element(Element::column().padded(size.gap), |ui| tab.panel.ui(ui));
+        }
+    }
+
+    /// One tab `width` wide, keyed by `key`, its top corners rounded and its
+    /// title centred, or from the left when it's narrower than the title asks.
+    /// Returns whether it was pressed.
+    fn tab(ui: &mut Ui, key: u32, title: &str, width: f32, active: bool) -> bool {
+        let theme = ui.theme();
+        let (color, size) = (theme.color, theme.size);
+        let radius = [size.radius, size.radius, 0., 0.];
+        let element = Element {
+            size: [Size::Fixed(width), Size::Fixed(tab_height(size))],
+            clip: true,
             cursor: Some(Cursor::Pointer),
             ..Element::DEFAULT
         };
-        let mut shown = self.shown;
-        ui.element(bar, |ui| {
-            for (i, tab_of) in (0..).zip(&self.tabs) {
-                ui.element(tab, |ui| {
-                    if ui.pressed(Button::Left) {
-                        shown = i;
-                    }
-                    let current = shown == i;
-                    ui.style().background = if current {
-                        Some(theme.color.selected)
-                    } else {
-                        ui.hovered().then_some(theme.color.hover)
-                    };
-                    let color = if current {
-                        theme.color.text
-                    } else {
-                        theme.color.dim
-                    };
-                    ui.text(theme.ui_text(color), tab_of.panel.title());
-                });
+        ui.keyed(key, element, |ui| {
+            let pressed = ui.pressed(Button::Left);
+            let hovered = ui.hovered();
+            let squeezed = ui.measure(theme.ui_text(color.text), title)[0] > width;
+            let mut label = Element {
+                size: [Size::Grow; 2],
+                align: [Align::Center; 2],
+                radius,
+                ..Element::DEFAULT
+            };
+            if squeezed {
+                label.align[0] = Align::Start;
+                label.padding[0] = size.icon_gap;
             }
-        });
-        self.shown = shown;
-        if let Some(tab) = self.tabs.get_mut(self.shown) {
-            ui.element(Element::column(), |ui| tab.panel.ui(ui));
-        }
+            let strip = |fill| Element {
+                size: [Size::Grow, Size::Fixed(size.line)],
+                background: Some(fill),
+                ..Element::DEFAULT
+            };
+            if active {
+                // Inside its border, and down over the bar's line.
+                let style = ui.style();
+                style.background = Some(color.surface);
+                style.border = Some(Border {
+                    width: size.line,
+                    color: color.line,
+                });
+                style.radius = radius;
+                style.padding = [size.line, 0., size.line, 0.];
+                ui.element(label, |ui| {
+                    ui.text(theme.ui_text(color.text), title);
+                });
+                ui.element(strip(color.surface), |_| {});
+            } else {
+                label.background = Some(if hovered { color.selected } else { color.hover });
+                ui.element(label, |ui| {
+                    ui.text(theme.ui_text(color.dim), title);
+                });
+                ui.element(strip(color.line), |_| {});
+            }
+            pressed
+        })
     }
+}
+
+/// A piece of the tab bar `width` wide, with the bar's line along its bottom
+/// under what `body` declares.
+#[track_caller]
+fn on_line(ui: &mut Ui, width: Size, body: impl FnOnce(&mut Ui)) {
+    let theme = ui.theme();
+    let size = theme.size;
+    let cell = Element {
+        size: [width, Size::Fixed(tab_height(size))],
+        ..Element::DEFAULT
+    };
+    let above = Element {
+        size: [Size::Grow; 2],
+        align: [Align::Center; 2],
+        ..Element::DEFAULT
+    };
+    let line = Element {
+        size: [Size::Grow, Size::Fixed(size.line)],
+        background: Some(theme.color.line),
+        ..Element::DEFAULT
+    };
+    ui.element(cell, |ui| {
+        ui.element(above, body);
+        ui.element(line, |_| {});
+    });
+}
+
+/// A button that steps between tabs, dimmed and inert when there's no tab
+/// that way. Returns whether it was clicked.
+#[track_caller]
+fn arrow(ui: &mut Ui, icon: IconId, enabled: bool) -> bool {
+    if enabled {
+        return icon_button(ui, icon);
+    }
+    let theme = ui.theme();
+    let size = theme.size;
+    let element = Element {
+        size: [Size::Fixed(size.row); 2],
+        align: [Align::Center; 2],
+        ..Element::DEFAULT
+    };
+    ui.element(element, |ui| {
+        ui.icon(icon, size.icon, theme.color.dim.alpha(0x60));
+    });
+    false
+}
+
+/// Which of the tabs `widths` wide show, each followed by `gap`. All of them
+/// when they fit in `room`, otherwise as many as fit in `crowded`, which
+/// leaves space for the arrows. Those start from the left, but `active` is
+/// always among them, so the tabs left of it go first.
+fn visible(widths: &[f32], gap: f32, room: f32, crowded: f32, active: usize) -> Range<usize> {
+    let Some(last) = widths.len().checked_sub(1) else {
+        return 0..0;
+    };
+    let total: f32 = widths.iter().map(|width| width + gap).sum();
+    if total <= room {
+        return 0..widths.len();
+    }
+    let active = active.min(last);
+    let mut used = widths[active] + gap;
+    let mut start = active;
+    while start > 0 && used + widths[start - 1] + gap <= crowded {
+        start -= 1;
+        used += widths[start] + gap;
+    }
+    let mut end = active + 1;
+    while end < widths.len() && used + widths[end] + gap <= crowded {
+        used += widths[end] + gap;
+        end += 1;
+    }
+    start..end
 }
 
 #[cfg(test)]
@@ -609,5 +793,29 @@ mod tests {
         // Too short for both, so it stays split evenly.
         let divider = Divider::ratio(Band::LeftInner, 0.9, 200.);
         assert!(close(divider.value, 0.5));
+    }
+
+    #[test]
+    fn visible_shows_every_tab_that_fits() {
+        assert_eq!(visible(&[50., 50., 50.], 2., 156., 100., 2), 0..3);
+        assert_eq!(visible(&[], 2., 0., 0., 0), 0..0);
+    }
+
+    #[test]
+    fn visible_leaves_out_tabs_past_the_buttons() {
+        // 156 would fit them all, but the arrows take some of it.
+        assert_eq!(visible(&[50., 50., 50.], 2., 155., 110., 0), 0..2);
+        assert_eq!(visible(&[50., 50., 50.], 2., 155., 110., 1), 0..2);
+    }
+
+    #[test]
+    fn visible_drops_from_the_left_to_keep_the_active_tab() {
+        assert_eq!(visible(&[50., 50., 50., 50.], 2., 155., 110., 3), 2..4);
+        assert_eq!(visible(&[50., 50., 50., 50.], 2., 155., 110., 2), 1..3);
+    }
+
+    #[test]
+    fn visible_keeps_a_active_tab_too_wide_for_the_bar() {
+        assert_eq!(visible(&[50., 300., 50.], 2., 155., 110., 1), 1..2);
     }
 }

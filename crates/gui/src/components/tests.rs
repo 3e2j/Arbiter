@@ -153,8 +153,6 @@ fn a_button_reports_a_click_over_it() {
     kept.input.push(Event::Pressed(Button::Left));
     assert!(!pass(&mut kept));
     kept.input.push(Event::Released(Button::Left));
-    // The host runs the pass after a release in the same frame.
-    assert!(!pass(&mut kept));
     assert!(pass(&mut kept));
     assert!(!pass(&mut kept));
 }

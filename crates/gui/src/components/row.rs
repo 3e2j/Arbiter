@@ -43,7 +43,7 @@ pub fn row(ui: &mut Ui, row: Row) -> bool {
         ],
         gap: s.icon_gap,
         align: [Align::Start, Align::Center],
-        radius: s.radius,
+        radius: [s.radius; 4],
         cursor: Some(Cursor::Pointer),
         ..Element::DEFAULT
     };

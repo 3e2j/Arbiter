@@ -72,7 +72,8 @@ pub(crate) struct Memory {
 struct Hold {
     /// The box holding the button, by its index last pass.
     held: Option<usize>,
-    /// The button came up, so this pass is the holder's last.
+    /// The button came up in the pass the holder took it, so this pass is
+    /// its last, and where it clicks.
     let_go: bool,
     /// The holder's index this pass.
     found: Option<usize>,
@@ -203,18 +204,22 @@ impl<'a> Ui<'a> {
     /// come up. Starts the pass after the press, since a box declared later
     /// in the press pass, such as one inside it, takes the button instead.
     pub fn held(&mut self, button: Button) -> bool {
-        self.holds(button) && !self.memory.holds[button.index()].let_go
+        self.holding(button) && !self.input.released(button)
     }
 
     /// Whether `button` came up over the open box after going down over it.
+    /// In the pass it comes up, so what the click changes is seen by the pass
+    /// that runs again before drawing. A press and release in one pass clicks
+    /// the pass after, once the box has taken the button.
     pub fn clicked(&mut self, button: Button) -> bool {
-        self.holds(button) && self.memory.holds[button.index()].let_go && self.hovered()
+        let let_go = self.memory.holds[button.index()].let_go;
+        self.holds(button) && (let_go || self.input.released(button)) && self.hovered()
     }
 
     /// How far the pointer moved since last pass while the open box holds
-    /// `button`.
+    /// `button`, including the pass it comes up.
     pub fn dragged(&mut self, button: Button) -> Option<[f32; 2]> {
-        if !self.held(button) {
+        if !self.holding(button) {
             return None;
         }
         let ([x, y], [from_x, from_y]) = (self.input.pointer()?, self.memory.pointer?);
@@ -254,6 +259,14 @@ impl<'a> Ui<'a> {
     pub fn text(&mut self, style: TextStyle, text: &str) -> Option<Rect> {
         let slot = self.next_slot(Location::caller());
         self.layout.text(self.glyphs, slot, style, text)
+    }
+
+    /// How big [`Self::text`] would make `text`, without declaring it. The
+    /// line is kept for the frame, so measuring it again is free.
+    pub fn measure(&mut self, style: TextStyle, text: &str) -> [f32; 2] {
+        let width = self.glyphs.text_width(style.font, style.size, text);
+        let metrics = self.glyphs.line_metrics(style.font, style.size);
+        [width, metrics.ascent + metrics.descent]
     }
 
     /// `icon` in a square `size` logical pixels wide. Returns its rect last
@@ -325,6 +338,12 @@ impl<'a> Ui<'a> {
         self.open.last.is_some() && self.open.last == hold.held
     }
 
+    /// Whether the open box holds `button` and hasn't been let go of before
+    /// this pass.
+    fn holding(&mut self, button: Button) -> bool {
+        self.holds(button) && !self.memory.holds[button.index()].let_go
+    }
+
     fn leave(&mut self, parent: Open) {
         self.slots.sites.truncate(self.open.sites);
         self.open = parent;
@@ -369,8 +388,12 @@ impl Hold {
             if input.held(button) {
                 self.held = Some(holder);
             } else if input.released(button) {
-                self.held = Some(holder);
-                self.let_go = true;
+                // A box that held it before this pass clicked in it, but one
+                // that only just took it clicks next pass.
+                if self.claim.is_some() {
+                    self.held = Some(holder);
+                    self.let_go = true;
+                }
                 changed = true;
             }
         }
@@ -573,8 +596,13 @@ pub(crate) mod tests {
         press(&mut kept);
         assert_eq!(ask(&mut kept), HELD);
         kept.input.push(Event::Released(Button::Left));
-        assert_eq!(ask(&mut kept), HELD);
-        assert_eq!(ask(&mut kept), CLICKED);
+        assert_eq!(
+            ask(&mut kept),
+            Asked {
+                dragged: Some([0.; 2]),
+                ..CLICKED
+            }
+        );
         assert_eq!(ask(&mut kept), Asked::default());
     }
 

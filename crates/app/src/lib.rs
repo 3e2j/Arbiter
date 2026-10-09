@@ -48,7 +48,7 @@ impl App for Editor {
         start.theme = theme::theme(assets::fonts(start.glyphs)?);
         let icons = Icons::load(start.glyphs)?;
         // TODO: from the session, once the workspace is saved.
-        let mut workspace = Workspace::default();
+        let mut workspace = Workspace::new(icons);
         let placeholder = |title| Panel::Placeholder(Placeholder::new(title));
         workspace.add(Panel::Showcase(Showcase::new(icons)), Place::Main);
         workspace.add(placeholder("Messages"), Place::Main);

@@ -52,6 +52,7 @@ pub enum Icon {
     Alert,
     Check,
     ChevronDown,
+    ChevronLeft,
     ChevronRight,
     CircleX,
     Close,
@@ -62,6 +63,7 @@ pub enum Icon {
     Folder,
     FolderOpen,
     Hammer,
+    Menu,
     Message,
     More,
     Plus,
@@ -70,10 +72,11 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 20] = [
         Self::Alert,
         Self::Check,
         Self::ChevronDown,
+        Self::ChevronLeft,
         Self::ChevronRight,
         Self::CircleX,
         Self::Close,
@@ -84,6 +87,7 @@ impl Icon {
         Self::Folder,
         Self::FolderOpen,
         Self::Hammer,
+        Self::Menu,
         Self::Message,
         Self::More,
         Self::Plus,
@@ -110,6 +114,7 @@ impl Icon {
             Self::Alert => tabler!("alert-triangle"),
             Self::Check => tabler!("check"),
             Self::ChevronDown => tabler!("chevron-down"),
+            Self::ChevronLeft => tabler!("chevron-left"),
             Self::ChevronRight => tabler!("chevron-right"),
             Self::CircleX => tabler!("circle-x"),
             Self::Close => tabler!("x"),
@@ -120,6 +125,7 @@ impl Icon {
             Self::Folder => tabler!("folder"),
             Self::FolderOpen => tabler!("folder-open"),
             Self::Hammer => tabler!("hammer"),
+            Self::Menu => tabler!("menu-2"),
             Self::Message => tabler!("message"),
             Self::More => tabler!("dots"),
             Self::Plus => tabler!("plus"),

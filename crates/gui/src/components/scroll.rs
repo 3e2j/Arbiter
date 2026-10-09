@@ -118,7 +118,7 @@ fn thumb(ui: &mut Ui, offset: f32, content: f32, view: f32) -> f32 {
     let element = Element {
         size: [Size::Fixed(width), Size::Fixed(length)],
         background: Some(theme.color.thumb),
-        radius: width / 2.,
+        radius: [width / 2.; 4],
         float: Some(Anchor::Parent {
             parent: [Align::End, Align::Start],
             own: [Align::End, Align::Start],

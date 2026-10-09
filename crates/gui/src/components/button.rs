@@ -17,7 +17,7 @@ pub fn button(ui: &mut Ui, label: &str) -> bool {
             width: s.line,
             color: c.line,
         }),
-        radius: s.radius,
+        radius: [s.radius; 4],
         cursor: Some(Cursor::Pointer),
         ..Element::DEFAULT
     };
@@ -36,7 +36,7 @@ pub fn icon_button(ui: &mut Ui, icon: IconId) -> bool {
     let element = Element {
         size: [Size::Fixed(s.row); 2],
         align: [Align::Center; 2],
-        radius: s.radius,
+        radius: [s.radius; 4],
         cursor: Some(Cursor::Pointer),
         ..Element::DEFAULT
     };
