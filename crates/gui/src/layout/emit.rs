@@ -22,7 +22,7 @@ impl Layout {
     }
 
     /// Draws `top` and what's under it, clipped to `clip`, leaving its
-    /// floating boxes for later.
+    /// floating boxes for later. Boxes outside the clip are skipped.
     fn emit_tree(&mut self, top: usize, clip: Rect, canvas: &mut Canvas, glyphs: &mut Glyphs) {
         canvas.clip(clip);
         self.clips.clear();
@@ -43,6 +43,16 @@ impl Layout {
                 index = node.end;
                 continue;
             }
+            if !node.rect.overlaps(current) {
+                // Nothing under a clip it's outside of can show, except
+                // floating boxes.
+                index = if node.element.clip {
+                    self.queue_floats(index)
+                } else {
+                    index + 1
+                };
+                continue;
+            }
             let drawn = Drawn {
                 paints: &self.paints,
                 vertices: &self.vertices,
@@ -56,6 +66,23 @@ impl Layout {
             }
             index += 1;
         }
+    }
+
+    /// Leaves the floating boxes under `top` for later, without drawing
+    /// anything. Returns where its subtree ends.
+    fn queue_floats(&mut self, top: usize) -> usize {
+        let end = self.nodes[top].end;
+        let mut index = top + 1;
+        while index < end {
+            let node = &self.nodes[index];
+            if node.element.float.is_some() {
+                self.floats.push(index);
+                index = node.end;
+            } else {
+                index += 1;
+            }
+        }
+        end
     }
 }
 

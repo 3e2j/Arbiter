@@ -218,6 +218,56 @@ fn a_float_draws_last_outside_its_parents_clip() {
 }
 
 #[test]
+fn boxes_outside_the_clip_draw_nothing() {
+    let mut layout = Layout::default();
+    layout.clear();
+    let list = Element {
+        clip: true,
+        ..fixed(50., 50.)
+    };
+    layout.open(Id::ROOT.child("list"), list);
+    let row = Element {
+        background: Some(Color::hex(0xff_ff_ff)),
+        ..fixed(10., 30.)
+    };
+    for salt in ["a", "b", "c"] {
+        leaf(&mut layout, salt, row);
+    }
+    layout.close();
+    layout.solve(WINDOW, 1.);
+    let mut canvas = Canvas::default();
+    canvas.clear(WINDOW);
+    layout.emit(&mut canvas, &mut Glyphs::default());
+    // The third row starts at the clip's bottom edge.
+    assert_eq!(canvas.quads().len(), 2);
+}
+
+#[test]
+fn a_float_under_a_hidden_clip_still_draws() {
+    let mut layout = Layout::default();
+    layout.clear();
+    leaf(&mut layout, "spacer", fixed(10., 100.));
+    let below = Element {
+        clip: true,
+        ..fixed(40., 20.)
+    };
+    layout.open(Id::ROOT.child("below"), below);
+    let popup = Element {
+        float: Some(Anchor::At([0., 0.])),
+        background: Some(Color::hex(0xff_ff_ff)),
+        ..fixed(60., 60.)
+    };
+    leaf(&mut layout, "popup", popup);
+    layout.close();
+    layout.solve(WINDOW, 1.);
+    let mut canvas = Canvas::default();
+    canvas.clear(WINDOW);
+    layout.emit(&mut canvas, &mut Glyphs::default());
+    let popup = Quad::new(Rect::new(0., 0., 60., 60.), Color::hex(0xff_ff_ff));
+    assert_eq!(canvas.quads(), [popup]);
+}
+
+#[test]
 fn a_custom_box_draws_in_its_place() {
     let mut layout = Layout::default();
     layout.clear();

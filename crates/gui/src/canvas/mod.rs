@@ -48,6 +48,15 @@ impl Rect {
         x >= self.x && y >= self.y && x < self.right() && y < self.bottom()
     }
 
+    /// Whether both share any area, so touching edges don't count.
+    #[must_use]
+    pub fn overlaps(self, other: Self) -> bool {
+        self.x < other.right()
+            && other.x < self.right()
+            && self.y < other.bottom()
+            && other.y < self.bottom()
+    }
+
     /// The overlap of both, zero-sized when they don't touch.
     #[must_use]
     pub fn intersect(self, other: Self) -> Self {
