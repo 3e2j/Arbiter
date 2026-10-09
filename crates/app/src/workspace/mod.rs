@@ -10,10 +10,14 @@
 //!
 //! A tab dragged out of its bar moves where it's let go, among the
 //! [`Places`] its panel allows, as [`drag`] finds.
+//!
+//! Each dock's [`Menu`] shows, closes or moves its tabs, opened from the
+//! button on its tab bar or by right clicking a tab.
 
 mod dock;
 mod drag;
 mod layout;
+mod menu;
 mod place;
 
 use gui::ui::{Border, Direction, Element, Size, Ui};
@@ -24,6 +28,7 @@ use crate::panels::Panel;
 use dock::{Dock, Tab, dock_radius};
 use drag::{Grip, TabDrag};
 use layout::{Divider, Drag, Pass, fit};
+use menu::Menu;
 use place::Band;
 pub use place::{Place, Places};
 
@@ -48,6 +53,8 @@ pub struct Workspace {
     /// The tab holding the left button this pass.
     grip: Option<Grip>,
     tab_drag: Option<TabDrag>,
+    /// The menu that's open, which takes every press until it closes.
+    menu: Option<Menu>,
     icons: Icons,
 }
 
@@ -61,6 +68,7 @@ impl Workspace {
             drag: None,
             grip: None,
             tab_drag: None,
+            menu: None,
             icons,
         }
     }
@@ -95,6 +103,7 @@ impl Workspace {
             });
             self.band(ui, &pass, Band::BottomRow);
             self.drag_tab(ui, window);
+            self.menu(ui, window);
         });
     }
 
@@ -192,12 +201,20 @@ impl Workspace {
             ..Element::column().padded(theme.size.line)
         };
         let (dock, icons) = (&mut self.docks[place.index()], &self.icons);
-        let held = ui.element(element, |ui| {
+        let out = ui.element(element, |ui| {
             dock.rect = ui.rect();
             dock.ui(ui, icons)
         });
-        if let Some((index, rect)) = held {
+        if let Some((index, rect)) = out.held {
             self.grip = Some(Grip { place, index, rect });
+        }
+        if let Some((tab, from, align)) = out.menu {
+            self.menu = Some(Menu {
+                place,
+                tab,
+                from,
+                align,
+            });
         }
     }
 }

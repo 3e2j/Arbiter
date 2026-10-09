@@ -192,15 +192,9 @@ fn drag_marks(
 /// Takes the tab `grip` holds out of its dock in `docks` and puts it where
 /// `landing` says, showing it there.
 fn move_tab(docks: &mut [Dock; Place::COUNT], grip: Grip, landing: Landing) {
-    let source = &mut docks[grip.place.index()];
-    if grip.index >= source.tabs.len() {
+    let Some(tab) = docks[grip.place.index()].remove(grip.index) else {
         return;
-    }
-    let tab = source.tabs.remove(grip.index);
-    if source.active > grip.index {
-        source.active -= 1;
-    }
-    source.active = source.active.min(source.tabs.len().saturating_sub(1));
+    };
     let mut index = landing.index;
     if landing.place == grip.place && index > grip.index {
         index -= 1;

@@ -55,10 +55,10 @@ impl Dock {
     /// at the right end. Tabs that would be cut off there are left out, the
     /// active one never, and arrows beside the menu step through them all.
     ///
-    /// Returns the tab holding the left button, by index, with its rect.
-    pub(super) fn ui(&mut self, ui: &mut Ui, icons: &Icons) -> Option<(usize, Rect)> {
+    pub(super) fn ui(&mut self, ui: &mut Ui, icons: &Icons) -> DockOut {
+        let mut out = DockOut::default();
         if self.tabs.is_empty() {
-            return None;
+            return out;
         }
         let theme = ui.theme();
         let (color, size) = (theme.color, theme.size);
@@ -79,7 +79,6 @@ impl Dock {
         let text = theme.ui_text(color.text);
         self.widths.clear();
         let mut active = self.active;
-        let mut held = None;
         ui.element(bar, |ui| {
             self.bar = ui.rect();
             for tab in &self.tabs {
@@ -105,7 +104,10 @@ impl Dock {
                 if let Some(rect) = state.rect {
                     self.shown.push((i, rect));
                     if state.held {
-                        held = Some((i, rect));
+                        out.held = Some((i, rect));
+                    }
+                    if state.menu {
+                        out.menu = Some((i, rect, Align::Start));
                     }
                 }
                 on_line(ui, Size::Fixed(TAB_GAP), |_| {});
@@ -126,8 +128,12 @@ impl Dock {
                             active += 1;
                         }
                     }
-                    // TODO: the menu that moves tabs between docks.
-                    icon_button(ui, icons.get(Icon::Menu));
+                    let (rect, clicked) = ui.element(Element::DEFAULT, |ui| {
+                        (ui.rect(), icon_button(ui, icons.get(Icon::Menu)))
+                    });
+                    if let Some(rect) = rect.filter(|_| clicked) {
+                        out.menu = Some((active, rect, Align::End));
+                    }
                 });
             });
             on_line(ui, Size::Fixed(TAB_PADDING), |_| {});
@@ -136,7 +142,21 @@ impl Dock {
         if let Some(tab) = self.tabs.get_mut(self.active) {
             ui.element(Element::column().padded(size.gap), |ui| tab.panel.ui(ui));
         }
-        held
+        out
+    }
+
+    /// Takes out the tab at `index`, showing the one that slides into its
+    /// place, or the new last.
+    pub(super) fn remove(&mut self, index: usize) -> Option<Tab> {
+        if index >= self.tabs.len() {
+            return None;
+        }
+        let tab = self.tabs.remove(index);
+        if self.active > index {
+            self.active -= 1;
+        }
+        self.active = self.active.min(self.tabs.len().saturating_sub(1));
+        Some(tab)
     }
 
     /// One tab `width` wide, keyed by `key`, its top corners rounded and its
@@ -156,6 +176,7 @@ impl Dock {
                 rect: ui.rect(),
                 pressed: ui.pressed(Button::Left),
                 held: ui.dragged(Button::Left).is_some(),
+                menu: ui.pressed(Button::Right),
             };
             let hovered = ui.hovered();
             let squeezed = ui.measure(theme.ui_text(color.text), title)[0] > width;
@@ -207,6 +228,18 @@ struct TabState {
     pressed: bool,
     /// Whether it holds the left button, so it can be dragged.
     held: bool,
+    /// Whether the right button went down over it, opening its menu.
+    menu: bool,
+}
+
+/// What a dock's tab bar saw this pass.
+#[derive(Default)]
+pub(super) struct DockOut {
+    /// The tab holding the left button, by index, with its rect.
+    pub(super) held: Option<(usize, Rect)>,
+    /// The tab whose menu opens, by index, with what the menu hangs from and
+    /// which of its edges the menu lines up with.
+    pub(super) menu: Option<(usize, Rect, Align)>,
 }
 
 /// A piece of the tab bar `width` wide, with the bar's line along its bottom
