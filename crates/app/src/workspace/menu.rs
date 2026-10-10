@@ -4,7 +4,7 @@
 
 use gui::{
     canvas::Rect,
-    input::{Button, Cursor, Key},
+    input::{Button, Cursor},
     ui::{Align, Anchor, Border, Direction, Element, Size, Ui},
 };
 
@@ -96,14 +96,7 @@ impl Workspace {
         let (Some(mut menu), Some(window)) = (self.menu, window) else {
             return;
         };
-        let escaped = ui
-            .input()
-            .keys()
-            .iter()
-            .any(|press| press.key == Key::Escape);
-        // Before it's declared, since nothing makes the pass run again to
-        // drop it.
-        if escaped || menu.tab >= self.docks[menu.place.index()].tabs.len() {
+        if menu.tab >= self.docks[menu.place.index()].tabs.len() {
             self.menu = None;
             return;
         }

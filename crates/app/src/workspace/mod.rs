@@ -20,7 +20,10 @@ mod layout;
 mod menu;
 mod place;
 
-use gui::ui::{Border, Direction, Element, Size, Ui};
+use gui::{
+    input::{Input, Key},
+    ui::{Border, Direction, Element, Size, Ui},
+};
 
 use crate::assets::Icons;
 use crate::panels::Panel;
@@ -76,6 +79,13 @@ impl Workspace {
     /// Adds `panel` as the last tab in `place`.
     pub fn add(&mut self, panel: Panel, place: Place) {
         self.docks[place.index()].tabs.push(Tab { panel });
+    }
+
+    /// Escape closes the menu.
+    pub fn input(&mut self, input: &Input) {
+        if input.keys().iter().any(|press| press.key == Key::Escape) {
+            self.menu = None;
+        }
     }
 
     /// Declares the bands in the order they're cut, outside in, each wrapping

@@ -12,6 +12,7 @@ mod workspace;
 use assets::Icons;
 use gui::{
     host::{App, Startup},
+    input::Input,
     platform::window,
     ui::Ui,
 };
@@ -60,6 +61,10 @@ impl App for Editor {
         workspace.add(tool("Log"), Place::BelowMain);
         workspace.add(tool("Diagnostics"), Place::BelowMain);
         Ok(Self { workspace })
+    }
+
+    fn input(&mut self, input: &Input) {
+        self.workspace.input(input);
     }
 
     fn ui(&mut self, ui: &mut Ui) {

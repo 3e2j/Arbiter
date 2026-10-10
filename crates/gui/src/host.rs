@@ -21,9 +21,16 @@ pub trait App: Sized {
     ///
     /// When the app can't start. The window doesn't open.
     fn new(start: &mut Startup) -> Result<Self, Box<dyn Error>>;
+    /// Acts on this frame's input once, before any pass, so what it changes
+    /// is already in place when the boxes are declared. Where shortcuts that
+    /// aren't asked of a box go, such as Escape closing a menu.
+    fn input(&mut self, _input: &Input) {}
     /// Declares one pass's boxes through `ui`, which starts in the window's
     /// box. Can run twice in a frame, as [`Host::draw`] says, and only the
     /// second is drawn.
+    ///
+    /// Act on input before declaring the boxes it changes. Nothing runs the
+    /// pass again for a change made after, so it shows a frame late.
     fn ui(&mut self, ui: &mut Ui);
     /// After the last pass.
     fn on_close(&mut self) {}
@@ -90,13 +97,21 @@ impl<A: App> Host<A> {
     pub fn draw(&mut self, rect: Rect, scale: f32, canvas: &mut Canvas) -> Out {
         self.glyphs.set_scale(scale);
         self.glyphs.next_frame();
+
+        // Act on input before any pass
+        self.app.input(&self.input);
+
+        // 1st pass
         let mut out = self.pass();
+
         self.input.clear();
         let shifted = self.layout.solve(rect, scale);
         if shifted || self.memory.changed() {
+            // 2nd pass, corrects any UI that would otherwise appear incorrectly
             out = self.pass();
             self.layout.solve(rect, scale);
         }
+
         canvas.clear(rect);
         canvas.background = self.theme.color.page;
         self.layout.emit(canvas, &mut self.glyphs);
