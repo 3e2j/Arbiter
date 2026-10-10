@@ -94,6 +94,11 @@ impl<A: App> Host<A> {
     /// with no new input and that one is drawn instead. So a frame never runs
     /// more than two passes, a button that changes twice since the last waits
     /// for the next frame, which [`Out::again`] asks for.
+    ///
+    /// A frame with input also asks for the next, so whatever it changed after
+    /// the boxes it affects were declared, or a box new in the second pass
+    /// with no size yet, is drawn a frame late rather than left until the
+    /// next input.
     pub fn draw(&mut self, rect: Rect, scale: f32, canvas: &mut Canvas) -> Out {
         self.glyphs.set_scale(scale);
         self.glyphs.next_frame();
@@ -104,6 +109,7 @@ impl<A: App> Host<A> {
         // 1st pass
         let mut out = self.pass();
 
+        let fresh = self.input.fresh();
         self.input.clear();
         let shifted = self.layout.solve(rect, scale);
         if shifted || self.memory.changed() {
@@ -118,7 +124,7 @@ impl<A: App> Host<A> {
         if let Some(cursor) = self.layout.cursor(self.input.pointer()) {
             out.cursor = cursor;
         }
-        out.again = self.input.trickle();
+        out.again = self.input.trickle() || fresh;
         out
     }
 

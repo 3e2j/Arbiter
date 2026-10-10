@@ -136,6 +136,8 @@ pub struct Input {
     later: Vec<Later>,
     /// What the text in `later` typed.
     later_text: String,
+    /// Whether anything came in since the last pass.
+    fresh: bool,
 }
 
 /// An [`Event`] waiting for the next pass, its text kept apart.
@@ -148,7 +150,8 @@ enum Later {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct Out {
     pub cursor: Cursor,
-    /// Input waited for the next frame, so it should draw again straight away.
+    /// The frame had input, or some waited for the next, so it should draw
+    /// again straight away.
     pub again: bool,
 }
 
@@ -230,6 +233,7 @@ impl Input {
     }
 
     fn apply(&mut self, event: Event) {
+        self.fresh = true;
         match event {
             Event::Pointer(at) => self.pointer = at,
             Event::Pressed(button) => {
@@ -258,11 +262,18 @@ impl Input {
     /// where the pointer is stay, and what waits stays waiting until
     /// [`Self::trickle`].
     pub fn clear(&mut self) {
+        self.fresh = false;
         self.pressed = 0;
         self.released = 0;
         self.scroll = [0.; 2];
         self.keys.clear();
         self.text.clear();
+    }
+
+    /// Whether anything came in since the last pass.
+    #[must_use]
+    pub const fn fresh(&self) -> bool {
+        self.fresh
     }
 
     /// `None` while it's outside the window.
@@ -330,7 +341,17 @@ mod tests {
         assert!(input.released(Button::Left) && !input.held(Button::Left));
         assert_eq!(input.text(), "a");
         input.clear();
-        assert!(!input.trickle());
+        assert!(!input.trickle() && !input.fresh());
+    }
+
+    #[test]
+    fn any_event_is_fresh_until_cleared() {
+        let mut input = Input::default();
+        assert!(!input.fresh());
+        input.push(Event::Pointer(Some([1., 2.])));
+        assert!(input.fresh());
+        input.clear();
+        assert!(!input.fresh());
     }
 
     #[test]
