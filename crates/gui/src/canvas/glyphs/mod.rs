@@ -268,6 +268,33 @@ impl Glyphs {
         (start + line.width) / self.scale
     }
 
+    /// Where [`Self::draw_line`] puts byte `index` of `line` when it starts
+    /// at `x`, as [`Line`]'s cluster boundaries place it, in logical pixels.
+    #[must_use]
+    pub fn line_x(&self, line: &Line, x: f32, index: usize) -> f32 {
+        (self.to_physical(x) + line.x_for_index(index)) / self.scale
+    }
+
+    /// [`Self::line_x`] for `text` in `font` at `size` starting at zero,
+    /// shaped as a text element shapes it.
+    pub fn x_for_index(&mut self, font: FontId, size: f32, text: &str, index: usize) -> f32 {
+        let pixels = self.pixels(size);
+        let line = self.lines.take(&mut self.fonts, font, pixels, text);
+        let x = line.x_for_index(index) / self.scale;
+        self.lines.keep(line);
+        x
+    }
+
+    /// The byte of `text`'s cluster boundary nearest to `x` logical pixels
+    /// from its start.
+    pub fn index_for_x(&mut self, font: FontId, size: f32, text: &str, x: f32) -> usize {
+        let pixels = self.pixels(size);
+        let line = self.lines.take(&mut self.fonts, font, pixels, text);
+        let index = line.index_for_x(x * self.scale);
+        self.lines.keep(line);
+        index
+    }
+
     /// How far [`Self::text`] moves the pen for `text` in `font` at `size`,
     /// in logical pixels. Shapes the line, so drawing it after is free.
     pub fn text_width(&mut self, font: FontId, size: f32, text: &str) -> f32 {

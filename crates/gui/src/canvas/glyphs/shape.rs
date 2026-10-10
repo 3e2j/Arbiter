@@ -54,7 +54,12 @@ pub(super) struct Placed {
     /// The pen position, plus whatever the shaper moved this glyph by, such
     /// as a mark over its letter. `y` grows up.
     pub at: [f32; 2],
+    /// The pen position before the shaper moved it.
+    pub pen: f32,
     pub advance: f32,
+    /// The byte in the line its cluster starts at. Glyphs of one cluster,
+    /// such as a ligature's, share it.
+    pub index: usize,
     /// What it was last drawn with, so drawing the line again skips looking
     /// each glyph up while its atlas page still holds it.
     pub ink: Option<Ink>,
@@ -70,6 +75,24 @@ struct Run {
 }
 
 impl Line {
+    /// The pen position at byte `index`, from the first glyph of the cluster
+    /// starting there or after. Past the last glyph, the line's width.
+    // TODO: right to left runs, once runs are reordered around each other.
+    pub(super) fn x_for_index(&self, index: usize) -> f32 {
+        self.glyphs
+            .iter()
+            .find(|glyph| glyph.index >= index)
+            .map_or(self.width, |glyph| glyph.pen)
+    }
+
+    /// The byte of the cluster boundary nearest to `x`, from the pen's start.
+    pub(super) fn index_for_x(&self, x: f32) -> usize {
+        self.glyphs
+            .iter()
+            .find(|glyph| x < glyph.pen + glyph.advance / 2.)
+            .map_or(self.text.len(), |glyph| glyph.index)
+    }
+
     /// Its size in pixels per em.
     pub(super) const fn pixels(&self) -> u16 {
         self.pixels
@@ -128,10 +151,11 @@ impl Lines {
         let mut glyphs = Vec::new();
         let mut pen = 0.;
         for run in runs(fonts, font, text) {
+            let start = run.bytes.start;
             let Some(text) = text.get(run.bytes) else {
                 continue;
             };
-            pen = self.shape_run(fonts, run.font, pixels, text, pen, &mut glyphs);
+            pen = self.shape_run(fonts, run.font, pixels, (text, start), pen, &mut glyphs);
         }
         Line {
             text: text.into(),
@@ -144,14 +168,15 @@ impl Lines {
         }
     }
 
-    /// Shapes `text` in `font`, adding its glyphs to `glyphs` from `pen`, and
-    /// returns where the pen ends.
+    /// Shapes `text`, which starts at byte `start` of its line, in `font`,
+    /// adding its glyphs to `glyphs` from `pen`, and returns where the pen
+    /// ends.
     fn shape_run(
         &mut self,
         fonts: &Fonts,
         font: FontId,
         pixels: u16,
-        text: &str,
+        (text, start): (&str, usize),
         mut pen: f32,
         glyphs: &mut Vec<Placed>,
     ) -> f32 {
@@ -178,7 +203,9 @@ impl Lines {
                     pen + to_pixels(position.x_offset),
                     to_pixels(position.y_offset),
                 ],
+                pen,
                 advance,
+                index: usize::try_from(info.cluster).map_or(text.len(), |at| start + at),
                 ink: None,
             });
             pen += advance;
