@@ -10,7 +10,6 @@ name = "app"
 
 [dependencies]
 arbiter-gui.workspace = true
-# TODO: unused until the editor opens a project.
 arbiter-project.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

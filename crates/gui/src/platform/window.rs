@@ -50,9 +50,9 @@ pub enum Error {
 ///
 /// When the app can't start, or the window or its GPU surface can't be opened,
 /// including again after the surface is lost.
-pub fn run<A: App>() -> Result<(), Error> {
+pub fn run<A: App>(args: A::Args) -> Result<(), Error> {
     let mut runner = Runner {
-        host: Host::<A>::new().map_err(Error::App)?,
+        host: Host::<A>::new(args).map_err(Error::App)?,
         canvas: Canvas::default(),
         open: None,
         error: None,

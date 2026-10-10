@@ -1,4 +1,4 @@
-//! The CLI, or the editor with no args.
+//! The CLI, or the editor with no subcommand.
 
 mod logging;
 mod prompt;
@@ -7,6 +7,7 @@ mod unpack;
 use std::{
     path::{Path, PathBuf},
     process::ExitCode,
+    sync::Arc,
 };
 
 use clap::{Parser, Subcommand};
@@ -14,11 +15,13 @@ use project::{Log, Project};
 use unpack::unpack;
 
 #[derive(Parser)]
-#[command(version)]
+#[command(version, args_conflicts_with_subcommands = true)]
 struct Cli {
     /// Opens the editor when none is given.
     #[command(subcommand)]
     command: Option<Command>,
+    /// A project for the editor to open.
+    project: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -55,10 +58,15 @@ enum Error {
 }
 
 fn main() -> ExitCode {
-    let command = Cli::parse().command;
+    let Cli { command, project } = Cli::parse();
     let log = logging::init(command.is_none());
     let result = match command {
-        None => app::run().map_err(Error::from),
+        None => project
+            .as_deref()
+            .map(Project::open)
+            .transpose()
+            .map_err(Error::from)
+            .and_then(|p| app::run(Arc::clone(&log), p).map_err(Error::from)),
         Some(Command::New { dir, discs, force }) => new(&dir, &discs, force, &log),
         Some(Command::Unpack { discs, project }) => Project::open(&project)
             .map_err(Error::from)

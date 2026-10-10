@@ -9,6 +9,8 @@ mod panels;
 mod theme;
 mod workspace;
 
+use std::sync::Arc;
+
 use assets::Icons;
 use gui::{
     host::{App, Startup},
@@ -18,6 +20,7 @@ use gui::{
 };
 pub use panels::Capture;
 use panels::{Output, Panel, Placeholder, Showcase};
+use project::{Log, Project};
 use workspace::{Place, Places, Workspace};
 
 #[derive(Debug, thiserror::Error)]
@@ -26,29 +29,46 @@ pub enum Error {
     Window(#[from] window::Error),
 }
 
-/// Opens the editor in a window and blocks until it's closed.
+/// Opens the editor in a window, with `project` open if given, and blocks
+/// until it's closed. `log` follows whichever project is open.
 ///
 /// # Errors
 ///
 /// When the editor can't start, or the window fails.
-pub fn run() -> Result<(), Error> {
-    window::run::<Editor>()?;
+pub fn run(log: Arc<Log>, project: Option<Project>) -> Result<(), Error> {
+    window::run::<Editor>((log, project))?;
     Ok(())
 }
 
 /// The editor, as one [`App`]. Owns what only Arbiter knows about.
 // TODO: owns `Watch` once `app::watch` exists, which ignores `.arbiter/`, as
 // the log and cache there change all the time.
-// TODO: attaches `project::Log` to each project it opens, once it opens one.
 struct Editor {
     workspace: Workspace,
+    log: Arc<Log>,
+    project: Option<Project>,
+}
+
+impl Editor {
+    /// Logs into `project` from here on, in place of the one before.
+    fn open(&mut self, project: Project) {
+        if let Err(err) = self.log.attach(&project.root) {
+            tracing::warn!("can't write a log in {}: {err}", project.root.display());
+        }
+        tracing::info!("opened {}", project.root.display());
+        self.project = Some(project);
+    }
 }
 
 impl App for Editor {
     const TITLE: &str = "Arbiter";
     const MIN_SIZE: [f32; 2] = [1024., 600.];
+    type Args = (Arc<Log>, Option<Project>);
 
-    fn new(start: &mut Startup) -> Result<Self, Box<dyn std::error::Error>> {
+    fn new(
+        start: &mut Startup,
+        (log, project): Self::Args,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         start.theme = theme::theme(assets::fonts(start.glyphs)?);
         let icons = Icons::load(start.glyphs)?;
         // TODO: from the session, once the workspace is saved.
@@ -63,7 +83,15 @@ impl App for Editor {
         workspace.add(tool("Inspector"), Place::RightInnerTop);
         workspace.add(Panel::Output(Output::new(icons)), Place::BelowMain);
         workspace.add(tool("Diagnostics"), Place::BelowMain);
-        Ok(Self { workspace })
+        let mut app = Self {
+            workspace,
+            log,
+            project: None,
+        };
+        if let Some(project) = project {
+            app.open(project);
+        }
+        Ok(app)
     }
 
     fn input(&mut self, input: &Input) {

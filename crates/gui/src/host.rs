@@ -17,10 +17,12 @@ pub trait App: Sized {
     /// The smallest the window can be, in logical pixels. It opens at this
     /// size.
     const MIN_SIZE: [f32; 2];
+    /// What [`run`](crate::platform::window::run) hands to [`App::new`].
+    type Args;
     /// # Errors
     ///
     /// When the app can't start. The window doesn't open.
-    fn new(start: &mut Startup) -> Result<Self, Box<dyn Error>>;
+    fn new(start: &mut Startup, args: Self::Args) -> Result<Self, Box<dyn Error>>;
     /// Acts on this frame's input once, before any pass, so what it changes
     /// is already in place when the boxes are declared. Where shortcuts that
     /// aren't asked of a box go, such as Escape closing a menu.
@@ -60,13 +62,13 @@ impl<A: App> Host<A> {
     /// # Errors
     ///
     /// When [`App::new`] fails.
-    pub fn new() -> Result<Self, Box<dyn Error>> {
+    pub fn new(args: A::Args) -> Result<Self, Box<dyn Error>> {
         let mut glyphs = Glyphs::default();
         let mut start = Startup {
             theme: Theme::default(),
             glyphs: &mut glyphs,
         };
-        let app = A::new(&mut start)?;
+        let app = A::new(&mut start, args)?;
         let theme = start.theme;
         Ok(Self {
             app,
