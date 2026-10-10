@@ -11,7 +11,7 @@ use crate::{
     canvas::{Canvas, Rect},
     cast::narrow,
     host::{App, Host},
-    input::{Button, Cursor, Event, Key, KeyPress, Modifiers},
+    input::{Button, Cursor, Event, Key, Modifiers},
     render::{self, Gpu},
 };
 use winit::{
@@ -257,7 +257,7 @@ fn translate(event: &WindowEvent, scale: f64, mut push: impl FnMut(Event)) {
         } => {
             if let Some(key) = key(logical_key) {
                 let repeat = *repeat;
-                push(Event::Key(KeyPress { key, repeat }));
+                push(Event::Key { key, repeat });
             }
             // Keys like Enter and Backspace type control characters, which
             // are reported as keys instead.
@@ -308,6 +308,7 @@ fn key(key: &keyboard::Key) -> Option<Key> {
         NamedKey::Tab => Key::Tab,
         NamedKey::Backspace => Key::Backspace,
         NamedKey::Delete => Key::Delete,
+        NamedKey::Insert => Key::Insert,
         NamedKey::ArrowLeft => Key::Left,
         NamedKey::ArrowRight => Key::Right,
         NamedKey::ArrowUp => Key::Up,

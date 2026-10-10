@@ -49,6 +49,7 @@ pub enum Key {
     Tab,
     Backspace,
     Delete,
+    Insert,
     Left,
     Right,
     Up,
@@ -69,6 +70,16 @@ pub struct KeyPress {
     pub key: Key,
     /// Sent again because the key is held.
     pub repeat: bool,
+    /// Held as it went down, which can differ from [`Input::modifiers`] when
+    /// a pass has several presses.
+    pub modifiers: Modifiers,
+}
+
+/// A key or typed text, as [`Input::typed`] gives them in order.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Typed<'a> {
+    Key(KeyPress),
+    Text(&'a str),
 }
 
 /// The modifier keys held, as bits.
@@ -106,8 +117,13 @@ pub enum Event<'a> {
     /// How far to scroll. Positive `y` scrolls toward the top, as a wheel
     /// turned away from the user does.
     Scroll([f32; 2]),
-    Key(KeyPress),
+    Key {
+        key: Key,
+        repeat: bool,
+    },
     /// Typed text, with the keyboard layout and dead keys applied.
+    /// Dropped while a shortcut's modifier is held, since some platforms type
+    /// the letter of Ctrl+A too.
     Text(&'a str),
     Modifiers(Modifiers),
     /// The window lost focus, so whatever was held is let go of without an
@@ -131,6 +147,8 @@ pub struct Input {
     scroll: [f32; 2],
     modifiers: Modifiers,
     keys: Vec<KeyPress>,
+    /// How much of `text` came before each of `keys`.
+    keys_at: Vec<usize>,
     text: String,
     /// What waits for the next pass, in order.
     later: Vec<Later>,
@@ -161,6 +179,27 @@ impl Modifiers {
     pub const ALT: Self = Self(1 << 2);
     /// The Windows key, or Command on macOS.
     pub const SUPER: Self = Self(1 << 3);
+    /// What shortcuts such as copy are held with: Command on macOS, Ctrl
+    /// elsewhere.
+    pub const COMMAND: Self = if cfg!(target_os = "macos") {
+        Self::SUPER
+    } else {
+        Self::CTRL
+    };
+
+    /// Whether these let a key type, rather than make it a shortcut. Ctrl
+    /// with Alt is `AltGr` on Windows, which types.
+    #[must_use]
+    pub const fn types(self) -> bool {
+        let ctrl = self.contains(Self::CTRL) && !self.contains(Self::ALT);
+        !ctrl && !self.contains(Self::SUPER)
+    }
+
+    /// Whether exactly these are held.
+    #[must_use]
+    pub const fn only(self, other: Self) -> bool {
+        self.0 == other.0
+    }
 
     #[must_use]
     pub const fn contains(self, other: Self) -> bool {
@@ -184,7 +223,7 @@ impl Input {
             Event::Pressed(button) => Event::Pressed(button),
             Event::Released(button) => Event::Released(button),
             Event::Scroll(by) => Event::Scroll(by),
-            Event::Key(press) => Event::Key(press),
+            Event::Key { key, repeat } => Event::Key { key, repeat },
             Event::Text(text) => {
                 let start = self.later_text.len();
                 self.later_text.push_str(text);
@@ -248,8 +287,17 @@ impl Input {
                 self.scroll[0] += x;
                 self.scroll[1] += y;
             }
-            Event::Key(press) => self.keys.push(press),
-            Event::Text(text) => self.text.push_str(text),
+            Event::Key { key, repeat } => {
+                let modifiers = self.modifiers;
+                self.keys.push(KeyPress {
+                    key,
+                    repeat,
+                    modifiers,
+                });
+                self.keys_at.push(self.text.len());
+            }
+            Event::Text(text) if self.modifiers.types() => self.text.push_str(text),
+            Event::Text(_) => {}
             Event::Modifiers(modifiers) => self.modifiers = modifiers,
             Event::Unfocused => {
                 self.held = 0;
@@ -267,6 +315,7 @@ impl Input {
         self.released = 0;
         self.scroll = [0.; 2];
         self.keys.clear();
+        self.keys_at.clear();
         self.text.clear();
     }
 
@@ -316,9 +365,25 @@ impl Input {
         &self.keys
     }
 
+    /// Everything typed since the last pass, without the order against
+    /// [`Self::keys`], which [`Self::typed`] keeps.
     #[must_use]
     pub fn text(&self) -> &str {
         &self.text
+    }
+
+    /// The keys and typed text in the order they came, for an editor where
+    /// typing then moving differs from moving then typing.
+    pub fn typed(&self) -> impl Iterator<Item = Typed<'_>> {
+        let mut from = 0;
+        let ends = self.keys_at.iter().copied().chain([self.text.len()]);
+        let keys = self.keys.iter().copied().map(Some).chain([None]);
+        ends.zip(keys).flat_map(move |(at, key)| {
+            let text = self.text.get(from..at).unwrap_or_default();
+            from = at;
+            let text = (!text.is_empty()).then_some(Typed::Text(text));
+            text.into_iter().chain(key.map(Typed::Key))
+        })
     }
 }
 
@@ -379,10 +444,10 @@ mod tests {
         input.push(Event::Pressed(Button::Middle));
         input.push(Event::Scroll([0., 3.]));
         input.push(Event::Scroll([0., 2.]));
-        input.push(Event::Key(KeyPress {
+        input.push(Event::Key {
             key: Key::Enter,
             repeat: false,
-        }));
+        });
         input.push(Event::Text("hé"));
         assert_eq!(input.scroll(), [0., 5.]);
         input.clear();
@@ -401,5 +466,36 @@ mod tests {
         input.push(Event::Unfocused);
         assert!(!input.held(Button::Left));
         assert_eq!(input.modifiers(), Modifiers::default());
+    }
+
+    fn key(input: &mut Input, key: Key) {
+        input.push(Event::Key { key, repeat: false });
+    }
+
+    #[test]
+    fn keys_and_text_keep_their_order() {
+        let mut input = Input::default();
+        input.push(Event::Text("ab"));
+        key(&mut input, Key::Left);
+        key(&mut input, Key::Left);
+        input.push(Event::Text("c"));
+        let typed: Vec<_> = input.typed().collect();
+        let left = |typed: &Typed| matches!(typed, Typed::Key(press) if press.key == Key::Left);
+        assert_eq!(typed.len(), 4);
+        assert_eq!(typed[0], Typed::Text("ab"));
+        assert!(left(&typed[1]) && left(&typed[2]));
+        assert_eq!(typed[3], Typed::Text("c"));
+    }
+
+    #[test]
+    fn a_shortcut_types_nothing() {
+        let mut input = Input::default();
+        input.push(Event::Modifiers(Modifiers::CTRL));
+        key(&mut input, Key::Char('a'));
+        input.push(Event::Text("a"));
+        input.push(Event::Modifiers(Modifiers::CTRL.with(Modifiers::ALT)));
+        input.push(Event::Text("@"));
+        assert_eq!(input.text(), "@");
+        assert_eq!(input.keys()[0].modifiers, Modifiers::CTRL);
     }
 }
