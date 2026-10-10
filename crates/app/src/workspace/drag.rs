@@ -63,10 +63,45 @@ const DROP_FILL: u8 = 0x1f;
 const GHOST: u8 = 0xa0;
 
 impl Workspace {
-    /// Follows the tab holding the left button, and moves it where it's let
-    /// go. While it's dragged, marks where it would land and shows a copy of
-    /// it under the pointer, over a cover that keeps the pointer off
-    /// everything else. `window` is the workspace's rect last pass.
+    /// Moves a dragged tab where it's let go, from where things were laid out
+    /// last pass. Runs before the docks are declared, so the pass shows the
+    /// tab in its new dock and anything in it gets a size before it's drawn.
+    pub(super) fn drop_tab(&mut self, ui: &Ui) {
+        let input = ui.input();
+        if !input.released(Button::Left) {
+            return;
+        }
+        // Let go outside the window, it stays where it was.
+        let (Some(drag), Some(pointer)) = (self.tab_drag.take(), input.pointer()) else {
+            return;
+        };
+        let [x, y] = drag.start;
+        if !drag.moving && (pointer[0] - x).hypot(pointer[1] - y) < DRAG_THRESHOLD {
+            return;
+        }
+        let Some(tab) = self.docks[drag.grip.place.index()]
+            .tabs
+            .get(drag.grip.index)
+        else {
+            return;
+        };
+        let size = ui.theme().size;
+        let drops = Drops {
+            docks: &self.docks,
+            sizes: &self.sizes,
+            ratios: &self.ratios,
+            gap: size.gap,
+            tab_height: tab_height(size),
+        };
+        if let Some(landing) = drops.at(drag.grip, pointer, tab.panel.places()) {
+            move_tab(&mut self.docks, drag.grip, landing);
+        }
+    }
+
+    /// Follows the tab holding the left button. While it's dragged, marks
+    /// where it would land and shows a copy of it under the pointer, over a
+    /// cover that keeps the pointer off everything else. `window` is the
+    /// workspace's rect last pass.
     pub(super) fn drag_tab(&mut self, ui: &mut Ui, window: Option<Rect>) {
         let input = ui.input();
         // Let go outside the window, it stays where it was.
@@ -84,9 +119,10 @@ impl Workspace {
             });
         let [x, y] = drag.start;
         drag.moving |= (pointer[0] - x).hypot(pointer[1] - y) >= DRAG_THRESHOLD;
+        // Let go, it was dropped before the docks were declared.
         let released = input.released(Button::Left);
         self.tab_drag = (!released).then_some(drag);
-        if !drag.moving {
+        if released || !drag.moving {
             return;
         }
         let Some(tab) = self.docks[grip.place.index()].tabs.get(grip.index) else {
@@ -101,12 +137,6 @@ impl Workspace {
             tab_height: tab_height(size),
         };
         let landing = drops.at(grip, pointer, tab.panel.places());
-        if released {
-            if let Some(landing) = landing {
-                move_tab(&mut self.docks, grip, landing);
-            }
-            return;
-        }
         let copy = Rect {
             x: drag.grip.rect.x + pointer[0] - x,
             y: drag.grip.rect.y + pointer[1] - y,

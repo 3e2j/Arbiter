@@ -91,6 +91,7 @@ impl Workspace {
     /// Declares the bands in the order they're cut, outside in, each wrapping
     /// what's left.
     pub fn ui(&mut self, ui: &mut Ui) {
+        self.drop_tab(ui);
         let gap = ui.theme().size.gap;
         for dock in &mut self.docks {
             dock.rect = None;
