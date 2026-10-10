@@ -1,5 +1,6 @@
 //! The CLI, or the editor with no args.
 
+mod logging;
 mod prompt;
 mod unpack;
 
@@ -9,7 +10,7 @@ use std::{
 };
 
 use clap::{Parser, Subcommand};
-use project::Project;
+use project::{Log, Project};
 use unpack::unpack;
 
 #[derive(Parser)]
@@ -54,13 +55,21 @@ enum Error {
 }
 
 fn main() -> ExitCode {
-    let result = match Cli::parse().command {
+    let command = Cli::parse().command;
+    let log = logging::init(command.is_none());
+    let result = match command {
         None => app::run().map_err(Error::from),
-        Some(Command::New { dir, discs, force }) => new(&dir, &discs, force),
+        Some(Command::New { dir, discs, force }) => new(&dir, &discs, force, &log),
         Some(Command::Unpack { discs, project }) => Project::open(&project)
             .map_err(Error::from)
-            .and_then(|mut p| unpack(&mut p, &discs)),
+            .and_then(|mut p| {
+                logging::attach(&log, &p.root);
+                unpack(&mut p, &discs)
+            }),
     };
+    if let Err(err) = log.flush() {
+        eprintln!("warning: the log's last lines weren't written: {err}");
+    }
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
@@ -77,10 +86,12 @@ fn main() -> ExitCode {
     }
 }
 
-fn new(dir: &Path, discs: &[PathBuf], force: bool) -> Result<(), Error> {
+/// Logs into the project once it's finished, writing out everything before.
+fn new(dir: &Path, discs: &[PathBuf], force: bool, log: &Log) -> Result<(), Error> {
     let mut draft = Project::create(dir, force)?;
     unpack(&mut draft.project, discs)?;
-    draft.finish()?;
+    let project = draft.finish()?;
+    logging::attach(log, &project.root);
     println!("created mod project at {}", dir.display());
     Ok(())
 }

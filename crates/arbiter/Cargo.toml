@@ -11,6 +11,8 @@ arbiter-app.workspace = true
 arbiter-project.workspace = true
 clap.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["fmt", "ansi"] }
 
 [lints]
 workspace = true

@@ -18,6 +18,11 @@ const COLORS: Colors = Colors {
     accent: Color::hex(0x44_d4_d8),
 };
 
+/// Errors in the Output.
+pub const ERROR: Color = Color::hex(0xf0_5a_5a);
+/// Warnings in the Output.
+pub const WARNING: Color = Color::hex(0xe8_b3_4b);
+
 const SIZES: Sizes = Sizes {
     text: 13.,
     icon: 16.,

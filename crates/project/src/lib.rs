@@ -18,6 +18,7 @@ pub mod base;
 pub mod changes;
 pub mod config;
 pub mod hash;
+mod log;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -33,6 +34,7 @@ use config::{Config, Edition, Kind};
 use diag::Diagnostics;
 pub use game::edition::{Game, Verdict};
 use hash::Hash;
+pub use log::{Log, LogWriter};
 
 /// Every directory a mod project owns.
 const MOD_DIRS: &[&str] = &[

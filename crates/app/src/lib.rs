@@ -16,7 +16,8 @@ use gui::{
     platform::window,
     ui::Ui,
 };
-use panels::{Panel, Placeholder, Showcase};
+pub use panels::Capture;
+use panels::{Output, Panel, Placeholder, Showcase};
 use workspace::{Place, Places, Workspace};
 
 #[derive(Debug, thiserror::Error)]
@@ -36,7 +37,9 @@ pub fn run() -> Result<(), Error> {
 }
 
 /// The editor, as one [`App`]. Owns what only Arbiter knows about.
-// TODO: owns `Watch` once `app::watch` exists.
+// TODO: owns `Watch` once `app::watch` exists, which ignores `.arbiter/`, as
+// the log and cache there change all the time.
+// TODO: attaches `project::Log` to each project it opens, once it opens one.
 struct Editor {
     workspace: Workspace,
 }
@@ -58,7 +61,7 @@ impl App for Editor {
         workspace.add(tool("Search"), Place::LeftInnerTop);
         workspace.add(tool("Outline"), Place::LeftInnerBottom);
         workspace.add(tool("Inspector"), Place::RightInnerTop);
-        workspace.add(tool("Log"), Place::BelowMain);
+        workspace.add(Panel::Output(Output::new(icons)), Place::BelowMain);
         workspace.add(tool("Diagnostics"), Place::BelowMain);
         Ok(Self { workspace })
     }
