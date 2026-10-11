@@ -101,6 +101,10 @@ impl Workspace {
                 Split::Size(band) => self.sizes[band.index()] = value,
                 Split::Ratio(band) => self.ratios[band.index()] = value,
             }
+            // The boxes it sizes were declared from the old value.
+            if moved != 0. {
+                ui.stale();
+            }
         });
     }
 }

@@ -73,7 +73,8 @@ pub(crate) struct Memory {
     clipboard: Clipboard,
     /// What keys do, which the app and the user's settings change.
     keymap: Keymap,
-    /// Whether a button or the focus changed hands or was let go of.
+    /// Whether a button or the focus changed hands or was let go of, or a box
+    /// called [`Ui::stale`].
     changed: bool,
 }
 
@@ -252,6 +253,14 @@ impl<'a> Ui<'a> {
         }
         let ([x, y], [from_x, from_y]) = (self.input.pointer()?, self.memory.pointer?);
         Some([x - from_x, y - from_y])
+    }
+
+    /// Runs the pass again before drawing, for a box that changed what boxes
+    /// declared before it this pass were sized from, such as a divider dragging
+    /// the box beside it. Without it the change shows a frame late, and while
+    /// it changes every frame only every other frame catches up.
+    pub const fn stale(&mut self) {
+        self.memory.changed = true;
     }
 
     /// Whether the open box has the keyboard, so the keys and text in
@@ -479,8 +488,8 @@ impl Memory {
         self.pointer = input.pointer();
     }
 
-    /// Whether the last pass gave a button to a box or let go of one, so it
-    /// should run again before drawing.
+    /// Whether the last pass gave a button to a box or let go of one, or a box
+    /// called [`Ui::stale`], so it should run again before drawing.
     pub const fn changed(&self) -> bool {
         self.changed
     }

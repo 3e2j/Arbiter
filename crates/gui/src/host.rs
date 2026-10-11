@@ -33,8 +33,8 @@ pub trait App: Sized {
     /// box. Can run twice in a frame, as [`Host::draw`] says, and only the
     /// second is drawn.
     ///
-    /// Act on input before declaring the boxes it changes. Nothing runs the
-    /// pass again for a change made after, so it shows a frame late.
+    /// Act on input before declaring the boxes it changes. A change made after
+    /// shows a frame late unless [`Ui::stale`] asks for the pass again.
     fn ui(&mut self, ui: &mut Ui);
     /// After the last pass.
     fn on_close(&mut self) {}
