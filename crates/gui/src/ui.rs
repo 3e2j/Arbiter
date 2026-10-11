@@ -66,8 +66,23 @@ pub(crate) struct Memory {
     wheel_claim: Option<usize>,
     /// Where the pointer was at the end of last pass.
     pointer: Option<[f32; 2]>,
-    /// Whether a button changed hands or was let go of.
+    focus: Focus,
+    /// Whether a button or the focus changed hands or was let go of.
     changed: bool,
+}
+
+/// The box the keyboard goes to. It keeps it until it lets go, another box
+/// asks for it, a press lands anywhere else, or it isn't declared.
+#[derive(Clone, Copy, Default)]
+struct Focus {
+    /// By its index last pass.
+    held: Option<usize>,
+    /// The holder's index this pass.
+    found: Option<usize>,
+    /// The last declared box this pass to ask for it.
+    claim: Option<usize>,
+    /// Whether the holder let go this pass.
+    dropped: bool,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -227,6 +242,34 @@ impl<'a> Ui<'a> {
         Some([x - from_x, y - from_y])
     }
 
+    /// Whether the open box has the keyboard, so the keys and text in
+    /// [`Self::input`] are its to act on.
+    #[must_use]
+    pub fn focused(&self) -> bool {
+        self.open.last.is_some() && self.open.last == self.memory.focus.held
+    }
+
+    /// Whether any box has the keyboard, so shortcuts should leave the keys
+    /// to it.
+    #[must_use]
+    pub const fn typing(&self) -> bool {
+        self.memory.focus.held.is_some()
+    }
+
+    /// Gives the open box the keyboard from the next pass, taking it from
+    /// whichever box has it. The last box to ask this pass gets it.
+    pub fn focus(&mut self) {
+        let claim = &mut self.memory.focus.claim;
+        *claim = (*claim).max(Some(self.open.node));
+    }
+
+    /// Lets go of the keyboard from the next pass, if the open box has it.
+    pub fn unfocus(&mut self) {
+        if self.focused() {
+            self.memory.focus.dropped = true;
+        }
+    }
+
     /// The open box, to change from what its queries say.
     pub fn style(&mut self) -> &mut Element {
         self.layout.element_mut(self.open.node)
@@ -325,6 +368,9 @@ impl<'a> Ui<'a> {
                     hold.found = Some(node);
                 }
             }
+            if self.memory.focus.held == last {
+                self.memory.focus.found = Some(node);
+            }
         }
         let open = Open {
             node,
@@ -379,6 +425,9 @@ impl Memory {
             hold.claim = None;
         }
         self.wheel_claim = None;
+        self.focus.found = None;
+        self.focus.claim = None;
+        self.focus.dropped = false;
         self.changed = false;
     }
 
@@ -388,6 +437,7 @@ impl Memory {
         for (hold, button) in self.holds.iter_mut().zip(Button::ALL) {
             self.changed |= hold.end(input, button);
         }
+        self.changed |= self.focus.end(input);
         self.wheel = self.wheel_claim;
         self.pointer = input.pointer();
     }
@@ -405,6 +455,18 @@ impl Hold {
         let holder = self.claim.or(self.found);
         self.held = holder.filter(|_| input.held(button));
         self.claim.is_some() || (holder.is_some() && input.released(button))
+    }
+}
+
+impl Focus {
+    /// Returns whether it changed hands or was let go of.
+    fn end(&mut self, input: &Input) -> bool {
+        let pressed = Button::ALL.into_iter().any(|button| input.pressed(button));
+        let kept = self.found.filter(|_| !self.dropped && !pressed);
+        let holder = self.claim.or(kept);
+        let changed = self.claim.is_some() || (self.held.is_some() && holder.is_none());
+        self.held = holder;
+        changed
     }
 }
 
@@ -688,6 +750,57 @@ pub(crate) mod tests {
         kept.input.push(Event::Pressed(Button::Middle));
         pass(&mut kept);
         assert_eq!(pass(&mut kept), [[true, false], [false, true]]);
+    }
+
+    /// Two boxes ten tall, the first asking for the keyboard when `ask` is
+    /// `Some(true)` and letting go when it's `Some(false)`. Returns which
+    /// have it.
+    fn focus_pass(kept: &mut Kept, ask: Option<bool>) -> [bool; 2] {
+        kept.pass(|ui| {
+            let first = ui.element(fixed(10., 10.), |ui| {
+                match ask {
+                    Some(true) => ui.focus(),
+                    Some(false) => ui.unfocus(),
+                    None => (),
+                }
+                ui.focused()
+            });
+            [first, ui.element(fixed(10., 10.), |ui| ui.focused())]
+        })
+    }
+
+    #[test]
+    fn a_box_keeps_the_keyboard_from_the_pass_after_it_asks() {
+        let mut kept = Kept::default();
+        assert_eq!(focus_pass(&mut kept, Some(true)), [false, false]);
+        assert_eq!(focus_pass(&mut kept, None), [true, false]);
+        assert_eq!(focus_pass(&mut kept, None), [true, false]);
+    }
+
+    #[test]
+    fn a_press_elsewhere_takes_the_keyboard_away() {
+        let mut kept = Kept::default();
+        focus_pass(&mut kept, Some(true));
+        kept.input.push(Event::Pointer(Some([5., 15.])));
+        kept.input.push(Event::Pressed(Button::Left));
+        focus_pass(&mut kept, None);
+        assert_eq!(focus_pass(&mut kept, None), [false, false]);
+    }
+
+    #[test]
+    fn letting_go_drops_the_keyboard() {
+        let mut kept = Kept::default();
+        focus_pass(&mut kept, Some(true));
+        assert_eq!(focus_pass(&mut kept, Some(false)), [true, false]);
+        assert_eq!(focus_pass(&mut kept, None), [false, false]);
+    }
+
+    #[test]
+    fn a_box_not_declared_drops_the_keyboard() {
+        let mut kept = Kept::default();
+        focus_pass(&mut kept, Some(true));
+        kept.pass(|_| ());
+        assert_eq!(focus_pass(&mut kept, None), [false, false]);
     }
 
     #[test]
