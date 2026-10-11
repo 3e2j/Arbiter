@@ -5,6 +5,7 @@
 use std::error::Error;
 
 use crate::canvas::{AtlasUpdate, Canvas, Glyphs, Rect};
+use crate::clipboard::Clipboard;
 use crate::input::{Event, Input, Out};
 use crate::layout::Layout;
 use crate::ui::{Memory, Slots, Theme, Ui};
@@ -77,7 +78,7 @@ impl<A: App> Host<A> {
             input: Input::default(),
             layout: Layout::default(),
             slots: Slots::default(),
-            memory: Memory::default(),
+            memory: Memory::new(Clipboard::system()),
         })
     }
 

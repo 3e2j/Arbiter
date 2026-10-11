@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::panic::Location;
 
 use crate::canvas::{Color, Glyphs, IconId, Quad, Rect, Vertex};
+use crate::clipboard::Clipboard;
 use crate::input::{Button, Cursor, Input, Out};
 use crate::layout::{Layout, Slot};
 
@@ -67,6 +68,8 @@ pub(crate) struct Memory {
     /// Where the pointer was at the end of last pass.
     pointer: Option<[f32; 2]>,
     focus: Focus,
+    /// Here as it lives as long as the rest, not because a pass changes it.
+    clipboard: Clipboard,
     /// Whether a button or the focus changed hands or was let go of.
     changed: bool,
 }
@@ -270,6 +273,11 @@ impl<'a> Ui<'a> {
         }
     }
 
+    /// Copy and paste, shared with other apps.
+    pub fn clipboard(&mut self) -> &mut Clipboard {
+        &mut self.memory.clipboard
+    }
+
     /// The open box, to change from what its queries say.
     pub fn style(&mut self) -> &mut Element {
         self.layout.element_mut(self.open.node)
@@ -419,6 +427,13 @@ impl<'a> Ui<'a> {
 }
 
 impl Memory {
+    pub fn new(clipboard: Clipboard) -> Self {
+        Self {
+            clipboard,
+            ..Self::default()
+        }
+    }
+
     fn begin(&mut self) {
         for hold in &mut self.holds {
             hold.found = None;

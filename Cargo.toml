@@ -39,6 +39,8 @@ resvg = { version = "0.48", default-features = false }
 fontique = { version = "0.11", features = ["fontconfig-dlopen"] }
 unicode-script = "0.5"
 harfrust = "0.12"
+# Images aren't copied yet, and image-data pulls in the image crate.
+arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
 
 [workspace.lints.clippy]
 pedantic = { level = "deny", priority = -1 }

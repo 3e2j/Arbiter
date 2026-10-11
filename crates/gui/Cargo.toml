@@ -9,6 +9,7 @@ license.workspace = true
 name = "gui"
 
 [dependencies]
+arboard.workspace = true
 bytemuck.workspace = true
 fontique.workspace = true
 harfrust.workspace = true
