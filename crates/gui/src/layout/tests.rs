@@ -1,7 +1,7 @@
 use std::panic::Location;
 
 use super::*;
-use crate::canvas::{Canvas, FontFile, Kind};
+use crate::canvas::{Canvas, FontFile, Kind, Quad};
 use crate::input::Cursor;
 
 const WINDOW: Rect = Rect::new(0., 0., 300., 100.);
@@ -457,7 +457,7 @@ fn text_keeps_its_line_and_inks_between_passes() {
     let mut canvas = Canvas::default();
     let mut pass = |text: &str| {
         layout.clear();
-        layout.text(&mut glyphs, slot(0), style, text);
+        layout.text(&mut glyphs, slot(0), style, text, (&[], None));
         layout.solve(WINDOW, 1.);
         canvas.clear(WINDOW);
         layout.emit(&mut canvas, &mut glyphs);
@@ -469,4 +469,66 @@ fn text_keeps_its_line_and_inks_between_passes() {
     // Drawn last pass, so its inks came with it.
     assert!(pass("label").0);
     assert!(pass("labels").1 > width);
+}
+
+#[test]
+fn a_texts_highlights_paint_under_it_and_its_caret_over() {
+    let mut glyphs = Glyphs::default();
+    let font = glyphs.add_font(SANS, 400.).unwrap();
+    let style = TextStyle {
+        font,
+        size: 14.,
+        color: Color::hex(0xff_ff_ff),
+    };
+    let text = "zel_03";
+    let highlight = Highlight {
+        range: 1..4,
+        color: Color::hex(0x44_d4_d8),
+    };
+    let caret = Caret {
+        index: 4,
+        width: 2.,
+        color: Color::hex(0xff_ff_ff),
+    };
+    let mut layout = Layout::default();
+    layout.clear();
+    let layers = (std::slice::from_ref(&highlight), Some(caret));
+    layout.text(&mut glyphs, slot(0), style, text, layers);
+    layout.solve(WINDOW, 1.);
+    let mut canvas = Canvas::default();
+    canvas.clear(WINDOW);
+    layout.emit(&mut canvas, &mut glyphs);
+
+    let line = &layout.texts[0].line;
+    let height = layout.texts[0].size[1];
+    let x = |index| glyphs.line_x(line, 0., index);
+    let (start, end) = (x(1), x(4));
+    assert!(0. < start && start < end);
+    let under = Quad::new(Rect::new(start, 0., end - start, height), highlight.color)
+        .rounded(height * 0.15);
+    let over = Quad::new(Rect::new(end, 0., 2., height), caret.color);
+    let quads = canvas.quads();
+    assert_eq!(quads.first(), Some(&under));
+    assert_eq!(quads.last(), Some(&over));
+    // One quad per glyph between them.
+    assert_eq!(quads.len(), text.len() + 2);
+    // Measuring the same text agrees with how it's drawn.
+    assert_eq!(glyphs.x_for_index(font, 14., text, 4), end);
+    assert_eq!(glyphs.index_for_x(font, 14., text, end + 0.5), 4);
+}
+
+#[test]
+fn indices_land_on_cluster_starts() {
+    let mut glyphs = Glyphs::default();
+    let font = glyphs.add_font(SANS, 400.).unwrap();
+    let text = "aéb";
+    let width = glyphs.x_for_index(font, 14., text, text.len());
+    let mut x = 0.;
+    while x < width + 4. {
+        let index = glyphs.index_for_x(font, 14., text, x);
+        assert!(text.is_char_boundary(index), "{x} gave {index}");
+        x += 0.5;
+    }
+    assert!(glyphs.x_for_index(font, 14., text, 1) < glyphs.x_for_index(font, 14., text, 3));
+    assert_eq!(glyphs.index_for_x(font, 14., text, width + 4.), text.len());
 }

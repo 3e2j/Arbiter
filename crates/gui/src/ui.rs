@@ -21,7 +21,9 @@ use crate::canvas::{Color, Glyphs, IconId, Quad, Rect, Vertex};
 use crate::input::{Button, Cursor, Input, Out};
 use crate::layout::{Layout, Slot};
 
-pub use crate::layout::{Align, Anchor, Border, Direction, Element, Size, TextStyle};
+pub use crate::layout::{
+    Align, Anchor, Border, Caret, Direction, Element, Highlight, Size, TextStyle,
+};
 pub use crate::theme::{Colors, Fonts, Sizes, Theme};
 
 pub struct Ui<'a> {
@@ -257,7 +259,34 @@ impl<'a> Ui<'a> {
     #[track_caller]
     pub fn text(&mut self, style: TextStyle, text: &str) -> Option<Rect> {
         let slot = self.next_slot(Location::caller());
-        self.layout.text(self.glyphs, slot, style, text)
+        self.layout
+            .text(self.glyphs, slot, style, text, (&[], None))
+    }
+
+    /// [`Self::text`] with `highlights` painted under its glyphs and `caret`
+    /// over them, each placed by the line's own shaping, as an editor needs.
+    #[track_caller]
+    pub fn text_layered(
+        &mut self,
+        style: TextStyle,
+        text: &str,
+        highlights: &[Highlight],
+        caret: Option<Caret>,
+    ) -> Option<Rect> {
+        let slot = self.next_slot(Location::caller());
+        let layers = (highlights, caret);
+        self.layout.text(self.glyphs, slot, style, text, layers)
+    }
+
+    /// Where [`Self::text`] puts byte `index` of `text`, from its left edge.
+    pub fn x_for_index(&mut self, style: TextStyle, text: &str, index: usize) -> f32 {
+        self.glyphs.x_for_index(style.font, style.size, text, index)
+    }
+
+    /// The byte of `text` nearest to `x` from its left edge, where a click
+    /// there would put a caret.
+    pub fn index_for_x(&mut self, style: TextStyle, text: &str, x: f32) -> usize {
+        self.glyphs.index_for_x(style.font, style.size, text, x)
     }
 
     /// How big [`Self::text`] would make `text`, without declaring it. The

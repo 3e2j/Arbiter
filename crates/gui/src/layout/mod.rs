@@ -125,6 +125,23 @@ pub struct TextStyle {
     pub color: Color,
 }
 
+/// A stretch of a text's bytes painted under its glyphs, such as a selection
+/// or a search match. Later ones paint over earlier ones.
+#[derive(Clone, PartialEq, Debug)]
+pub struct Highlight {
+    pub range: Range<usize>,
+    pub color: Color,
+}
+
+/// A bar painted over a text's glyphs, at the start of the cluster at a byte.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Caret {
+    pub index: usize,
+    /// In logical pixels.
+    pub width: f32,
+    pub color: Color,
+}
+
 /// One pass's boxes, and last pass's for their rects. Kept between passes,
 /// so a pass allocates nothing once warm.
 #[derive(Default)]
@@ -145,6 +162,8 @@ pub(crate) struct Layout {
     /// The boxes opened and not yet closed, with the node each matches last
     /// pass.
     open: Vec<(usize, Option<usize>)>,
+    /// Indexed by [`Text::highlights`].
+    highlights: Vec<Highlight>,
     /// What custom boxes drew, indexed by [`Content::Custom`].
     paints: Vec<Paint>,
     vertices: Vec<Vertex>,
@@ -188,6 +207,10 @@ enum Content {
 struct Text {
     line: Line,
     style: TextStyle,
+    /// A range of [`Layout::highlights`], painted under the line.
+    highlights: Range<usize>,
+    /// Painted over the line.
+    caret: Option<Caret>,
     /// From its top down to the baseline.
     ascent: f32,
     size: [f32; 2],
@@ -303,6 +326,7 @@ impl Layout {
         self.mapped = false;
         self.shifted = false;
         self.open.clear();
+        self.highlights.clear();
         self.paints.clear();
         self.vertices.clear();
         self.indices.clear();
@@ -349,15 +373,20 @@ impl Layout {
         &mut self.nodes[node].element
     }
 
-    /// A line of text, as wide as it's shaped. The line shaped last pass is
-    /// kept while its text and style are the same.
+    /// A line of text, as wide as it's shaped, with `highlights` under it
+    /// and `caret` over it. The line shaped last pass is kept while its text
+    /// and style are the same.
     pub fn text(
         &mut self,
         glyphs: &mut Glyphs,
         slot: Slot,
         style: TextStyle,
         text: &str,
+        (highlights, caret): (&[Highlight], Option<Caret>),
     ) -> Option<Rect> {
+        let start = self.highlights.len();
+        self.highlights.extend_from_slice(highlights);
+        let highlights = start..self.highlights.len();
         let last = self.matches(slot);
         let held = last
             .and_then(|last| match self.last[last].content {
@@ -369,7 +398,12 @@ impl Layout {
                     && glyphs.holds_line(&held.line, style.font, style.size, text)
             });
         let text = if let Some(held) = held {
-            Text { style, ..held }
+            Text {
+                style,
+                highlights,
+                caret,
+                ..held
+            }
         } else {
             let line = glyphs.shape_line(style.font, style.size, text);
             let metrics = glyphs.line_metrics(style.font, style.size);
@@ -377,6 +411,8 @@ impl Layout {
             Text {
                 line,
                 style,
+                highlights,
+                caret,
                 ascent: metrics.ascent,
                 size,
             }

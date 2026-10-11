@@ -1,6 +1,6 @@
 //! Turns solved boxes into shapes, in draw order.
 
-use super::{Anchor, Content, Layout, Node, Paint, Text};
+use super::{Anchor, Content, Highlight, Layout, Node, Paint, Text};
 use crate::canvas::{Canvas, Color, Glyphs, Quad, Rect, Vertex};
 
 impl Layout {
@@ -52,6 +52,7 @@ impl Layout {
                 continue;
             }
             let drawn = Drawn {
+                highlights: &self.highlights,
                 paints: &self.paints,
                 vertices: &self.vertices,
                 indices: &self.indices,
@@ -99,8 +100,12 @@ impl Layout {
     }
 }
 
-/// What custom boxes drew.
+/// A highlight's corners, as a share of its height.
+const HIGHLIGHT_RADIUS: f32 = 0.15;
+
+/// What texts and custom boxes paint besides themselves.
 struct Drawn<'a> {
+    highlights: &'a [Highlight],
     paints: &'a [Paint],
     vertices: &'a [Vertex],
     indices: &'a [u32],
@@ -121,8 +126,7 @@ fn draw(node: &Node, texts: &mut [Text], drawn: &Drawn, canvas: &mut Canvas, gly
         Content::Box => {}
         Content::Text(at) => {
             if let Some(text) = texts.get_mut(*at) {
-                let baseline = [rect.x, rect.y + text.ascent];
-                glyphs.draw_line(canvas, &mut text.line, baseline, text.style.color);
+                draw_text(text, rect, drawn, canvas, glyphs);
             }
         }
         Content::Icon(icon, size, color) => {
@@ -144,5 +148,28 @@ fn draw(node: &Node, texts: &mut [Text], drawn: &Drawn, canvas: &mut Canvas, gly
                 }
             }
         }
+    }
+}
+
+/// Its highlights, then its glyphs, then its caret, each placed by the
+/// line's own shaping so they can't drift apart.
+fn draw_text(text: &mut Text, rect: Rect, drawn: &Drawn, canvas: &mut Canvas, glyphs: &mut Glyphs) {
+    let height = text.size[1];
+    let x = |index| glyphs.line_x(&text.line, rect.x, index);
+    let highlights = drawn.highlights.get(text.highlights.clone());
+    for highlight in highlights.unwrap_or_default() {
+        let start = x(highlight.range.start);
+        let end = x(highlight.range.end);
+        let area = Rect::new(start, rect.y, end - start, height);
+        canvas.quad(Quad::new(area, highlight.color).rounded(height * HIGHLIGHT_RADIUS));
+    }
+    let caret = text.caret.map(|caret| {
+        let area = Rect::new(x(caret.index), rect.y, caret.width, height);
+        Quad::new(area, caret.color)
+    });
+    let baseline = [rect.x, rect.y + text.ascent];
+    glyphs.draw_line(canvas, &mut text.line, baseline, text.style.color);
+    if let Some(caret) = caret {
+        canvas.quad(caret);
     }
 }
