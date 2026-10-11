@@ -4,12 +4,18 @@
 use gui::{
     components::{ListScroll, list},
     input::{Button, Cursor},
-    ui::{Align, Direction, Element, Size, Ui},
+    ui::{Align, Border, Direction, Element, Size, TextStyle, Ui},
 };
-use project::tree::{Kind, NodeId, Row, Tree, Trees};
+use project::tree::{Kind, NodeId, Row, Status, Tree, Trees};
 
 use crate::assets::{Icon, Icons};
 use crate::workspace::Places;
+
+/// Width of the gutter's bar.
+const BAR: f32 = 3.;
+/// How strong a folder's bar is beside a file's.
+// Chosen this alpha so the color is noticeably different
+const INSIDE: u8 = 0x39;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Tab {
@@ -196,16 +202,18 @@ impl Files {
     }
 }
 
-/// An icon for its kind, open or not, then its nodes' names split by `/`,
-/// behind a guide for each row it's inside. Returns whether it was clicked
-/// this pass.
+/// A [`gutter`],
+/// then an icon for its kind, open or not,
+/// then its nodes' names split by `/`, behind a guide for each row it's inside,
+/// then its [`regions`].
+/// Returns whether it was clicked this pass.
 fn row_ui(ui: &mut Ui, tree: &Tree, row: Row, open: bool, selected: bool, icons: &Icons) -> bool {
     let theme = ui.theme();
     let (c, s) = (theme.color, theme.size);
     let element = Element {
         direction: Direction::LeftToRight,
         size: [Size::Grow, Size::Fixed(s.row)],
-        padding: [s.gap / 2., 0., s.gap / 2., 0.],
+        padding: [0., 0., s.gap / 2., 0.],
         clip: true,
         cursor: Some(Cursor::Pointer),
         ..Element::DEFAULT
@@ -221,22 +229,26 @@ fn row_ui(ui: &mut Ui, tree: &Tree, row: Row, open: bool, selected: bool, icons:
         background: Some(c.line),
         ..Element::DEFAULT
     };
+    // A guide starts a little below its parent's row and ends a little
+    // above the bottom of its last, as far as the icon sits from an edge.
+    let inset = (s.row - s.icon) / 2.;
     let content = Element {
         direction: Direction::LeftToRight,
         size: [Size::Grow; 2],
         gap: s.icon_gap,
         align: [Align::Start, Align::Center],
+        // Cut long names rather than push the regions out of the row.
+        clip: true,
         ..Element::DEFAULT
     };
+    let node = tree[row.last];
     ui.element(element, |ui| {
         ui.style().background = if selected {
             Some(c.selected)
         } else {
             ui.hovered().then_some(c.hover)
         };
-        // A guide starts a little below its parent's row and ends a little
-        // above the bottom of its last, as far as the icon sits from an edge.
-        let inset = (s.row - s.icon) / 2.;
+        gutter(ui, node.status);
         let first = tree[row.first].parent.index() + 1 == row.first.index();
         for level in 1..=row.depth {
             let mut guide = guide;
@@ -251,7 +263,7 @@ fn row_ui(ui: &mut Ui, tree: &Tree, row: Row, open: bool, selected: bool, icons:
         ui.element(content, |ui| {
             let arc = tree.name(row.last).rsplit_once('.');
             let arc = arc.is_some_and(|(_, ext)| ext.eq_ignore_ascii_case("arc"));
-            let icon = match (tree[row.last].kind, arc, open) {
+            let icon = match (node.kind, arc, open) {
                 (Kind::Folder, true, true) => Icon::ContainerOpen,
                 (Kind::Folder, true, false) => Icon::Container,
                 (Kind::Folder, false, true) => Icon::FolderOpen,
@@ -267,8 +279,95 @@ fn row_ui(ui: &mut Ui, tree: &Tree, row: Row, open: bool, selected: bool, icons:
                 ui.text(theme.ui_text(c.text), tree.name(id));
             }
         });
+        regions(ui, tree, node.editions);
         ui.clicked(Button::Left)
     })
+}
+
+/// A bar for what the mod does to a node: solid where it changes a file,
+/// outlined where it adds one, faint on a folder with either inside.
+fn gutter(ui: &mut Ui, status: Status) {
+    let theme = ui.theme();
+    let (s, color) = (theme.size, theme.color.accent);
+    let pad = [(s.gap - BAR) / 2., (s.row - s.icon) / 2.];
+    let gutter = Element {
+        size: [Size::Fixed(s.gap), Size::Grow],
+        padding: [pad[0], pad[1], pad[0], pad[1]],
+        ..Element::DEFAULT
+    };
+    let bar = Element {
+        size: [Size::Grow; 2],
+        radius: [BAR / 2.; 4],
+        ..Element::DEFAULT
+    };
+    let bar = match status {
+        Status::Unchanged => None,
+        Status::Changed => Some(Element {
+            background: Some(color),
+            ..bar
+        }),
+        Status::Added => Some(Element {
+            border: Some(Border {
+                width: s.line,
+                color,
+            }),
+            ..bar
+        }),
+        Status::Inside => Some(Element {
+            background: Some(color.alpha(INSIDE)),
+            ..bar
+        }),
+    };
+    ui.element(gutter, |ui| {
+        if let Some(bar) = bar {
+            ui.element(bar, |_| ());
+        }
+    });
+}
+
+/// The region of each of `tree`'s editions in `editions`, or nothing when
+/// that's every edition. They sit in a column at the right as wide as every
+/// edition's region, from its left, so they line up from row to row.
+fn regions(ui: &mut Ui, tree: &Tree, editions: u32) {
+    let all = tree.editions.iter().fold(0u32, |all, _| all << 1 | 1);
+    if editions == 0 || editions == all {
+        return;
+    }
+    let theme = ui.theme();
+    let s = theme.size;
+    // Monospaced, so each letter fills the same cell whatever its shape.
+    let style = TextStyle {
+        font: theme.font.buffer,
+        size: s.text,
+        color: theme.color.dim,
+    };
+    // Clear of the scroll thumb, which sits half its width in from the edge.
+    // TODO: drop once the thumb hides when it isn't in use.
+    let padding = [s.gap, 0., 2.0 * s.scroll_bar, 0.];
+    let letters = tree.editions.iter().filter_map(|id| region(id));
+    let width = letters.fold(padding[0] + padding[2] - s.icon_gap, |width, letter| {
+        width + ui.measure(style, letter)[0] + s.icon_gap
+    });
+    let element = Element {
+        direction: Direction::LeftToRight,
+        size: [Size::Fixed(width), Size::Grow],
+        padding,
+        gap: s.icon_gap,
+        align: [Align::Start, Align::Center],
+        ..Element::DEFAULT
+    };
+    ui.element(element, |ui| {
+        let had = (0..).zip(&tree.editions);
+        let had = had.filter(|&(bit, _)| editions >> bit & 1 != 0);
+        for letter in had.filter_map(|(_, id)| region(id)) {
+            ui.text(style, letter);
+        }
+    });
+}
+
+/// A game ID's region, its fourth letter.
+fn region(id: &str) -> Option<&str> {
+    id.get(3..4)
 }
 
 /// `text`, dim and centred, in place of a tree.
