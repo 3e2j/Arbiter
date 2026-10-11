@@ -9,6 +9,7 @@ pub mod canvas;
 mod cast;
 pub mod clipboard;
 pub mod components;
+pub mod edit;
 pub mod host;
 pub mod input;
 mod layout;

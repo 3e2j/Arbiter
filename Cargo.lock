@@ -197,6 +197,7 @@ dependencies = [
  "skrifa",
  "thiserror 2.0.21",
  "unicode-script",
+ "unicode-segmentation",
  "wgpu",
  "winit",
  "zeno",

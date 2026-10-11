@@ -41,6 +41,7 @@ unicode-script = "0.5"
 harfrust = "0.12"
 # Images aren't copied yet, and image-data pulls in the image crate.
 arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
+unicode-segmentation = "1"
 
 [workspace.lints.clippy]
 pedantic = { level = "deny", priority = -1 }
