@@ -2,7 +2,8 @@
 //! events into [`Event`]s, the host collects them into [`Input`] for a pass,
 //! and the pass answers with [`Out`].
 //!
-//! Positions and distances are in logical pixels from the window's top left.
+//! Positions and distances are in logical pixels from the window's top left,
+//! except [`Input::motion`].
 
 use std::ops::Range;
 
@@ -40,10 +41,15 @@ impl Button {
     }
 }
 
-/// The keys the editor acts on. Any other key with a character is
-/// [`Key::Char`], and the rest aren't reported.
+/// What a key is to the layout, for shortcuts and editing. Any other key
+/// with a character is [`Key::Char`], and the rest aren't reported.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Key {
+    /// Either side's, as are the other modifiers.
+    Shift,
+    Ctrl,
+    Alt,
+    Super,
     Enter,
     Escape,
     Tab,
@@ -65,9 +71,18 @@ pub enum Key {
     Char(char),
 }
 
+/// Where a key with a character is on the keyboard, whatever the layout
+/// types there, named by what a US layout types, such as `w` for the key
+/// above `s`. For keys bound by place, as WASD are.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Code(pub char);
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct KeyPress {
     pub key: Key,
+    /// `None` for a key without a character, which is in the same place on
+    /// any layout.
+    pub code: Option<Code>,
     /// Sent again because the key is held.
     pub repeat: bool,
     /// Held as it went down, which can differ from [`Input::modifiers`] when
@@ -119,8 +134,16 @@ pub enum Event<'a> {
     Scroll([f32; 2]),
     Key {
         key: Key,
+        code: Option<Code>,
         repeat: bool,
     },
+    KeyReleased {
+        key: Key,
+        code: Option<Code>,
+    },
+    /// How far the mouse moved, in its own unaccelerated counts rather than
+    /// pixels, which keep coming while the pointer is grabbed.
+    Motion([f32; 2]),
     /// Typed text, with the keyboard layout and dead keys applied.
     /// Dropped while a shortcut's modifier is held, since some platforms type
     /// the letter of Ctrl+A too.
@@ -145,7 +168,11 @@ pub struct Input {
     pressed: u8,
     released: u8,
     scroll: [f32; 2],
+    motion: [f32; 2],
     modifiers: Modifiers,
+    /// What's down, by [`Code`] where there is one, since a key's character
+    /// can change while it's held, such as `1` to `!` with Shift.
+    held_keys: Vec<(Key, Option<Code>)>,
     keys: Vec<KeyPress>,
     /// How much of `text` came before each of `keys`.
     keys_at: Vec<usize>,
@@ -168,6 +195,9 @@ enum Later {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct Out {
     pub cursor: Cursor,
+    /// Whether the pointer is grabbed: hidden and kept in the window, with
+    /// only [`Input::motion`] saying how it moves, such as to look around.
+    pub grab: bool,
     /// The frame had input, or some waited for the next, so it should draw
     /// again straight away.
     pub again: bool,
@@ -210,6 +240,11 @@ impl Modifiers {
     pub const fn with(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
+
+    #[must_use]
+    pub const fn without(self, other: Self) -> Self {
+        Self(self.0 & !other.0)
+    }
 }
 
 impl Input {
@@ -223,7 +258,9 @@ impl Input {
             Event::Pressed(button) => Event::Pressed(button),
             Event::Released(button) => Event::Released(button),
             Event::Scroll(by) => Event::Scroll(by),
-            Event::Key { key, repeat } => Event::Key { key, repeat },
+            Event::Key { key, code, repeat } => Event::Key { key, code, repeat },
+            Event::KeyReleased { key, code } => Event::KeyReleased { key, code },
+            Event::Motion(by) => Event::Motion(by),
             Event::Text(text) => {
                 let start = self.later_text.len();
                 self.later_text.push_str(text);
@@ -287,20 +324,38 @@ impl Input {
                 self.scroll[0] += x;
                 self.scroll[1] += y;
             }
-            Event::Key { key, repeat } => {
+            Event::Motion([x, y]) => {
+                self.motion[0] += x;
+                self.motion[1] += y;
+            }
+            Event::Key { key, code, repeat } => {
                 let modifiers = self.modifiers;
                 self.keys.push(KeyPress {
                     key,
+                    code,
                     repeat,
                     modifiers,
                 });
                 self.keys_at.push(self.text.len());
+                if !repeat {
+                    self.held_keys.push((key, code));
+                }
+            }
+            Event::KeyReleased { key, code } => {
+                let same = |&(k, c): &(Key, Option<Code>)| match code {
+                    Some(_) => c == code,
+                    None => k == key,
+                };
+                if let Some(at) = self.held_keys.iter().position(same) {
+                    self.held_keys.swap_remove(at);
+                }
             }
             Event::Text(text) if self.modifiers.types() => self.text.push_str(text),
             Event::Text(_) => {}
             Event::Modifiers(modifiers) => self.modifiers = modifiers,
             Event::Unfocused => {
                 self.held = 0;
+                self.held_keys.clear();
                 self.modifiers = Modifiers::default();
             }
         }
@@ -314,6 +369,7 @@ impl Input {
         self.pressed = 0;
         self.released = 0;
         self.scroll = [0.; 2];
+        self.motion = [0.; 2];
         self.keys.clear();
         self.keys_at.clear();
         self.text.clear();
@@ -354,9 +410,27 @@ impl Input {
         self.scroll
     }
 
+    /// As [`Event::Motion`], summed since the last pass.
+    #[must_use]
+    pub const fn motion(&self) -> [f32; 2] {
+        self.motion
+    }
+
     #[must_use]
     pub const fn modifiers(&self) -> Modifiers {
         self.modifiers
+    }
+
+    /// The keys down, as presses with the modifiers held now, for what
+    /// happens for as long as a key is held, such as moving.
+    pub fn held_keys(&self) -> impl Iterator<Item = KeyPress> + '_ {
+        let modifiers = self.modifiers;
+        self.held_keys.iter().map(move |&(key, code)| KeyPress {
+            key,
+            code,
+            repeat: false,
+            modifiers,
+        })
     }
 
     /// In the order they were pressed.
@@ -444,10 +518,7 @@ mod tests {
         input.push(Event::Pressed(Button::Middle));
         input.push(Event::Scroll([0., 3.]));
         input.push(Event::Scroll([0., 2.]));
-        input.push(Event::Key {
-            key: Key::Enter,
-            repeat: false,
-        });
+        key(&mut input, Key::Enter);
         input.push(Event::Text("hé"));
         assert_eq!(input.scroll(), [0., 5.]);
         input.clear();
@@ -469,7 +540,46 @@ mod tests {
     }
 
     fn key(input: &mut Input, key: Key) {
-        input.push(Event::Key { key, repeat: false });
+        input.push(Event::Key {
+            key,
+            code: None,
+            repeat: false,
+        });
+    }
+
+    #[test]
+    fn a_key_is_let_go_by_where_it_is() {
+        let mut input = Input::default();
+        let one = Some(Code('1'));
+        input.push(Event::Key {
+            key: Key::Char('1'),
+            code: one,
+            repeat: false,
+        });
+        input.push(Event::Key {
+            key: Key::Char('1'),
+            code: one,
+            repeat: true,
+        });
+        assert_eq!(input.held_keys().count(), 1);
+        input.push(Event::KeyReleased {
+            key: Key::Char('!'),
+            code: one,
+        });
+        assert_eq!(input.held_keys().count(), 0);
+        key(&mut input, Key::Shift);
+        input.push(Event::Unfocused);
+        assert_eq!(input.held_keys().count(), 0);
+    }
+
+    #[test]
+    fn motion_is_summed_until_cleared() {
+        let mut input = Input::default();
+        input.push(Event::Motion([1., -2.]));
+        input.push(Event::Motion([3., 0.]));
+        assert_eq!(input.motion(), [4., -2.]);
+        input.clear();
+        assert_eq!(input.motion(), [0.; 2]);
     }
 
     #[test]

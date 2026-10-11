@@ -12,6 +12,7 @@ pub mod components;
 pub mod edit;
 pub mod host;
 pub mod input;
+pub mod keymap;
 mod layout;
 pub mod platform;
 pub mod render;

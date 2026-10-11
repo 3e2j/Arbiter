@@ -20,6 +20,7 @@ use std::panic::Location;
 use crate::canvas::{Color, Glyphs, IconId, Quad, Rect, Vertex};
 use crate::clipboard::Clipboard;
 use crate::input::{Button, Cursor, Input, Out};
+use crate::keymap::Keymap;
 use crate::layout::{Layout, Slot};
 
 pub use crate::layout::{
@@ -70,6 +71,8 @@ pub(crate) struct Memory {
     focus: Focus,
     /// Here as it lives as long as the rest, not because a pass changes it.
     clipboard: Clipboard,
+    /// What keys do, which the app and the user's settings change.
+    keymap: Keymap,
     /// Whether a button or the focus changed hands or was let go of.
     changed: bool,
 }
@@ -177,6 +180,12 @@ impl<'a> Ui<'a> {
         self.out.cursor = cursor;
     }
 
+    /// Grabs the pointer for this pass, as [`Out::grab`] says, so it has to
+    /// be asked again each pass to keep it.
+    pub const fn grab(&mut self) {
+        self.out.grab = true;
+    }
+
     /// The open box's rect last pass. `None` the first pass it's declared.
     #[must_use]
     pub const fn rect(&self) -> Option<Rect> {
@@ -276,6 +285,12 @@ impl<'a> Ui<'a> {
     /// Copy and paste, shared with other apps.
     pub fn clipboard(&mut self) -> &mut Clipboard {
         &mut self.memory.clipboard
+    }
+
+    /// What keys do, for a box to look its presses up in, or the app to
+    /// bind its own.
+    pub fn keymap(&mut self) -> &mut Keymap {
+        &mut self.memory.keymap
     }
 
     /// The open box, to change from what its queries say.

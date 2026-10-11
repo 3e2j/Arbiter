@@ -11,16 +11,18 @@ use crate::{
     canvas::{Canvas, Rect},
     cast::narrow,
     host::{App, Host},
-    input::{Button, Cursor, Event, Key, Modifiers},
+    input::{Button, Code, Cursor, Event, Key, Modifiers},
     render::{self, Gpu},
 };
 use winit::{
     application::ApplicationHandler,
     dpi::LogicalSize,
-    event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
+    event::{
+        DeviceEvent, DeviceId, ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent,
+    },
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    keyboard::{self, NamedKey},
-    window::{CursorIcon, Window, WindowId},
+    keyboard::{self, KeyCode, NamedKey, PhysicalKey},
+    window::{CursorGrabMode, CursorIcon, Window, WindowId},
 };
 
 /// Used when the monitor doesn't report its refresh rate.
@@ -76,6 +78,8 @@ struct Open {
     pacer: Pacer,
     /// The shape last set, so it's only set again when a pass changes it.
     cursor: Cursor,
+    /// Whether the pointer is grabbed, as last set.
+    grab: bool,
 }
 
 impl Open {
@@ -94,6 +98,7 @@ impl Open {
             gpu,
             pacer,
             cursor: Cursor::Default,
+            grab: false,
         })
     }
 
@@ -163,6 +168,10 @@ impl<A: App> ApplicationHandler for Runner<A> {
                     open.cursor = out.cursor;
                     open.window.set_cursor(cursor_icon(out.cursor));
                 }
+                if out.grab != open.grab {
+                    open.grab = out.grab;
+                    grab(&open.window, out.grab);
+                }
                 let atlas = self.host.take_atlas_updates();
                 // Without this, Wayland gets a frame per event and shows them all in turn.
                 let window = &open.window;
@@ -182,6 +191,13 @@ impl<A: App> ApplicationHandler for Runner<A> {
                     Err(error) => self.fail(event_loop, error.into()),
                 }
             }
+            // The system lets go of a grab when the window loses focus, so the
+            // next pass grabs again if it still wants to.
+            WindowEvent::Focused(false) => {
+                open.grab = false;
+                self.host.push(Event::Unfocused);
+                open.pacer.request();
+            }
             event => {
                 let scale = open.window.scale_factor();
                 let mut pushed = false;
@@ -193,6 +209,16 @@ impl<A: App> ApplicationHandler for Runner<A> {
                     open.pacer.request();
                 }
             }
+        }
+    }
+
+    // Raw motion only matters while grabbed, and otherwise would redraw for
+    // every move outside the window.
+    fn device_event(&mut self, _: &ActiveEventLoop, _: DeviceId, event: DeviceEvent) {
+        let Some(open) = &mut self.open else { return };
+        if let (true, DeviceEvent::MouseMotion { delta: (x, y) }) = (open.grab, event) {
+            self.host.push(Event::Motion([narrow(x), narrow(y)]));
+            open.pacer.request();
         }
     }
 
@@ -247,6 +273,7 @@ fn translate(event: &WindowEvent, scale: f64, mut push: impl FnMut(Event)) {
             event:
                 KeyEvent {
                     logical_key,
+                    physical_key,
                     text,
                     state: ElementState::Pressed,
                     repeat,
@@ -256,8 +283,9 @@ fn translate(event: &WindowEvent, scale: f64, mut push: impl FnMut(Event)) {
             ..
         } => {
             if let Some(key) = key(logical_key) {
+                let code = code(*physical_key);
                 let repeat = *repeat;
-                push(Event::Key { key, repeat });
+                push(Event::Key { key, code, repeat });
             }
             // Keys like Enter and Backspace type control characters, which
             // are reported as keys instead.
@@ -266,6 +294,21 @@ fn translate(event: &WindowEvent, scale: f64, mut push: impl FnMut(Event)) {
                 .filter(|text| !text.contains(char::is_control))
             {
                 push(Event::Text(text));
+            }
+        }
+        WindowEvent::KeyboardInput {
+            event:
+                KeyEvent {
+                    logical_key,
+                    physical_key,
+                    state: ElementState::Released,
+                    ..
+                },
+            ..
+        } => {
+            if let Some(key) = key(logical_key) {
+                let code = code(*physical_key);
+                push(Event::KeyReleased { key, code });
             }
         }
         WindowEvent::ModifiersChanged(modifiers) => {
@@ -282,7 +325,6 @@ fn translate(event: &WindowEvent, scale: f64, mut push: impl FnMut(Event)) {
                 .fold(Modifiers::default(), |all, (_, one)| all.with(one));
             push(Event::Modifiers(modifiers));
         }
-        WindowEvent::Focused(false) => push(Event::Unfocused),
         _ => {}
     }
 }
@@ -303,6 +345,10 @@ fn key(key: &keyboard::Key) -> Option<Key> {
         _ => return None,
     };
     Some(match named {
+        NamedKey::Shift => Key::Shift,
+        NamedKey::Control => Key::Ctrl,
+        NamedKey::Alt => Key::Alt,
+        NamedKey::Super => Key::Super,
         NamedKey::Enter => Key::Enter,
         NamedKey::Escape => Key::Escape,
         NamedKey::Tab => Key::Tab,
@@ -332,6 +378,81 @@ fn key(key: &keyboard::Key) -> Option<Key> {
         NamedKey::F12 => Key::F(12),
         _ => return None,
     })
+}
+
+/// Where `physical` is, if it's a key with a character.
+const fn code(physical: PhysicalKey) -> Option<Code> {
+    let PhysicalKey::Code(code) = physical else {
+        return None;
+    };
+    let c = match code {
+        KeyCode::KeyA => 'a',
+        KeyCode::KeyB => 'b',
+        KeyCode::KeyC => 'c',
+        KeyCode::KeyD => 'd',
+        KeyCode::KeyE => 'e',
+        KeyCode::KeyF => 'f',
+        KeyCode::KeyG => 'g',
+        KeyCode::KeyH => 'h',
+        KeyCode::KeyI => 'i',
+        KeyCode::KeyJ => 'j',
+        KeyCode::KeyK => 'k',
+        KeyCode::KeyL => 'l',
+        KeyCode::KeyM => 'm',
+        KeyCode::KeyN => 'n',
+        KeyCode::KeyO => 'o',
+        KeyCode::KeyP => 'p',
+        KeyCode::KeyQ => 'q',
+        KeyCode::KeyR => 'r',
+        KeyCode::KeyS => 's',
+        KeyCode::KeyT => 't',
+        KeyCode::KeyU => 'u',
+        KeyCode::KeyV => 'v',
+        KeyCode::KeyW => 'w',
+        KeyCode::KeyX => 'x',
+        KeyCode::KeyY => 'y',
+        KeyCode::KeyZ => 'z',
+        KeyCode::Digit0 => '0',
+        KeyCode::Digit1 => '1',
+        KeyCode::Digit2 => '2',
+        KeyCode::Digit3 => '3',
+        KeyCode::Digit4 => '4',
+        KeyCode::Digit5 => '5',
+        KeyCode::Digit6 => '6',
+        KeyCode::Digit7 => '7',
+        KeyCode::Digit8 => '8',
+        KeyCode::Digit9 => '9',
+        KeyCode::Backquote => '`',
+        KeyCode::Minus => '-',
+        KeyCode::Equal => '=',
+        KeyCode::BracketLeft => '[',
+        KeyCode::BracketRight => ']',
+        KeyCode::Backslash => '\\',
+        KeyCode::Semicolon => ';',
+        KeyCode::Quote => '\'',
+        KeyCode::Comma => ',',
+        KeyCode::Period => '.',
+        KeyCode::Slash => '/',
+        KeyCode::Space => ' ',
+        _ => return None,
+    };
+    Some(Code(c))
+}
+
+/// Locks the pointer in place where the system can, otherwise keeps it in
+/// the window, and hides it while grabbed.
+fn grab(window: &Window, grab: bool) {
+    let mode = if grab {
+        CursorGrabMode::Locked
+    } else {
+        CursorGrabMode::None
+    };
+    // A system that refuses both leaves the pointer free, with motion still
+    // coming.
+    if window.set_cursor_grab(mode).is_err() && grab {
+        window.set_cursor_grab(CursorGrabMode::Confined).ok();
+    }
+    window.set_cursor_visible(!grab);
 }
 
 const fn cursor_icon(cursor: Cursor) -> CursorIcon {

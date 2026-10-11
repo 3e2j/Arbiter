@@ -1,6 +1,6 @@
 //! Editing text, shared by everything that does: a field, and later the code
-//! editor. Keys become [`Edit`]s through [`Edit::from_key`], and [`apply`]
-//! carries one out on a string and its [`Selection`].
+//! editor. Keys become [`Edit`]s through the [`Keymap`](crate::keymap::Keymap),
+//! and [`apply`] carries one out on a string and its [`Selection`].
 //!
 //! Every position is a byte offset into the text, between graphemes, so an
 //! emoji or a letter with its accent moves and deletes as one.
@@ -10,7 +10,6 @@ use std::ops::Range;
 use unicode_segmentation::{GraphemeCursor, UnicodeSegmentation};
 
 use crate::clipboard::Clipboard;
-use crate::input::{Key, KeyPress, Modifiers};
 
 /// What's selected, or just where typing goes when both ends are the same.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -98,58 +97,6 @@ impl Selection {
         };
         self.caret = clamp(self.caret);
         self.anchor = clamp(self.anchor);
-    }
-}
-
-impl Edit<'_> {
-    /// What `press` means to an editor, with the platform's usual keys:
-    /// Ctrl for words elsewhere, Option on macOS, where Command is for lines.
-    #[must_use]
-    pub fn from_key(press: KeyPress) -> Option<Self> {
-        let mac = cfg!(target_os = "macos");
-        let held = press.modifiers;
-        let extend = held.contains(Modifiers::SHIFT);
-        // Shift picks extending, or between copy and cut on Delete and Insert,
-        // so it's left out when matching the rest.
-        let with = |rest: Modifiers| held.only(rest) || held.only(rest.with(Modifiers::SHIFT));
-        let plain = Modifiers::default();
-        let word = if mac { Modifiers::ALT } else { Modifiers::CTRL };
-        let motion = if with(plain) {
-            Motion::Grapheme
-        } else if with(word) {
-            Motion::Word
-        } else if mac && with(Modifiers::SUPER) {
-            Motion::Line
-        } else {
-            Motion::Text
-        };
-        let moves = |motion, forward| Edit::Move {
-            motion,
-            forward,
-            extend,
-        };
-        let deletes = |motion, forward| Edit::Delete { motion, forward };
-        let command = held.only(Modifiers::COMMAND);
-        Some(match press.key {
-            Key::Left | Key::Right if motion != Motion::Text => {
-                moves(motion, press.key == Key::Right)
-            }
-            Key::Home | Key::End if with(plain) => moves(Motion::Line, press.key == Key::End),
-            Key::Home | Key::End if with(Modifiers::CTRL) => {
-                moves(Motion::Text, press.key == Key::End)
-            }
-            Key::Delete if held.only(Modifiers::SHIFT) => Edit::Cut,
-            Key::Backspace | Key::Delete if motion != Motion::Text => {
-                deletes(motion, press.key == Key::Delete)
-            }
-            Key::Insert if held.only(Modifiers::CTRL) => Edit::Copy,
-            Key::Insert if held.only(Modifiers::SHIFT) => Edit::Paste,
-            Key::Char('a') if command => Edit::SelectAll,
-            Key::Char('c') if command => Edit::Copy,
-            Key::Char('x') if command => Edit::Cut,
-            Key::Char('v') if command => Edit::Paste,
-            _ => return None,
-        })
     }
 }
 
@@ -334,14 +281,6 @@ mod tests {
         Edit::Delete { motion, forward }
     }
 
-    fn press(key: Key, modifiers: Modifiers) -> Option<Edit<'static>> {
-        Edit::from_key(KeyPress {
-            key,
-            repeat: false,
-            modifiers,
-        })
-    }
-
     #[test]
     fn typing_goes_in_at_the_caret() {
         check("z|l", &[Edit::Insert("e")], "ze|l");
@@ -454,26 +393,5 @@ mod tests {
             Lines::One,
         );
         assert_eq!((text.as_str(), selection), ("a", Selection::at(1)));
-    }
-
-    #[test]
-    fn keys_map_to_edits() {
-        let none = Modifiers::default();
-        let shift = Modifiers::SHIFT;
-        let command = Modifiers::COMMAND;
-        assert_eq!(press(Key::Char('a'), command), Some(Edit::SelectAll));
-        assert_eq!(press(Key::Char('a'), none), None);
-        assert_eq!(press(Key::Char('v'), command), Some(Edit::Paste));
-        assert_eq!(press(Key::Insert, shift), Some(Edit::Paste));
-        assert_eq!(press(Key::Delete, shift), Some(Edit::Cut));
-        assert_eq!(
-            press(Key::Left, shift),
-            Some(extends(Motion::Grapheme, false))
-        );
-        assert_eq!(press(Key::End, none), Some(moves(Motion::Line, true)));
-        assert_eq!(
-            press(Key::Backspace, none),
-            Some(deletes(Motion::Grapheme, false))
-        );
     }
 }
