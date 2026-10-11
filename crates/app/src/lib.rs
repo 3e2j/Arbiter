@@ -19,7 +19,7 @@ use gui::{
     ui::Ui,
 };
 pub use panels::Capture;
-use panels::{Output, Panel, Placeholder, Showcase};
+use panels::{Files, Output, Panel, Placeholder, Showcase};
 use project::{Log, Project};
 use workspace::{Place, Places, Workspace};
 
@@ -56,6 +56,18 @@ impl Editor {
             tracing::warn!("can't write a log in {}: {err}", project.root.display());
         }
         tracing::info!("opened {}", project.root.display());
+        match project.trees() {
+            Ok(trees) => {
+                let files = self.workspace.panels_mut().find_map(|panel| match panel {
+                    Panel::Files(files) => Some(files),
+                    _ => None,
+                });
+                if let Some(files) = files {
+                    files.set(trees);
+                }
+            }
+            Err(err) => tracing::warn!("can't read the project's files: {err}"),
+        }
         self.project = Some(project);
     }
 }
@@ -80,7 +92,7 @@ impl App for Editor {
             Place::Main,
         );
         workspace.add(editor("Messages"), Place::Main);
-        workspace.add(tool("Files"), Place::LeftInnerTop);
+        workspace.add(Panel::Files(Files::new(icons)), Place::LeftInnerTop);
         workspace.add(tool("Search"), Place::LeftInnerTop);
         workspace.add(tool("Outline"), Place::LeftInnerBottom);
         workspace.add(tool("Inspector"), Place::RightInnerTop);

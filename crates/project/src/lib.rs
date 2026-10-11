@@ -8,7 +8,7 @@
 //! ├─ .gitignore     keeps base/, .arbiter/ and working files out
 //! ├─ base/          unpacked editions, read-only, never committed (see `base`)
 //! ├─ changes/       .toml and .patch against base, beside their working files
-//! ├─ sources/       the modder's own files, shipped as-is
+//! ├─ assets/        the modder's own files, such as the icon and banner, shipped as-is
 //! ├─ textures/      image replacements at game paths
 //! ├─ code/
 //! └─ .arbiter/      cache, index, recovery, session
@@ -19,6 +19,7 @@ pub mod changes;
 pub mod config;
 pub mod hash;
 mod log;
+pub mod tree;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -40,7 +41,7 @@ pub use log::{Log, LogWriter};
 const MOD_DIRS: &[&str] = &[
     base::DIR,
     changes::DIR,
-    "sources",
+    "assets",
     "textures",
     "code",
     ".arbiter",
@@ -60,6 +61,8 @@ const MOD_GITIGNORE: &str = "\
 pub enum Error {
     #[error(transparent)]
     Base(#[from] base::Error),
+    #[error(transparent)]
+    Tree(#[from] tree::Error),
     #[error("{0} isn't empty")]
     NotEmpty(PathBuf),
     #[error("{0} has no directory name to build a project beside")]

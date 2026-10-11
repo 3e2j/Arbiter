@@ -81,6 +81,12 @@ impl Workspace {
         self.docks[place.index()].tabs.push(Tab { panel });
     }
 
+    /// Every panel, in any dock.
+    pub fn panels_mut(&mut self) -> impl Iterator<Item = &mut Panel> {
+        let tabs = self.docks.iter_mut().flat_map(|dock| &mut dock.tabs);
+        tabs.map(|tab| &mut tab.panel)
+    }
+
     /// Escape closes the menu.
     pub fn input(&mut self, input: &Input) {
         if input.keys().iter().any(|press| press.key == Key::Escape) {
