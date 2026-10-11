@@ -29,6 +29,9 @@ pub struct Colors {
     pub hover: Color,
     /// The selected row and buttons under the pointer.
     pub selected: Color,
+    /// Behind selected text. Translucent, so highlights under it show
+    /// through.
+    pub selection: Color,
     /// A scroll thumb, drawn over the rows it scrolls, so it should be
     /// translucent and unlike `selected`.
     pub thumb: Color,

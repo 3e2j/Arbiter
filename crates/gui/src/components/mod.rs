@@ -10,10 +10,12 @@
 //! [`Ui::keyed`](crate::ui::Ui::keyed).
 
 mod button;
+mod field;
 mod row;
 mod scroll;
 
 pub use button::{button, icon_button};
+pub use field::{TextField, text_field};
 pub use row::{Row, row};
 pub use scroll::{ListScroll, Scroll, list, scroll};
 

@@ -293,6 +293,12 @@ impl<'a> Ui<'a> {
         &mut self.memory.keymap
     }
 
+    /// What editing text needs at once: the keys to look presses up in, and
+    /// the clipboard.
+    pub fn editing(&mut self) -> (&Keymap, &mut Clipboard) {
+        (&self.memory.keymap, &mut self.memory.clipboard)
+    }
+
     /// The open box, to change from what its queries say.
     pub fn style(&mut self) -> &mut Element {
         self.layout.element_mut(self.open.node)
@@ -442,9 +448,10 @@ impl<'a> Ui<'a> {
 }
 
 impl Memory {
-    pub fn new(clipboard: Clipboard) -> Self {
+    pub fn new(clipboard: Clipboard, keymap: Keymap) -> Self {
         Self {
             clipboard,
+            keymap,
             ..Self::default()
         }
     }

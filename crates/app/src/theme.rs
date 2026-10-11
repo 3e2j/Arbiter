@@ -13,6 +13,7 @@ const COLORS: Colors = Colors {
     dim: Color::hex(0x9a_9b_98),
     hover: Color::hex(0x24_26_2b),
     selected: Color::hex(0x33_36_3d),
+    selection: Color::hex(0x44_d4_d8).alpha(0x3d),
     thumb: Color::hex(0xe6_e6_e4).alpha(0x30),
     thumb_hover: Color::hex(0xe6_e6_e4).alpha(0x60),
     accent: Color::hex(0x44_d4_d8),

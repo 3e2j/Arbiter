@@ -210,6 +210,9 @@ impl Default for Keymap {
         bind(Key::Insert, shift, Edit::Paste);
         // Over Shift+Delete deleting forward.
         bind(Key::Delete, shift, Edit::Cut);
+        for (key, action) in [(Key::Enter, Action::Confirm), (Key::Escape, Action::Cancel)] {
+            keymap.bind(Chord::new(key, none), Context::TEXT, Some(action));
+        }
         keymap
     }
 }

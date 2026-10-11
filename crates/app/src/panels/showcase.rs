@@ -1,16 +1,21 @@
 //! A very temporary stand-in panel for testing.
 //! Shows what `gui` draws: icons, hover and select, font fallback, colour emoji,
-//! triangles, buttons and a long scrolled list.
+//! triangles, buttons, a text field and a long scrolled list.
 //!
 //! To be deleted when a proper workspace / panels gets going
 
 use gui::{
     canvas::{Color, Vertex},
-    components::{ListScroll, Row, button, icon_button, list, row},
+    components::{ListScroll, Row, TextField, button, icon_button, list, row, text_field},
+    input::{Key, Modifiers},
+    keymap::{Action, Chord, Command, Context, Keymap},
     ui::{Align, Direction, Element, Size, TextStyle, Ui},
 };
 
 use crate::assets::{Icon, Icons};
+
+/// Focuses the field, `/` by default.
+const FOCUS: Action = Action::Command(Command("showcase.focus"));
 
 pub struct Showcase {
     icons: Icons,
@@ -20,18 +25,23 @@ pub struct Showcase {
     rows: Vec<(u32, String)>,
     picked: Option<u32>,
     scroll: ListScroll,
+    field: TextField,
 }
 
 impl Showcase {
     pub const TITLE: &str = "Showcase";
 
-    pub fn new(icons: Icons) -> Self {
+    /// Binds `/` in `keymap` to focus the field.
+    pub fn new(icons: Icons, keymap: &mut Keymap) -> Self {
+        let slash = Chord::new(Key::Char('/'), Modifiers::default());
+        keymap.bind(slash, Context::GLOBAL, Some(FOCUS));
         let mut showcase = Self {
             icons,
             selected: None,
             rows: Vec::new(),
             picked: None,
             scroll: ListScroll::TOP,
+            field: TextField::default(),
         };
         for _ in 0..20 {
             showcase.add_row();
@@ -106,6 +116,23 @@ impl Showcase {
                 .selected
                 .map_or("No icon picked", |_| "An icon is picked");
             ui.text(theme.ui_text(theme.color.dim), picked);
+        });
+        let input = ui.input();
+        let keymap = ui.keymap();
+        let focus = input
+            .keys()
+            .iter()
+            .any(|&press| keymap.resolve(press, &[Context::GLOBAL]) == Some(FOCUS));
+        if focus && !ui.typing() {
+            self.field.focus = true;
+        }
+        let field = Element {
+            size: [Size::Fixed(320.), Size::Fit],
+            ..Element::DEFAULT
+        };
+        ui.element(field, |ui| {
+            let search = Some(self.icons.get(Icon::Search));
+            text_field(ui, &mut self.field, search, "Type here, or press /");
         });
         let icon = self.icons.get(Icon::Message);
         list(

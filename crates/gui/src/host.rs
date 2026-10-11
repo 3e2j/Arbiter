@@ -7,6 +7,7 @@ use std::error::Error;
 use crate::canvas::{AtlasUpdate, Canvas, Glyphs, Rect};
 use crate::clipboard::Clipboard;
 use crate::input::{Event, Input, Out};
+use crate::keymap::Keymap;
 use crate::layout::Layout;
 use crate::ui::{Memory, Slots, Theme, Ui};
 
@@ -47,6 +48,8 @@ pub struct Startup<'a> {
     pub theme: Theme,
     /// Where the app adds its fonts and icons.
     pub glyphs: &'a mut Glyphs,
+    /// The default keys, for the app to bind its own over.
+    pub keymap: Keymap,
 }
 
 pub struct Host<A> {
@@ -68,9 +71,10 @@ impl<A: App> Host<A> {
         let mut start = Startup {
             theme: Theme::default(),
             glyphs: &mut glyphs,
+            keymap: Keymap::default(),
         };
         let app = A::new(&mut start, args)?;
-        let theme = start.theme;
+        let Startup { theme, keymap, .. } = start;
         Ok(Self {
             app,
             theme,
@@ -78,7 +82,7 @@ impl<A: App> Host<A> {
             input: Input::default(),
             layout: Layout::default(),
             slots: Slots::default(),
-            memory: Memory::new(Clipboard::system()),
+            memory: Memory::new(Clipboard::system(), keymap),
         })
     }
 
