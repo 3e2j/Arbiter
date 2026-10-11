@@ -169,15 +169,15 @@ pub(crate) struct Layout {
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
     /// Scratch for [`Self::emit`].
-    /// Each floating box left for later, and the clip it's drawn in.
-    floats: Vec<(usize, Rect)>,
+    /// Each floating box left for later, the clip it's drawn in, and its
+    /// layer.
+    floats: Vec<(usize, Rect, Layer)>,
     clips: Vec<(usize, Rect)>,
     /// The box last pass drew on top under the pointer, set by
     /// [`Self::hit_test`].
     hit: Option<usize>,
-    /// Scratch for finding the top box: each box's clip, and how many
-    /// floating boxes it's under, counting itself.
-    reach: Vec<(Rect, u32)>,
+    /// Scratch for finding the top box: each box's clip and layer.
+    reach: Vec<(Rect, Layer)>,
 }
 
 struct Node {
@@ -244,6 +244,21 @@ impl Anchor {
     /// Whether it keeps its box inside the clips its parent is in.
     const fn clipped(self) -> bool {
         matches!(self, Self::Parent { clipped: true, .. })
+    }
+}
+
+/// Where a box draws among floating boxes, higher over lower: first how many
+/// floating boxes that escape their clips it's in, then how many in all, each
+/// counting itself. So a scroll thumb stays under a menu declared before it.
+type Layer = [u32; 2];
+
+/// The layer of a box in `parent`'s, floating by `float`.
+const fn layer(parent: Layer, float: Option<Anchor>) -> Layer {
+    let [escaped, floats] = parent;
+    match float {
+        None => parent,
+        Some(anchor) if anchor.clipped() => [escaped, floats + 1],
+        Some(_) => [escaped + 1, floats + 1],
     }
 }
 

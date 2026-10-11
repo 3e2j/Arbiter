@@ -276,6 +276,48 @@ fn a_clipped_float_stays_inside_its_parents_clip() {
 }
 
 #[test]
+fn a_float_escaping_its_clips_draws_over_one_kept_in_them_declared_after() {
+    let mut layout = Layout::default();
+    layout.clear();
+    layout.open(slot(0), fixed(40., 20.));
+    let menu = Element {
+        float: Some(Anchor::BELOW),
+        background: Some(Color::hex(0xff_ff_ff)),
+        cursor: Some(Cursor::Pointer),
+        ..fixed(60., 60.)
+    };
+    leaf(&mut layout, 1, menu);
+    layout.close();
+    let list = Element {
+        clip: true,
+        ..fixed(40., 80.)
+    };
+    layout.open(slot(2), list);
+    let thumb = Element {
+        float: Some(Anchor::Parent {
+            parent: [Align::End, Align::Start],
+            own: [Align::End, Align::Start],
+            offset: [0.; 2],
+            clipped: true,
+        }),
+        background: Some(Color::hex(0x10_20_30)),
+        cursor: Some(Cursor::Text),
+        ..fixed(10., 40.)
+    };
+    leaf(&mut layout, 3, thumb);
+    layout.close();
+    layout.solve(WINDOW, 1.);
+    let mut canvas = Canvas::default();
+    canvas.clear(WINDOW);
+    layout.emit(&mut canvas, &mut Glyphs::default());
+    let thumb = Quad::new(Rect::new(30., 20., 10., 40.), Color::hex(0x10_20_30));
+    let menu = Quad::new(Rect::new(0., 20., 60., 60.), Color::hex(0xff_ff_ff));
+    assert_eq!(canvas.quads(), [thumb, menu]);
+    // Where the thumb sits under the menu.
+    assert_eq!(layout.cursor(Some([35., 30.])), Some(Cursor::Pointer));
+}
+
+#[test]
 fn a_float_meets_its_parent_at_the_points_it_picks() {
     let mut layout = Layout::default();
     layout.clear();
@@ -293,13 +335,56 @@ fn a_float_meets_its_parent_at_the_points_it_picks() {
             offset: [0., -4.],
             clipped: false,
         }),
-        ..fixed(60., 10.)
+        ..fixed(40., 10.)
     };
     leaf(&mut layout, 2, tooltip);
     layout.close();
     layout.solve(WINDOW, 1.);
     // Centred over the button, ignoring its padding and scroll offset.
-    assert_eq!(rects(&layout)[3], Rect::new(-10., 36., 60., 10.));
+    assert_eq!(rects(&layout)[3], Rect::new(0., 36., 40., 10.));
+}
+
+#[test]
+fn a_float_escaping_its_clips_stays_in_the_window() {
+    let mut layout = Layout::default();
+    layout.clear();
+    layout.open(slot(0), fixed(50., 20.));
+    // Its right edge on the parent's, so it hangs off the window's left.
+    let menu = Element {
+        float: Some(Anchor::Parent {
+            parent: [Align::End; 2],
+            own: [Align::End, Align::Start],
+            offset: [0., 0.],
+            clipped: false,
+        }),
+        ..fixed(120., 30.)
+    };
+    leaf(&mut layout, 1, menu);
+    let thumb = Element {
+        float: Some(Anchor::Parent {
+            parent: [Align::End; 2],
+            own: [Align::End, Align::Start],
+            offset: [0., 0.],
+            clipped: true,
+        }),
+        ..menu
+    };
+    leaf(&mut layout, 2, thumb);
+    layout.close();
+    leaf(
+        &mut layout,
+        3,
+        Element {
+            float: Some(Anchor::At([280., 90.])),
+            ..fixed(60., 30.)
+        },
+    );
+    layout.solve(WINDOW, 1.);
+    let rects = rects(&layout);
+    assert_eq!(rects[2], Rect::new(0., 20., 120., 30.));
+    // A float kept in its clips doesn't move.
+    assert_eq!(rects[3], Rect::new(-70., 20., 120., 30.));
+    assert_eq!(rects[4], Rect::new(240., 70., 60., 30.));
 }
 
 #[test]

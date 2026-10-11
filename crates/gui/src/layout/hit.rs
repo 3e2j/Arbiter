@@ -1,8 +1,8 @@
 //! Which box is on top at a point, inside its clip, as [`emit`](super::emit)
-//! draws them: the tree in declaration order, then floating boxes over it,
-//! one inside another after both.
+//! draws them: the tree in declaration order, then floating boxes over it by
+//! [`Layer`].
 
-use super::{Layout, Node};
+use super::{Layer, Layout, Node, layer};
 use crate::canvas::Rect;
 use crate::input::Cursor;
 
@@ -35,33 +35,29 @@ impl Layout {
     }
 }
 
-/// The deepest in floating boxes wins, then the one declared last. `reach`
-/// is scratch.
-fn top(nodes: &[Node], reach: &mut Vec<(Rect, u32)>, at: [f32; 2]) -> Option<usize> {
+/// The highest [`Layer`] wins, then the one declared last. `reach` is scratch.
+fn top(nodes: &[Node], reach: &mut Vec<(Rect, Layer)>, at: [f32; 2]) -> Option<usize> {
     reach.clear();
     let window = nodes.first()?.rect;
     let mut top = None;
     for (index, node) in (0..).zip(nodes) {
-        let (clip, floats) = if index == 0 {
-            (window, 0)
+        let (clip, own) = if index == 0 {
+            (window, [0; 2])
         } else {
             let parent = &nodes[node.parent];
-            let (clip, floats) = reach[node.parent];
+            let (clip, under) = reach[node.parent];
             let clip = if parent.element.clip {
                 clip.intersect(parent.rect)
             } else {
                 clip
             };
-            match node.element.float {
-                Some(anchor) if anchor.clipped() => (clip, floats + 1),
-                Some(_) => (window, floats + 1),
-                None => (clip, floats),
-            }
+            let float = node.element.float;
+            let escapes = float.is_some_and(|anchor| !anchor.clipped());
+            (if escapes { window } else { clip }, layer(under, float))
         };
-        reach.push((clip, floats));
-        if clip.contains(at) && node.rect.contains(at) && top.is_none_or(|(_, over)| floats >= over)
-        {
-            top = Some((index, floats));
+        reach.push((clip, own));
+        if clip.contains(at) && node.rect.contains(at) && top.is_none_or(|(_, over)| own >= over) {
+            top = Some((index, own));
         }
     }
     top.map(|(index, _)| index)

@@ -1,28 +1,40 @@
 //! Turns solved boxes into shapes, in draw order.
 
-use super::{Anchor, Content, Highlight, Layout, Node, Paint, Text};
+use super::{Anchor, Content, Highlight, Layer, Layout, Node, Paint, Text, layer};
 use crate::canvas::{Canvas, Color, Glyphs, Quad, Rect, Vertex};
 
 impl Layout {
     /// Draws each box's background, border and content into `canvas`: the
-    /// tree in declaration order, then each floating box over it.
+    /// tree in declaration order, then each floating box over it by
+    /// [`Layer`], in declaration order within one.
     pub fn emit(&mut self, canvas: &mut Canvas, glyphs: &mut Glyphs) {
         let Some(root) = self.nodes.first().map(|node| node.rect) else {
             return;
         };
         self.floats.clear();
-        self.emit_tree(0, root, canvas, glyphs);
-        // A floating box inside a floating box joins the list as it's drawn.
+        self.emit_tree(0, root, [0; 2], canvas, glyphs);
+        // A floating box inside a floating box joins the list as it's drawn,
+        // always above it, so a stable sort of what's left keeps the order.
         let mut next = 0;
-        while let Some(&(float, clip)) = self.floats.get(next) {
-            self.emit_tree(float, clip, canvas, glyphs);
+        while next < self.floats.len() {
+            self.floats[next..].sort_by_key(|&(.., layer)| layer);
+            let (float, clip, layer) = self.floats[next];
+            self.emit_tree(float, clip, layer, canvas, glyphs);
             next += 1;
         }
     }
 
-    /// Draws `top` and what's under it, clipped to `clip`, leaving its
-    /// floating boxes for later. Boxes outside the clip are skipped.
-    fn emit_tree(&mut self, top: usize, clip: Rect, canvas: &mut Canvas, glyphs: &mut Glyphs) {
+    /// Draws `top`, in `layer`, and what's under it, clipped to `clip`,
+    /// leaving its floating boxes for later. Boxes outside the clip are
+    /// skipped.
+    fn emit_tree(
+        &mut self,
+        top: usize,
+        clip: Rect,
+        layer: Layer,
+        canvas: &mut Canvas,
+        glyphs: &mut Glyphs,
+    ) {
         canvas.clip(clip);
         self.clips.clear();
         let mut current = clip;
@@ -38,14 +50,14 @@ impl Layout {
             }
             let node = &self.nodes[index];
             if index != top && node.element.float.is_some() {
-                index = self.queue_float(index, current);
+                index = self.queue_float(index, current, layer);
                 continue;
             }
             if !node.rect.overlaps(current) {
                 // Nothing under a clip it's outside of can show, except
                 // floating boxes.
                 index = if node.element.clip {
-                    self.queue_floats(index, current)
+                    self.queue_floats(index, current, layer)
                 } else {
                     index + 1
                 };
@@ -69,7 +81,7 @@ impl Layout {
 
     /// Leaves the floating boxes under `top`, a clip outside `clip`, for
     /// later, without drawing anything. Returns where its subtree ends.
-    fn queue_floats(&mut self, top: usize, clip: Rect) -> usize {
+    fn queue_floats(&mut self, top: usize, clip: Rect, layer: Layer) -> usize {
         let end = self.nodes[top].end;
         // Empty, since `top` is outside `clip`, so clipped floats draw nothing.
         let inside = clip.intersect(self.nodes[top].rect);
@@ -77,7 +89,7 @@ impl Layout {
         while index < end {
             let node = &self.nodes[index];
             if node.element.float.is_some() {
-                index = self.queue_float(index, inside);
+                index = self.queue_float(index, inside, layer);
             } else {
                 index += 1;
             }
@@ -85,9 +97,10 @@ impl Layout {
         end
     }
 
-    /// Leaves `float` for later, clipped to `clip` if its anchor keeps it
-    /// inside, or else to the window. Returns where its subtree ends.
-    fn queue_float(&mut self, float: usize, clip: Rect) -> usize {
+    /// Leaves `float`, in a box in `under`, for later, clipped to `clip` if
+    /// its anchor keeps it inside, or else to the window. Returns where its
+    /// subtree ends.
+    fn queue_float(&mut self, float: usize, clip: Rect, under: Layer) -> usize {
         let node = &self.nodes[float];
         let clip = if node.element.float.is_some_and(Anchor::clipped) {
             clip
@@ -95,7 +108,8 @@ impl Layout {
             self.nodes[0].rect
         };
         let end = node.end;
-        self.floats.push((float, clip));
+        self.floats
+            .push((float, clip, layer(under, node.element.float)));
         end
     }
 }

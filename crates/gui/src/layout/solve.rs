@@ -103,7 +103,10 @@ impl Layout {
     }
 
     /// Parents first, each placing its children from its own rect.
+    /// A float that escapes its clips moves as little as keeps it inside the
+    /// window, so a menu by the window's edge stays readable.
     fn place(&mut self, scale: f32) {
+        let window = self.nodes[0].rect;
         for index in 0..self.nodes.len() {
             let node = &self.nodes[index];
             if node.end == index + 1 {
@@ -135,17 +138,22 @@ impl Layout {
                         parent: on,
                         own,
                         offset,
-                        ..
+                        clipped,
                     }) => {
                         let start = [parent.x, parent.y];
                         let extent = [parent.w, parent.h];
-                        std::array::from_fn(|axis| {
+                        let at = std::array::from_fn(|axis| {
                             start[axis] + point(on[axis], extent[axis])
                                 - point(own[axis], size[axis])
                                 + offset[axis]
-                        })
+                        });
+                        if clipped {
+                            at
+                        } else {
+                            inside(at, size, window)
+                        }
                     }
-                    Some(Anchor::At(at)) => at,
+                    Some(Anchor::At(at)) => inside(at, size, window),
                     None => {
                         let mut at = [0.; 2];
                         at[main] = origin[main] + pen;
@@ -211,6 +219,14 @@ fn point(align: Align, length: f32) -> f32 {
 
 /// The box `at` and `size`, its edges moved to whole physical pixels. Boxes
 /// that share an edge round it the same way, so no gap opens between them.
+/// `at` moved as little as keeps a box of `size` there inside `window`, its
+/// top left kept in when it's too big to fit.
+fn inside(at: [f32; 2], size: [f32; 2], window: Rect) -> [f32; 2] {
+    let start = [window.x, window.y];
+    let end = [window.x + window.w, window.y + window.h];
+    std::array::from_fn(|axis| at[axis].min(end[axis] - size[axis]).max(start[axis]))
+}
+
 fn snap(at: [f32; 2], size: [f32; 2], scale: f32) -> Rect {
     let edge = |value: f32| (value * scale).round() / scale;
     let [x, y] = at.map(edge);
