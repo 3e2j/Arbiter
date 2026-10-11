@@ -24,6 +24,11 @@ pub const ERROR: Color = Color::hex(0xf0_5a_5a);
 /// Warnings in the Output.
 pub const WARNING: Color = Color::hex(0xe8_b3_4b);
 
+/// File names git sees added, modified or deleted since the last commit.
+pub const GIT_ADDED: Color = Color::hex(0x42_be_65);
+pub const GIT_MODIFIED: Color = Color::hex(0xe0_b3_41);
+pub const GIT_DELETED: Color = Color::hex(0xff_83_89);
+
 const SIZES: Sizes = Sizes {
     text: 13.,
     icon: 16.,

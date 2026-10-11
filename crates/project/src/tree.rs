@@ -31,6 +31,7 @@ use serde::{
 use crate::{
     Project, base, changes,
     config::{self, Config},
+    git,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -124,6 +125,9 @@ pub struct Node {
     /// any node inside has, so it lacks one only when everything inside does.
     /// Empty in the Project tree.
     pub editions: u32,
+    /// What git sees changed, or for a game path, in its files under
+    /// `changes/`. Always clean when the project doesn't use git.
+    pub git: git::Status,
 }
 
 pub struct Tree {
@@ -153,10 +157,12 @@ impl Project {
 
 impl Trees {
     fn read(root: &Path, config: &Config) -> Result<Self, Error> {
+        let git = git::status(root).unwrap_or_default();
         // TODO: a game project's Game tree, once game projects have a layout.
         if config.kind == config::Kind::Game {
             let mut project = Vec::new();
             walk(root, None, &mut String::new(), &mut project)?;
+            mark(&mut project, &git);
             return Ok(Self {
                 game: Tree::build(Vec::new(), Vec::new())?,
                 project: Tree::build(project, Vec::new())?,
@@ -178,6 +184,7 @@ impl Trees {
                 };
             }
         }
+        mark(&mut project, &git);
 
         let mut changed = Vec::new();
         walk(
@@ -189,10 +196,29 @@ impl Trees {
         let changed = changed.into_iter().filter(|e| e.kind == Kind::File);
         let changed: Vec<_> = changed
             .map(|entry| {
+                let git = git::find(&git, &format!("{prefix}{}", entry.path));
                 let (path, editions) = target.game_path(&entry.path, config);
                 Entry {
                     status: Status::Added,
                     editions,
+                    git,
+                    ..Entry::file(path)
+                }
+            })
+            .collect();
+        // A deleted change file colours its game path, and stands in for it
+        // when only the change had it.
+        let deleted = git
+            .iter()
+            .filter(|(_, status)| *status == git::Status::Deleted);
+        let deleted = deleted.filter_map(|(path, _)| path.strip_prefix(&prefix));
+        let deleted: Vec<_> = deleted
+            .filter(|rel| !rel.split('/').any(is_hidden))
+            .map(|rel| {
+                let (path, editions) = target.game_path(rel, config);
+                Entry {
+                    editions,
+                    git: git::Status::Deleted,
                     ..Entry::file(path)
                 }
             })
@@ -211,12 +237,18 @@ impl Trees {
                 first.status = Status::Changed;
             }
             first.editions |= change.editions;
+            first.git = first.git.merge(change.git);
             true
         });
-        for entry in &mut game {
-            if entry.status == Status::Added && entry.editions == 0 {
-                entry.editions = all;
+        for ghost in deleted {
+            match game.binary_search_by(|e| tree_order(e, &ghost)) {
+                Ok(i) => game[i].git = game[i].git.merge(ghost.git),
+                Err(i) => game.insert(i, ghost),
             }
+        }
+        // Only what isn't in the target has no editions.
+        for entry in game.iter_mut().filter(|e| e.editions == 0) {
+            entry.editions = all;
         }
 
         Ok(Self {
@@ -370,6 +402,7 @@ struct Entry {
     kind: Kind,
     status: Status,
     editions: u32,
+    git: git::Status,
 }
 
 impl Entry {
@@ -379,8 +412,25 @@ impl Entry {
             kind: Kind::File,
             status: Status::Unchanged,
             editions: 0,
+            git: git::Status::Clean,
         }
     }
+}
+
+/// Gives each of `entries` its state in `git`, and adds an entry for each
+/// file deleted from disk that git still has.
+fn mark(entries: &mut Vec<Entry>, git: &[(String, git::Status)]) {
+    for entry in entries.iter_mut().filter(|e| e.kind == Kind::File) {
+        entry.git = git::find(git, &entry.path);
+    }
+    let deleted = git
+        .iter()
+        .filter(|(_, status)| *status == git::Status::Deleted);
+    let deleted = deleted.filter(|(path, _)| !path.split('/').any(is_hidden));
+    entries.extend(deleted.map(|(path, status)| Entry {
+        git: *status,
+        ..Entry::file(path.clone())
+    }));
 }
 
 /// Appends every file and folder under `dir`, at paths after `rel`, but for
@@ -481,6 +531,7 @@ impl Tree {
             let node = &mut tree.nodes[id.0 as usize];
             node.status = entry.status;
             node.editions = entry.editions;
+            node.git = entry.git;
             if entry.kind == Kind::Folder {
                 open.push((id, last));
             }
@@ -493,10 +544,12 @@ impl Tree {
                 parent,
                 status,
                 editions,
+                git,
                 ..
             } = tree.nodes[i];
             let parent = &mut tree.nodes[parent.0 as usize];
             parent.editions |= editions;
+            parent.git = parent.git.merge(git);
             if status != Status::Unchanged {
                 parent.status = Status::Inside;
             }
@@ -531,6 +584,7 @@ impl Tree {
             kind,
             status: Status::Unchanged,
             editions: 0,
+            git: git::Status::Clean,
         });
         Ok(id)
     }
@@ -686,8 +740,8 @@ mod tests {
     }
 
     /// One line per node shown when `open`, indented by depth: the name, `/`
-    /// for a folder, its status, and its editions' region letters when it
-    /// isn't in all of them.
+    /// for a folder, its status, its editions' region letters when it isn't
+    /// in all of them, and its git state.
     fn show(tree: &Tree, open: impl Fn(NodeId) -> bool) -> Vec<String> {
         let all = tree.editions.iter().fold(0, |all, _| all << 1 | 1);
         tree.rows(open, false)
@@ -712,6 +766,12 @@ mod tests {
                         }
                     }
                 }
+                line.push_str(match node.git {
+                    git::Status::Clean => "",
+                    git::Status::Added => " +",
+                    git::Status::Modified => " ~",
+                    git::Status::Deleted => " -",
+                });
                 line
             })
             .collect()
@@ -821,6 +881,68 @@ mod tests {
                 "  mod.cpp",
                 "arbiter.toml",
             ]
+        );
+    }
+
+    /// Commits everything in `root` to a new repository.
+    fn commit(root: &Path) {
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(["-c", "user.name=t", "-c", "user.email=t"])
+                .args(["-c", "commit.gpgsign=false"])
+                .args(args)
+                .current_dir(root)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "{out:?}");
+        };
+        git(&["init", "--quiet"]);
+        git(&["add", "--all"]);
+        git(&["commit", "--quiet", "--message", "base"]);
+    }
+
+    #[test]
+    fn git_colours_names_and_folders_merge_what_is_inside() {
+        let (dir, config) = mod_project();
+        let root = dir.path();
+        fs::remove_dir_all(root.join(".git")).unwrap();
+        fs::write(root.join(".gitignore"), "base/\n").unwrap();
+        touch(root, &["changes/res/Msgus/zel_00.bmg.toml"]);
+        commit(root);
+        fs::write(root.join("code/mod.cpp"), b"edit").unwrap();
+        touch(root, &["code/new.cpp"]);
+        fs::remove_file(root.join("changes/res/Layout/logo.bti")).unwrap();
+        fs::remove_file(root.join("changes/res/Layout/logo.bti.toml")).unwrap();
+        fs::remove_file(root.join("changes/res/Msgus/zel_50.bmg.toml")).unwrap();
+        fs::remove_file(root.join(".gitignore")).unwrap();
+
+        let trees = Trees::read(root, &config).unwrap();
+        assert_eq!(
+            show(&trees.project, |_| true),
+            [
+                "assets/",
+                "changes/ • -",
+                "  res/ • -",
+                "    Layout/ -",
+                "      logo.bti -",
+                "      logo.bti.toml -",
+                "    Msgus/ • -",
+                "      zel_00.bmg.toml M",
+                "      zel_50.bmg.toml -",
+                "    Particle/ •",
+                "      common.GZ2P01.jpc.patch M",
+                "code/ ~",
+                "  mod.cpp ~",
+                "  new.cpp +",
+                "arbiter.toml",
+            ]
+        );
+        let game = show(&trees.game, |_| true);
+        assert!(game.contains(&"    logo.bti -".to_owned()), "{game:#?}");
+        assert!(game.contains(&"    zel_50.bmg -".to_owned()), "{game:#?}");
+        assert!(
+            game.contains(&"    zel_00.bmg M EP".to_owned()),
+            "{game:#?}"
         );
     }
 

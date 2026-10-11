@@ -17,6 +17,7 @@
 pub mod base;
 pub mod changes;
 pub mod config;
+pub mod git;
 pub mod hash;
 mod log;
 pub mod tree;

@@ -6,9 +6,13 @@ use gui::{
     input::{Button, Cursor},
     ui::{Align, Border, Direction, Element, Size, TextStyle, Ui},
 };
-use project::tree::{Kind, NodeId, Row, Status, Tree, Trees};
+use project::{
+    git,
+    tree::{Kind, NodeId, Row, Status, Tree, Trees},
+};
 
 use crate::assets::{Icon, Icons};
+use crate::theme;
 use crate::workspace::Places;
 
 /// Width of the gutter's bar.
@@ -204,7 +208,8 @@ impl Files {
 
 /// A [`gutter`],
 /// then an icon for its kind, open or not,
-/// then its nodes' names split by `/`, behind a guide for each row it's inside,
+/// then its nodes' names split by `/`, each coloured by its git state, behind
+/// a guide for each row it's inside,
 /// then its [`regions`].
 /// Returns whether it was clicked this pass.
 fn row_ui(ui: &mut Ui, tree: &Tree, row: Row, open: bool, selected: bool, icons: &Icons) -> bool {
@@ -276,7 +281,13 @@ fn row_ui(ui: &mut Ui, tree: &Tree, row: Row, open: bool, selected: bool, icons:
                 if id != row.first {
                     ui.text(theme.ui_text(c.dim), "/");
                 }
-                ui.text(theme.ui_text(c.text), tree.name(id));
+                let color = match tree[id].git {
+                    git::Status::Clean => c.text,
+                    git::Status::Added => theme::GIT_ADDED,
+                    git::Status::Modified => theme::GIT_MODIFIED,
+                    git::Status::Deleted => theme::GIT_DELETED,
+                };
+                ui.text(theme.ui_text(color), tree.name(id));
             }
         });
         regions(ui, tree, node.editions);
