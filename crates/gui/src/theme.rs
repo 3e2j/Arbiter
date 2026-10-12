@@ -20,6 +20,8 @@ pub struct Colors {
     pub page: Color,
     /// Anything raised off the page.
     pub surface: Color,
+    /// Fields, sunk into what they sit on.
+    pub sunken: Color,
     /// Borders and dividers.
     pub line: Color,
     pub text: Color,

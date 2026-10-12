@@ -87,12 +87,12 @@ impl App for Editor {
         let mut workspace = Workspace::new(icons);
         let editor = |title| Panel::Placeholder(Placeholder::new(title, Places::MAIN));
         let tool = |title| Panel::Placeholder(Placeholder::new(title, Places::BANDS));
-        workspace.add(
-            Panel::Showcase(Showcase::new(icons, &mut start.keymap)),
-            Place::Main,
-        );
+        workspace.add(Panel::Showcase(Showcase::new(icons)), Place::Main);
         workspace.add(editor("Messages"), Place::Main);
-        workspace.add(Panel::Files(Files::new(icons)), Place::LeftInnerTop);
+        workspace.add(
+            Panel::Files(Files::new(icons, &mut start.keymap)),
+            Place::LeftInnerTop,
+        );
         workspace.add(tool("Search"), Place::LeftInnerTop);
         workspace.add(tool("Outline"), Place::LeftInnerBottom);
         workspace.add(tool("Inspector"), Place::RightInnerTop);

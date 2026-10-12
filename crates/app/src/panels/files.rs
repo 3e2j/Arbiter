@@ -1,14 +1,17 @@
 //! The open project's files, as the Game or the Project tree, one at a time.
 //! See [`project::tree`].
+//!
+//! Includes Search, Filter, and View options.
 
 use gui::{
-    components::{ListScroll, list},
-    input::{Button, Cursor},
-    ui::{Align, Border, Direction, Element, Size, TextStyle, Ui},
+    components::{ListScroll, TextField, list, text_field},
+    input::{self, Button, Cursor, Modifiers},
+    keymap::{Action, Chord, Command, Context, Keymap},
+    ui::{Align, Anchor, Border, Direction, Element, Size, TextStyle, Ui},
 };
 use project::{
     git,
-    tree::{Kind, NodeId, Row, Status, Tree, Trees},
+    tree::{Filter, Key, Kind, Narrowed, NodeId, Order, Row, Status, Tree, Trees},
 };
 
 use crate::assets::{Icon, Icons};
@@ -17,9 +20,16 @@ use crate::workspace::Places;
 
 /// Width of the gutter's bar.
 const BAR: f32 = 3.;
-/// How strong a folder's bar is beside a file's.
-// Chosen this alpha so the color is noticeably different
+/// How strong a folder's gutter bar is beside a file's.
+// Low alpha so the color is noticeably different
 const INSIDE: u8 = 0x39;
+/// Width of the Filter and View popovers.
+const POPOVER: f32 = 220.;
+
+/// While the panel is active, see [`Files::active`].
+const FILES: Context = Context("files");
+/// Focuses the search, Ctrl+F by default.
+const SEARCH: Action = Action::Command(Command("files.search"));
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Tab {
@@ -39,6 +49,14 @@ impl Tab {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Popover {
+    /// Which rows show.
+    Filter,
+    /// Their order, and how they're shown.
+    View,
+}
+
 /// The open folders, a bit per node by [`NodeId::index`].
 #[derive(Default)]
 struct Open(Vec<u64>);
@@ -47,20 +65,43 @@ struct Open(Vec<u64>);
 #[derive(Default)]
 struct View {
     open: Open,
+    /// Folders clicked while searching or filtering, which flip how the
+    /// results show them. Kept apart from `open`, and emptied when the results
+    /// change.
+    flipped: Open,
+    narrowed: Narrowed,
     selected: Option<NodeId>,
     scroll: ListScroll,
     /// The lines shown, rebuilt when `stale`.
     rows: Vec<Row>,
+    /// Something changed what's shown, so `rows` are rebuilt next pass.
     stale: bool,
+}
+
+/// An open project's trees, and what each tab remembers of its own.
+struct Opened {
+    trees: Trees,
+    /// By [`Tab`].
+    views: [View; Tab::ALL.len()],
 }
 
 pub struct Files {
     icons: Icons,
     /// `None` until a project is open.
-    trees: Option<Box<Trees>>,
+    opened: Option<Box<Opened>>,
     tab: Tab,
-    /// By [`Tab`].
-    views: [View; Tab::ALL.len()],
+    search: TextField,
+    /// The Game tree's, as everything in the Project tree is a change.
+    filter: Filter,
+    /// Folders holding only one folder share its line.
+    compact: bool,
+    /// Each file's edition letters, when it isn't in every edition.
+    letters: bool,
+    /// Both trees'.
+    order: Order,
+    popover: Option<Popover>,
+    /// The last press landed in the panel, so its [`FILES`] keys apply.
+    active: bool,
 }
 
 impl Open {
@@ -80,6 +121,24 @@ impl Open {
             *word ^= 1 << (i % 64);
         }
     }
+
+    fn clear(&mut self) {
+        self.0.clear();
+    }
+
+    /// Itself with each node moved to its id in `map`, by old
+    /// [`NodeId::index`].
+    fn remapped(&self, map: &[NodeId]) -> Self {
+        let mut open = Self::default();
+        let words = map.chunks(64).zip(&self.0);
+        for (ids, &word) in words {
+            let set = ids.iter().zip(0..).filter(|&(_, bit)| word >> bit & 1 != 0);
+            for (&new, _) in set {
+                open.toggle(new);
+            }
+        }
+        open
+    }
 }
 
 impl View {
@@ -89,61 +148,303 @@ impl View {
             ..Self::default()
         }
     }
+
+    /// Moves what it remembers of each node to its id in `map`, by old
+    /// [`NodeId::index`], as [`Tree::sort`] returns.
+    fn remap(&mut self, map: &[NodeId]) {
+        self.open = self.open.remapped(map);
+        self.flipped = self.flipped.remapped(map);
+        self.selected = self.selected.and_then(|id| map.get(id.index()).copied());
+        self.stale = true;
+    }
+
+    /// Whether `id` shows open, by `narrowed` while `narrowing`.
+    fn is_open(&self, id: NodeId, narrowing: bool) -> bool {
+        if narrowing {
+            self.narrowed.revealed(id) != self.flipped.has(id)
+        } else {
+            self.open.has(id)
+        }
+    }
 }
 
 impl Files {
     pub const TITLE: &str = "Files";
     pub const PLACES: Places = Places::BANDS;
 
-    pub fn new(icons: Icons) -> Self {
+    /// Binds Ctrl+F (Command+F on macOS) in `keymap` to focus the search.
+    pub fn new(icons: Icons, keymap: &mut Keymap) -> Self {
+        let find = Chord::new(input::Key::Char('f'), Modifiers::COMMAND);
+        keymap.bind(find, FILES, Some(SEARCH));
         Self {
             icons,
-            trees: None,
+            opened: None,
             tab: Tab::Project,
-            views: [View::new(), View::new()],
+            search: TextField::default(),
+            filter: Filter::default(),
+            compact: true,
+            letters: true,
+            order: Order::default(),
+            popover: None,
+            active: false,
         }
     }
 
     /// Shows `trees` in place of what was shown, every folder closed.
-    pub fn set(&mut self, trees: Trees) {
-        self.trees = Some(Box::new(trees));
-        self.views = [View::new(), View::new()];
+    pub fn set(&mut self, mut trees: Trees) {
+        if self.order != Order::default() {
+            trees.game.sort(self.order);
+            trees.project.sort(self.order);
+        }
+        let views = [View::new(), View::new()];
+        self.opened = Some(Box::new(Opened { trees, views }));
+        self.filter.editions = 0;
     }
 
+    /// The filter as `tab`'s tree takes it.
+    fn filter(&self, tab: Tab) -> Filter {
+        match tab {
+            Tab::Game => self.filter,
+            Tab::Project => Filter::default(),
+        }
+    }
+
+    /// Sorts both trees by `order`, keeping what each tab has open.
+    fn sort(&mut self, order: Order) {
+        self.order = order;
+        let Some(opened) = self.opened.as_deref_mut() else {
+            return;
+        };
+        let [project, game] = &mut opened.views;
+        project.remap(&opened.trees.project.sort(order));
+        game.remap(&opened.trees.game.sort(order));
+    }
+
+    /// Rebuilds every tab's rows.
+    fn restale(&mut self) {
+        for view in self.opened.iter_mut().flat_map(|opened| &mut opened.views) {
+            view.stale = true;
+        }
+    }
+
+    /// Rebuilds every tab's rows from the top for a new search or filter.
+    fn renarrow(&mut self) {
+        for view in self.opened.iter_mut().flat_map(|opened| &mut opened.views) {
+            view.flipped.clear();
+            view.scroll = ListScroll::TOP;
+            view.stale = true;
+        }
+    }
+
+    /// A press anywhere but a popover or its button closes it.
     pub fn ui(&mut self, ui: &mut Ui) {
+        if ui.input().pressed(Button::Left) {
+            self.active = ui.hovered();
+        }
         self.tabs(ui);
-        let Some(trees) = &self.trees else {
+        if self.opened.is_none() {
             return empty(ui, "No project open");
+        }
+        let over = self.toolbar(ui);
+        if !over && ui.input().pressed(Button::Left) {
+            self.popover = None;
+        }
+        let query = self.search.text.trim();
+        let filter = self.filter(self.tab);
+        let narrowing = !query.is_empty() || !filter.is_empty();
+        let Some(opened) = self.opened.as_deref_mut() else {
+            return;
         };
         let tree = match self.tab {
-            Tab::Game => &trees.game,
-            Tab::Project => &trees.project,
+            Tab::Game => &opened.trees.game,
+            Tab::Project => &opened.trees.project,
         };
-        let view = &mut self.views[self.tab as usize];
+        let view = &mut opened.views[self.tab as usize];
         if tree.is_empty() {
             return empty(ui, "Nothing here yet");
         }
         if view.stale {
-            view.rows.clear();
-            view.rows.extend(tree.rows(|id| view.open.has(id), true));
+            if narrowing {
+                tree.narrow(query, filter, &mut view.narrowed);
+            }
+            let mut rows = std::mem::take(&mut view.rows);
+            rows.clear();
+            rows.extend(tree.rows(
+                |id| view.is_open(id, narrowing),
+                |id| !narrowing || view.narrowed.kept(id),
+                self.compact,
+            ));
+            view.rows = rows;
             view.stale = false;
+        }
+        if view.rows.is_empty() {
+            return empty(ui, "No matches");
         }
         let height = ui.theme().size.row;
         let icons = &self.icons;
+        let columns = Columns {
+            gutter: self.tab == Tab::Game,
+            letters: self.letters,
+        };
         let mut clicked = None;
-        list(ui, &mut view.scroll, &view.rows, height, |ui, &row| {
-            let open = view.open.has(row.last);
+        let mut scroll = view.scroll;
+        list(ui, &mut scroll, &view.rows, height, |ui, &row| {
+            let open = view.is_open(row.last, narrowing);
             let selected = view.selected == Some(row.last);
-            if row_ui(ui, tree, row, open, selected, icons) {
+            if row_ui(ui, tree, row, open, selected, columns, icons) {
                 clicked = Some(row.last);
             }
         });
+        view.scroll = scroll;
         if let Some(id) = clicked {
             view.selected = Some(id);
             if tree[id].kind == Kind::Folder {
-                view.open.toggle(id);
+                if narrowing {
+                    view.flipped.toggle(id);
+                } else {
+                    view.open.toggle(id);
+                }
                 view.stale = true;
             }
+        }
+    }
+
+    /// The search across, then Filter on the Game tab, then View. Returns
+    /// whether the pointer is over either or its popover.
+    fn toolbar(&mut self, ui: &mut Ui) -> bool {
+        let input = ui.input();
+        let keymap = ui.keymap();
+        let focus = input
+            .keys()
+            .iter()
+            .any(|&press| keymap.resolve(press, &[FILES]) == Some(SEARCH));
+        if self.active && focus && !ui.typing() {
+            self.search.focus = true;
+        }
+        let s = ui.theme().size;
+        let strip = Element {
+            direction: Direction::LeftToRight,
+            size: [Size::Grow, Size::Fit],
+            padding: [s.gap / 2.; 4],
+            gap: s.gap / 2.,
+            align: [Align::Start, Align::Center],
+            ..Element::DEFAULT
+        };
+        ui.element(strip, |ui| {
+            let icon = Some(self.icons.get(Icon::Search));
+            if text_field(ui, &mut self.search, icon, "Search") {
+                self.renarrow();
+            }
+            let mut over = false;
+            if self.tab == Tab::Game {
+                let set = !self.filter.is_empty();
+                over |= self.popover_button(ui, Popover::Filter, Icon::Filter, set);
+            }
+            over | self.popover_button(ui, Popover::View, Icon::View, false)
+        })
+    }
+
+    /// A button with `icon` that opens `popover` under the right end of the
+    /// box `ui` has open, lit while it's open or while `set` says what it
+    /// holds narrows the tree. Returns whether the
+    /// pointer is over either.
+    fn popover_button(&mut self, ui: &mut Ui, popover: Popover, icon: Icon, set: bool) -> bool {
+        let open = self.popover == Some(popover);
+        let (clicked, mut over) = icon_button(ui, &self.icons, icon, open || set);
+        if clicked {
+            self.popover = (!open).then_some(popover);
+        }
+        if self.popover == Some(popover) {
+            over |= self.popover_ui(ui, popover);
+        }
+        over
+    }
+
+    /// `popover` hanging under the right end of the box `ui` has open.
+    /// Returns whether the pointer is over it.
+    fn popover_ui(&mut self, ui: &mut Ui, popover: Popover) -> bool {
+        let theme = ui.theme();
+        let (c, s) = (theme.color, theme.size);
+        let element = Element {
+            size: [Size::Fixed(POPOVER), Size::Fit],
+            padding: [s.gap / 2.; 4],
+            background: Some(c.surface),
+            border: Some(Border {
+                width: s.line,
+                color: c.line,
+            }),
+            radius: [s.radius; 4],
+            float: Some(Anchor::Parent {
+                parent: [Align::End; 2],
+                own: [Align::End, Align::Start],
+                offset: [-s.gap / 2., 0.],
+                clipped: false,
+            }),
+            ..Element::DEFAULT
+        };
+        ui.element(element, |ui| {
+            match popover {
+                Popover::Filter => self.filter_ui(ui),
+                Popover::View => self.view_ui(ui),
+            }
+            ui.hovered()
+        })
+    }
+
+    /// What the mod changed and each edition, ticked to show only what it
+    /// has that another doesn't.
+    fn filter_ui(&mut self, ui: &mut Ui) {
+        let icons = &self.icons;
+        let mut filter = self.filter;
+        heading(ui, "Show only");
+        if check(ui, icons, "Changed", filter.modded) {
+            filter.modded = !filter.modded;
+        }
+        let editions = self
+            .opened
+            .as_ref()
+            .map_or(&[][..], |opened| &opened.trees.game.editions);
+        if editions.len() > 1 {
+            heading(ui, "Differing in");
+            for (bit, id) in (0..).zip(editions) {
+                if check(ui, icons, id, filter.editions >> bit & 1 != 0) {
+                    filter.editions ^= 1 << bit;
+                }
+            }
+        }
+        if filter != self.filter {
+            self.filter = filter;
+            self.renarrow();
+        }
+    }
+
+    /// Each [`Key`], then each direction, the one in use ticked. Then how
+    /// rows are shown.
+    fn view_ui(&mut self, ui: &mut Ui) {
+        let icons = self.icons;
+        let mut order = self.order;
+        heading(ui, "Sort by");
+        for (key, label) in [(Key::Name, "Name"), (Key::Type, "Type")] {
+            if check(ui, &icons, label, order.key == key) {
+                order.key = key;
+            }
+        }
+        heading(ui, "Order");
+        for (descending, label) in [(false, "Ascending"), (true, "Descending")] {
+            if check(ui, &icons, label, order.descending == descending) {
+                order.descending = descending;
+            }
+        }
+        if order != self.order {
+            self.sort(order);
+        }
+        heading(ui, "Display");
+        if check(ui, &icons, "Compact folders", self.compact) {
+            self.compact = !self.compact;
+            self.restale();
+        }
+        if check(ui, &icons, "Edition letters", self.letters) {
+            self.letters = !self.letters;
         }
     }
 
@@ -155,7 +456,8 @@ impl Files {
         let strip = Element {
             direction: Direction::LeftToRight,
             size: [Size::Grow, Size::Fit],
-            padding: [s.gap, 0., s.gap, 0.],
+            padding: [s.gap, 0., s.gap / 2., 0.],
+            align: [Align::Start, Align::Center],
             ..Element::DEFAULT
         };
         let tab = Element {
@@ -196,8 +498,9 @@ impl Files {
                         ui.element(underline, |_| ());
                         ui.clicked(Button::Left)
                     });
-                    if clicked {
+                    if clicked && each != self.tab {
                         self.tab = each;
+                        self.popover = None;
                     }
                 }
             });
@@ -206,19 +509,38 @@ impl Files {
     }
 }
 
-/// A [`gutter`],
+/// Which of a row's optional parts it shows.
+#[derive(Clone, Copy)]
+struct Columns {
+    /// A [`gutter`], which in the Project tree would mark every file.
+    gutter: bool,
+    /// Its [`regions`].
+    letters: bool,
+}
+
+/// With [`Columns::gutter`] a [`gutter`],
 /// then an icon for its kind, open or not,
 /// then its nodes' names split by `/`, each coloured by its git state, behind
 /// a guide for each row it's inside,
-/// then its [`regions`].
+/// then with [`Columns::letters`] its [`regions`].
 /// Returns whether it was clicked this pass.
-fn row_ui(ui: &mut Ui, tree: &Tree, row: Row, open: bool, selected: bool, icons: &Icons) -> bool {
+fn row_ui(
+    ui: &mut Ui,
+    tree: &Tree,
+    row: Row,
+    open: bool,
+    selected: bool,
+    columns: Columns,
+    icons: &Icons,
+) -> bool {
     let theme = ui.theme();
     let (c, s) = (theme.color, theme.size);
+    // The gutter stands in for the left padding when there's one.
+    let left = if columns.gutter { 0. } else { s.gap / 2. };
     let element = Element {
         direction: Direction::LeftToRight,
         size: [Size::Grow, Size::Fixed(s.row)],
-        padding: [0., 0., s.gap / 2., 0.],
+        padding: [left, 0., s.gap / 2., 0.],
         clip: true,
         cursor: Some(Cursor::Pointer),
         ..Element::DEFAULT
@@ -253,11 +575,12 @@ fn row_ui(ui: &mut Ui, tree: &Tree, row: Row, open: bool, selected: bool, icons:
         } else {
             ui.hovered().then_some(c.hover)
         };
-        gutter(ui, node.status);
-        let first = tree[row.first].parent.index() + 1 == row.first.index();
+        if columns.gutter {
+            gutter(ui, node.status);
+        }
         for level in 1..=row.depth {
             let mut guide = guide;
-            if first && level == row.depth {
+            if row.leads && level == row.depth {
                 guide.padding[1] = inset;
             }
             if level > row.depth - row.ends {
@@ -266,9 +589,7 @@ fn row_ui(ui: &mut Ui, tree: &Tree, row: Row, open: bool, selected: bool, icons:
             ui.element(guide, |ui| ui.element(line, |_| ()));
         }
         ui.element(content, |ui| {
-            let arc = tree.name(row.last).rsplit_once('.');
-            let arc = arc.is_some_and(|(_, ext)| ext.eq_ignore_ascii_case("arc"));
-            let icon = match (node.kind, arc, open) {
+            let icon = match (node.kind, tree.is_archive(row.last), open) {
                 (Kind::Folder, true, true) => Icon::ContainerOpen,
                 (Kind::Folder, true, false) => Icon::Container,
                 (Kind::Folder, false, true) => Icon::FolderOpen,
@@ -290,7 +611,76 @@ fn row_ui(ui: &mut Ui, tree: &Tree, row: Row, open: bool, selected: bool, icons:
                 ui.text(theme.ui_text(color), tree.name(id));
             }
         });
-        regions(ui, tree, node.editions);
+        if columns.letters {
+            regions(ui, tree, node.editions);
+        }
+        ui.clicked(Button::Left)
+    })
+}
+
+/// A square button showing `icon`, in the accent while `lit`. Returns
+/// whether it was clicked this pass, and whether the pointer is over it.
+fn icon_button(ui: &mut Ui, icons: &Icons, icon: Icon, lit: bool) -> (bool, bool) {
+    let theme = ui.theme();
+    let (c, s) = (theme.color, theme.size);
+    let element = Element {
+        size: [Size::Fixed(s.row); 2],
+        align: [Align::Center; 2],
+        radius: [s.radius; 4],
+        cursor: Some(Cursor::Pointer),
+        ..Element::DEFAULT
+    };
+    ui.element(element, |ui| {
+        let hovered = ui.hovered();
+        ui.style().background = hovered.then_some(c.hover);
+        let color = if lit { c.accent } else { c.dim };
+        ui.icon(icons.get(icon), s.icon, color);
+        (ui.clicked(Button::Left), hovered)
+    })
+}
+
+/// A dim line naming the checks below it in a popover.
+fn heading(ui: &mut Ui, text: &str) {
+    let theme = ui.theme();
+    let s = theme.size;
+    let element = Element {
+        size: [Size::Grow, Size::Fixed(s.row)],
+        padding: [s.icon_gap, 0., s.icon_gap, 0.],
+        align: [Align::Start, Align::Center],
+        ..Element::DEFAULT
+    };
+    ui.element(element, |ui| {
+        ui.text(theme.ui_text(theme.color.dim), text);
+    });
+}
+
+/// A line in a popover: a tick while `on`, then `label`. Returns whether it
+/// was clicked this pass.
+fn check(ui: &mut Ui, icons: &Icons, label: &str, on: bool) -> bool {
+    let theme = ui.theme();
+    let (c, s) = (theme.color, theme.size);
+    let element = Element {
+        direction: Direction::LeftToRight,
+        size: [Size::Grow, Size::Fixed(s.row)],
+        padding: [s.icon_gap, 0., s.icon_gap, 0.],
+        gap: s.icon_gap,
+        align: [Align::Start, Align::Center],
+        radius: [s.radius; 4],
+        cursor: Some(Cursor::Pointer),
+        ..Element::DEFAULT
+    };
+    let tick = Element {
+        size: [Size::Fixed(s.icon); 2],
+        ..Element::DEFAULT
+    };
+    ui.element(element, |ui| {
+        ui.style().background = ui.hovered().then_some(c.hover);
+        ui.element(tick, |ui| {
+            if on {
+                ui.icon(icons.get(Icon::Check), s.icon, c.accent);
+            }
+        });
+        ui.text(theme.ui_text(c.text), label);
         ui.clicked(Button::Left)
     })
 }
@@ -340,8 +730,7 @@ fn gutter(ui: &mut Ui, status: Status) {
 /// that's every edition. They sit in a column at the right as wide as every
 /// edition's region, from its left, so they line up from row to row.
 fn regions(ui: &mut Ui, tree: &Tree, editions: u32) {
-    let all = tree.editions.iter().fold(0u32, |all, _| all << 1 | 1);
-    if editions == 0 || editions == all {
+    if editions == 0 || editions == tree.every_edition() {
         return;
     }
     let theme = ui.theme();

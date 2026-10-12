@@ -100,10 +100,10 @@ impl TextField {
     }
 }
 
-/// Fills its parent across, with `icon` before the text, and `placeholder`
-/// dimmed while it's empty. Clicking it takes the keyboard and puts the
-/// caret there, dragging or Shift clicking selects, and Enter or Escape let
-/// go. Returns whether the text changed this pass.
+/// Fills its parent across, sunken, with `icon` before the text,
+/// and `placeholder` dimmed while it's empty. Clicking it takes the
+/// keyboard and puts the caret there, dragging or Shift clicking selects,
+/// and Enter or Escape let go. Returns whether the text changed this pass.
 #[track_caller]
 pub fn text_field(
     ui: &mut Ui,
@@ -119,6 +119,7 @@ pub fn text_field(
         padding: [s.gap / 2., 0., s.gap / 2., 0.],
         gap: s.icon_gap,
         align: [Align::Start, Align::Center],
+        background: Some(c.sunken),
         border: Some(Border {
             width: s.line,
             color: c.line,

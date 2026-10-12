@@ -7,15 +7,10 @@
 use gui::{
     canvas::{Color, Vertex},
     components::{ListScroll, Row, TextField, button, icon_button, list, row, text_field},
-    input::{Key, Modifiers},
-    keymap::{Action, Chord, Command, Context, Keymap},
     ui::{Align, Direction, Element, Size, TextStyle, Ui},
 };
 
 use crate::assets::{Icon, Icons};
-
-/// Focuses the field, `/` by default.
-const FOCUS: Action = Action::Command(Command("showcase.focus"));
 
 pub struct Showcase {
     icons: Icons,
@@ -31,10 +26,7 @@ pub struct Showcase {
 impl Showcase {
     pub const TITLE: &str = "Showcase";
 
-    /// Binds `/` in `keymap` to focus the field.
-    pub fn new(icons: Icons, keymap: &mut Keymap) -> Self {
-        let slash = Chord::new(Key::Char('/'), Modifiers::default());
-        keymap.bind(slash, Context::GLOBAL, Some(FOCUS));
+    pub fn new(icons: Icons) -> Self {
         let mut showcase = Self {
             icons,
             selected: None,
@@ -117,22 +109,13 @@ impl Showcase {
                 .map_or("No icon picked", |_| "An icon is picked");
             ui.text(theme.ui_text(theme.color.dim), picked);
         });
-        let input = ui.input();
-        let keymap = ui.keymap();
-        let focus = input
-            .keys()
-            .iter()
-            .any(|&press| keymap.resolve(press, &[Context::GLOBAL]) == Some(FOCUS));
-        if focus && !ui.typing() {
-            self.field.focus = true;
-        }
         let field = Element {
             size: [Size::Fixed(320.), Size::Fit],
             ..Element::DEFAULT
         };
         ui.element(field, |ui| {
             let search = Some(self.icons.get(Icon::Search));
-            text_field(ui, &mut self.field, search, "Type here, or press /");
+            text_field(ui, &mut self.field, search, "Type here");
         });
         let icon = self.icons.get(Icon::Message);
         list(

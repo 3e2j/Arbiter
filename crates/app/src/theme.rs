@@ -8,6 +8,7 @@ use gui::ui::{Colors, Fonts, Sizes, Theme};
 const COLORS: Colors = Colors {
     page: Color::hex(0x0e_0f_11),
     surface: Color::hex(0x17_18_1b),
+    sunken: Color::hex(0x0e_0f_11),
     line: Color::hex(0x2a_2c_31),
     text: Color::hex(0xe6_e6_e4),
     dim: Color::hex(0x9a_9b_98),

@@ -60,6 +60,7 @@ pub enum Icon {
     ContainerOpen,
     Disc,
     File,
+    Filter,
     Folder,
     FolderOpen,
     Hammer,
@@ -69,10 +70,11 @@ pub enum Icon {
     Plus,
     Search,
     Settings,
+    View,
 }
 
 impl Icon {
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 22] = [
         Self::Alert,
         Self::Check,
         Self::ChevronDown,
@@ -84,6 +86,7 @@ impl Icon {
         Self::ContainerOpen,
         Self::Disc,
         Self::File,
+        Self::Filter,
         Self::Folder,
         Self::FolderOpen,
         Self::Hammer,
@@ -93,6 +96,7 @@ impl Icon {
         Self::Plus,
         Self::Search,
         Self::Settings,
+        Self::View,
     ];
 
     /// Its name, for errors, and its SVG.
@@ -122,6 +126,7 @@ impl Icon {
             Self::ContainerOpen => tabler_edited!("package-open"),
             Self::Disc => tabler!("disc"),
             Self::File => tabler!("file-text"),
+            Self::Filter => tabler!("filter"),
             Self::Folder => tabler!("folder"),
             Self::FolderOpen => tabler!("folder-open"),
             Self::Hammer => tabler!("hammer"),
@@ -131,6 +136,7 @@ impl Icon {
             Self::Plus => tabler!("plus"),
             Self::Search => tabler!("search"),
             Self::Settings => tabler!("settings"),
+            Self::View => tabler!("adjustments-horizontal"),
         }
     }
 }
