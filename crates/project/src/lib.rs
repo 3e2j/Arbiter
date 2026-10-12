@@ -20,7 +20,6 @@ pub mod config;
 pub mod git;
 pub mod hash;
 mod log;
-mod noise;
 pub mod tree;
 
 use std::{
@@ -38,7 +37,6 @@ use diag::Diagnostics;
 pub use game::edition::{Game, Verdict};
 use hash::Hash;
 pub use log::{Log, LogWriter};
-pub use noise::is_noise;
 
 /// Every directory a mod project owns.
 const MOD_DIRS: &[&str] = &[

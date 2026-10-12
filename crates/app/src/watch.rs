@@ -4,8 +4,8 @@
 //! disk is quiet for [`QUIET`], so a save written to a temp file and renamed
 //! over the real one, or a tool writing many files, is one batch. A stream
 //! that never goes quiet, such as a big copy, still sends one every
-//! [`LONGEST`]. Noise is dropped there, see [`project::is_noise`], and what's
-//! left is for each reader to judge.
+//! [`LONGEST`]. Paths the owner doesn't care about are dropped there, so a
+//! batch of only those never wakes the window.
 //!
 //! The thread sets up the watch too, since that walks every folder. Its first
 //! batch is a rescan, once watching or failing to, so a read started for it
@@ -54,18 +54,24 @@ pub struct Batch {
 }
 
 impl Watch {
-    /// Watches everything under `root`, and wakes the window with each batch.
+    /// Watches everything under `root`, and wakes the window with each batch
+    /// of the paths that `matters`, relative to `root` with `/` between
+    /// components.
     ///
     /// # Errors
     ///
     /// When the thread can't start.
-    pub fn new(root: PathBuf, wake: Wake) -> io::Result<Self> {
+    pub fn new(
+        root: PathBuf,
+        matters: impl Fn(&str) -> bool + Send + 'static,
+        wake: Wake,
+    ) -> io::Result<Self> {
         let (stop, got) = mpsc::channel();
         let (out, batches) = mpsc::channel();
         let events = stop.clone();
         thread::Builder::new()
             .name("watch".to_owned())
-            .spawn(move || run(&root, events, &got, &out, &wake))?;
+            .spawn(move || run(&root, &matters, events, &got, &out, &wake))?;
         Ok(Self { stop, batches })
     }
 
@@ -89,7 +95,14 @@ impl Drop for Watch {
 }
 
 /// Until the watch is dropped.
-fn run(root: &Path, events: Sender<Got>, got: &Receiver<Got>, out: &Sender<Batch>, wake: &Wake) {
+fn run(
+    root: &Path,
+    matters: &dyn Fn(&str) -> bool,
+    events: Sender<Got>,
+    got: &Receiver<Got>,
+    out: &Sender<Batch>,
+    wake: &Wake,
+) {
     let watching = start(root, events);
     let first = Batch {
         paths: Vec::new(),
@@ -101,7 +114,7 @@ fn run(root: &Path, events: Sender<Got>, got: &Receiver<Got>, out: &Sender<Batch
     wake.wake();
     match watching {
         // Held until the thread ends.
-        Ok((root, _watcher)) => batch(&root, got, out, wake),
+        Ok((root, _watcher)) => batch(&root, matters, got, out, wake),
         Err(err) => tracing::warn!("can't watch the project, so its files won't refresh: {err}"),
     }
 }
@@ -118,15 +131,21 @@ fn start(root: &Path, events: Sender<Got>) -> Result<(PathBuf, RecommendedWatche
     Ok((root, watcher))
 }
 
-fn batch(root: &Path, got: &Receiver<Got>, out: &Sender<Batch>, wake: &Wake) {
+fn batch(
+    root: &Path,
+    matters: &dyn Fn(&str) -> bool,
+    got: &Receiver<Got>,
+    out: &Sender<Batch>,
+    wake: &Wake,
+) {
     while let Ok(Got::Event(event)) = got.recv() {
         let due = Instant::now() + LONGEST;
         let mut batch = Batch::default();
-        batch.add(root, event);
+        batch.add(root, matters, event);
         loop {
             let wait = QUIET.min(due.saturating_duration_since(Instant::now()));
             match got.recv_timeout(wait) {
-                Ok(Got::Event(event)) => batch.add(root, event),
+                Ok(Got::Event(event)) => batch.add(root, matters, event),
                 Ok(Got::Stop) | Err(RecvTimeoutError::Disconnected) => return,
                 Err(RecvTimeoutError::Timeout) => break,
             }
@@ -144,7 +163,7 @@ fn batch(root: &Path, got: &Receiver<Got>, out: &Sender<Batch>, wake: &Wake) {
 }
 
 impl Batch {
-    fn add(&mut self, root: &Path, event: notify::Result<Event>) {
+    fn add(&mut self, root: &Path, matters: &dyn Fn(&str) -> bool, event: notify::Result<Event>) {
         let event = match event {
             Ok(event) => event,
             Err(err) => {
@@ -162,7 +181,7 @@ impl Batch {
             let Some(path) = relative(root, path) else {
                 continue;
             };
-            if !path.is_empty() && !project::is_noise(&path) {
+            if !path.is_empty() && matters(&path) {
                 self.paths.push(path);
             }
         }
@@ -191,7 +210,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_save_is_one_batch_without_the_noise_beside_it() {
+    fn a_save_is_one_batch_without_what_doesnt_matter() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         fs::create_dir_all(root.join(".arbiter/logs")).unwrap();
@@ -199,7 +218,8 @@ mod tests {
         fs::create_dir_all(root.join("code")).unwrap();
         let (send, woken) = mpsc::channel();
         let wake = Wake::new(move || send.send(()).unwrap());
-        let watch = Watch::new(root.to_owned(), wake).unwrap();
+        let matters = |path: &str| !path.starts_with('.');
+        let watch = Watch::new(root.to_owned(), matters, wake).unwrap();
         woken.recv_timeout(Duration::from_secs(5)).unwrap();
         let first = watch.take().unwrap();
         assert!(first.rescan && first.paths.is_empty());

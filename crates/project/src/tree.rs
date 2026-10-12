@@ -500,6 +500,9 @@ impl Target {
 /// A dotfile or dot-folder, such as `.git` or an archive's `.rarc.toml`,
 /// left out of both trees with everything inside it.
 // TODO: a toggle to show them.
+// Even then, keep `.git/` and `.arbiter/`'s logs and cache out of both `walk`
+// and `Project::trees_read`, through one list, or every log line and git object
+// written reads the trees again.
 fn is_hidden(name: &str) -> bool {
     name.starts_with('.')
 }
@@ -1635,6 +1638,8 @@ mod tests {
             ".git/index",
             ".git/HEAD",
             ".git/refs/heads/main",
+            ".git/packed-refs",
+            ".git/info/exclude",
         ] {
             assert!(mod_project.trees_read(path), "{path}");
         }

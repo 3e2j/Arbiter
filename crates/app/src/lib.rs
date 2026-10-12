@@ -48,7 +48,6 @@ pub fn run(log: Arc<Log>, project: Option<Project>) -> Result<(), Error> {
 struct Editor {
     workspace: Workspace,
     log: Arc<Log>,
-    project: Option<Arc<Project>>,
     /// The open project's, unless it couldn't be watched.
     watch: Option<Watch>,
     /// The open project's, unless its thread couldn't start.
@@ -72,12 +71,12 @@ impl Editor {
                 None
             }
         };
-        self.project = Some(project);
         if let Some(files) = self.files() {
             files.close();
         }
         // Its first batch asks for the first read, once watching.
-        self.watch = match Watch::new(root, self.wake.clone()) {
+        let matters = move |path: &str| project.trees_read(path);
+        self.watch = match Watch::new(root, matters, self.wake.clone()) {
             Ok(watch) => Some(watch),
             Err(err) => {
                 tracing::warn!("can't start the watch, so the files won't refresh: {err}");
@@ -129,7 +128,6 @@ impl App for Editor {
         let mut app = Self {
             workspace,
             log,
-            project: None,
             watch: None,
             reader: None,
             wake: start.wake.clone(),
@@ -141,10 +139,7 @@ impl App for Editor {
     }
 
     fn input(&mut self, input: &Input) {
-        let batch = self.watch.as_ref().and_then(Watch::take);
-        if let (Some(batch), Some(project)) = (batch, &self.project)
-            && (batch.rescan || batch.paths.iter().any(|path| project.trees_read(path)))
-        {
+        if self.watch.as_ref().and_then(Watch::take).is_some() {
             self.read_trees();
         }
         // Catches what the watch can't see, such as a repo above the root.
