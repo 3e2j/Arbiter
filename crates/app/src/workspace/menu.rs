@@ -170,10 +170,7 @@ fn menu_ui(ui: &mut Ui, menu: Menu, docks: &[Dock; Place::COUNT], window: Rect) 
         padding: [TAB_PADDING; 4],
         gap: TAB_PADDING,
         background: Some(color.surface),
-        border: Some(Border {
-            width: size.line,
-            color: color.line,
-        }),
+        border: Some(theme.border()),
         radius: [dock_radius(size); 4],
         float: Some(Anchor::At(at)),
         ..Element::DEFAULT

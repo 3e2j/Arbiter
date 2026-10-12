@@ -22,7 +22,7 @@ mod place;
 
 use gui::{
     input::{Input, Key},
-    ui::{Border, Direction, Element, Size, Ui},
+    ui::{Direction, Element, Size, Ui},
 };
 
 use crate::panels::Panel;
@@ -206,10 +206,7 @@ impl Workspace {
         let element = Element {
             size,
             background: Some(theme.color.surface),
-            border: Some(Border {
-                width: theme.size.line,
-                color: theme.color.line,
-            }),
+            border: Some(theme.border()),
             radius: [dock_radius(theme.size); 4],
             clip: true,
             ..Element::column().padded(theme.size.line)

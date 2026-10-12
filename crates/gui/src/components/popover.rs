@@ -4,7 +4,7 @@
 //! If picking something should close it, use a menu instead.
 
 use crate::input::Button;
-use crate::ui::{Align, Anchor, Border, Element, Size, Ui};
+use crate::ui::{Align, Anchor, Element, Size, Ui};
 
 /// A raised box `width` wide under the right end of the open box. Returns
 /// what `body` returned, and whether a press landed outside it.
@@ -21,10 +21,7 @@ pub fn popover<R>(ui: &mut Ui, width: f32, body: impl FnOnce(&mut Ui) -> R) -> (
         size: [Size::Fixed(width), Size::Fit],
         padding: [s.gap / 2.; 4],
         background: Some(c.surface),
-        border: Some(Border {
-            width: s.line,
-            color: c.line,
-        }),
+        border: Some(theme.border()),
         radius: [s.radius; 4],
         float: Some(Anchor::Parent {
             parent: [Align::End; 2],

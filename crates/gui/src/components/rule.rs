@@ -1,0 +1,20 @@
+//! A line between what comes before it and after.
+
+use crate::ui::{Direction, Element, Size, Ui};
+
+/// A line across the open box, as thick as the theme's lines.
+#[track_caller]
+pub fn rule(ui: &mut Ui) {
+    let theme = ui.theme();
+    let line = Size::Fixed(theme.size.line);
+    let size = match ui.style().direction {
+        Direction::LeftToRight => [line, Size::Grow],
+        Direction::TopToBottom => [Size::Grow, line],
+    };
+    let element = Element {
+        size,
+        background: Some(theme.color.line),
+        ..Element::DEFAULT
+    };
+    ui.element(element, |_| ());
+}

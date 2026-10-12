@@ -5,7 +5,7 @@ use crate::clipboard::Clipboard;
 use crate::edit::{self, Edit, Lines, Selection};
 use crate::input::{Button, Cursor, Input, Modifiers, Typed};
 use crate::keymap::{Action, Context, Keymap};
-use crate::ui::{Align, Border, Caret, Direction, Element, Highlight, Size, TextStyle, Ui};
+use crate::ui::{Align, Caret, Direction, Element, Highlight, Size, TextStyle, Ui};
 
 /// What a [`text_field`] holds, owned by the caller.
 #[derive(Clone, PartialEq, Debug, Default)]
@@ -120,10 +120,7 @@ pub fn text_field(
         gap: s.icon_gap,
         align: [Align::Start, Align::Center],
         background: Some(c.sunken),
-        border: Some(Border {
-            width: s.line,
-            color: c.line,
-        }),
+        border: Some(theme.border()),
         radius: [s.radius; 4],
         clip: true,
         cursor: Some(Cursor::Text),

@@ -10,8 +10,8 @@ use std::{
 
 use gui::{
     canvas::Color,
-    components::{self, ListScroll, button, list},
-    ui::{Align, Direction, Element, Size, TextStyle, Ui},
+    components::{self, ListScroll, button, list, spacer, toolbar},
+    ui::{Align, Element, Size, TextStyle, Ui},
 };
 use tracing::{
     Event, Subscriber,
@@ -297,29 +297,14 @@ impl Output {
     /// Clear on the left, and a toggle with a count for each level on the
     /// right.
     fn toolbar(&mut self, ui: &mut Ui) {
-        let size = ui.theme().size;
-        let strip = Element {
-            direction: Direction::LeftToRight,
-            size: [Size::Grow, Size::Fit],
-            padding: [size.gap / 2.; 4],
-            gap: size.gap / 2.,
-            align: [Align::Start, Align::Center],
-            ..Element::DEFAULT
-        };
-        ui.element(strip, |ui| {
+        toolbar(ui, |ui| {
             if button(ui, "Clear") {
                 self.lines.clear();
                 self.stale = true;
                 self.scroll = ListScroll::TOP;
                 self.follow = true;
             }
-            ui.element(
-                Element {
-                    size: [Size::Grow, Size::Fixed(0.)],
-                    ..Element::DEFAULT
-                },
-                |_| {},
-            );
+            spacer(ui);
             for (level, shown) in Level::ALL.into_iter().zip(&mut self.shown) {
                 let count = self.lines.counts[level as usize];
                 if toggle(ui, level, count, *shown) {

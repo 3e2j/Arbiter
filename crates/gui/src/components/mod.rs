@@ -11,15 +11,21 @@
 
 mod button;
 mod field;
+mod notice;
 mod popover;
 mod row;
+mod rule;
 mod scroll;
+mod toolbar;
 
 pub use button::{Clicks, IconState, button, icon_button};
 pub use field::{TextField, text_field};
+pub use notice::notice;
 pub use popover::popover;
 pub use row::row;
+pub use rule::rule;
 pub use scroll::{ListScroll, Scroll, list, scroll};
+pub use toolbar::{spacer, toolbar};
 
 #[cfg(test)]
 mod tests;

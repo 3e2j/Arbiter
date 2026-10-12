@@ -5,7 +5,7 @@
 //! its own, so [`components`](crate::components) look however the app says.
 
 use crate::canvas::{Color, FontId};
-use crate::layout::TextStyle;
+use crate::layout::{Border, TextStyle};
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub struct Theme {
@@ -80,6 +80,15 @@ impl Theme {
             font: self.font.ui,
             size: self.size.text,
             color,
+        }
+    }
+
+    /// The border of anything raised, in the line colour and width.
+    #[must_use]
+    pub const fn border(&self) -> Border {
+        Border {
+            width: self.size.line,
+            color: self.color.line,
         }
     }
 }

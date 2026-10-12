@@ -2,7 +2,7 @@
 
 use crate::canvas::IconId;
 use crate::input::{Button, Cursor};
-use crate::ui::{Align, Border, Element, Size, Ui};
+use crate::ui::{Align, Element, Size, Ui};
 
 /// A line of text on a raised box. Returns whether it was clicked this pass.
 #[track_caller]
@@ -13,10 +13,7 @@ pub fn button(ui: &mut Ui, label: &str) -> bool {
         size: [Size::Fit, Size::Fixed(s.row)],
         padding: [s.gap, 0., s.gap, 0.],
         align: [Align::Center; 2],
-        border: Some(Border {
-            width: s.line,
-            color: c.line,
-        }),
+        border: Some(theme.border()),
         radius: [s.radius; 4],
         cursor: Some(Cursor::Pointer),
         ..Element::DEFAULT

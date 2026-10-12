@@ -4,7 +4,10 @@
 //! Includes Search, Filter, and View options.
 
 use gui::{
-    components::{self, IconState, ListScroll, TextField, icon_button, list, text_field},
+    components::{
+        self, IconState, ListScroll, TextField, icon_button, list, notice, rule, text_field,
+        toolbar,
+    },
     input::{self, Button, Cursor, Modifiers},
     keymap::{Action, Chord, Command, Context, Keymap},
     ui::{Align, Border, Direction, Element, Size, TextStyle, Ui},
@@ -267,7 +270,7 @@ impl Files {
         }
         self.tabs(ui);
         if self.opened.is_none() {
-            return empty(ui, "No project open");
+            return notice(ui, "No project open");
         }
         self.toolbar(ui);
         let query = self.search.text.trim();
@@ -282,7 +285,7 @@ impl Files {
         };
         let view = &mut opened.views[self.tab as usize];
         if tree.is_empty() {
-            return empty(ui, "Nothing here yet");
+            return notice(ui, "Nothing here yet");
         }
         if view.stale {
             if narrowing {
@@ -299,7 +302,7 @@ impl Files {
             view.stale = false;
         }
         if view.rows.is_empty() {
-            return empty(ui, "No matches");
+            return notice(ui, "No matches");
         }
         let height = ui.theme().size.row;
         let columns = Columns {
@@ -340,16 +343,7 @@ impl Files {
         if self.active && focus && !ui.typing() {
             self.search.focus = true;
         }
-        let s = ui.theme().size;
-        let strip = Element {
-            direction: Direction::LeftToRight,
-            size: [Size::Grow, Size::Fit],
-            padding: [s.gap / 2.; 4],
-            gap: s.gap / 2.,
-            align: [Align::Start, Align::Center],
-            ..Element::DEFAULT
-        };
-        ui.element(strip, |ui| {
+        toolbar(ui, |ui| {
             let icon = Some(Icon::Search.into());
             if text_field(ui, &mut self.search, icon, "Search") {
                 self.renarrow();
@@ -469,11 +463,6 @@ impl Files {
             size: [Size::Grow, Size::Fixed(2. * s.line)],
             ..Element::DEFAULT
         };
-        let rule = Element {
-            size: [Size::Grow, Size::Fixed(s.line)],
-            background: Some(c.line),
-            ..Element::DEFAULT
-        };
         let top = Element {
             size: [Size::Grow, Size::Fit],
             ..Element::column()
@@ -498,7 +487,7 @@ impl Files {
                     }
                 }
             });
-            ui.element(rule, |_| ());
+            rule(ui);
         });
     }
 }
@@ -537,13 +526,9 @@ fn row_ui(
     };
     // Under the middle of the parent's icon, kept on a whole pixel.
     let guide = Element {
+        direction: Direction::LeftToRight,
         size: [Size::Fixed(s.indent), Size::Grow],
         padding: [((s.icon - s.line) / 2.).floor(), 0., 0., 0.],
-        ..Element::DEFAULT
-    };
-    let line = Element {
-        size: [Size::Fixed(s.line), Size::Grow],
-        background: Some(c.line),
         ..Element::DEFAULT
     };
     // A guide starts a little below its parent's row and ends a little
@@ -571,7 +556,7 @@ fn row_ui(
             if level > row.depth - row.ends {
                 guide.padding[3] = inset;
             }
-            ui.element(guide, |ui| ui.element(line, |_| ()));
+            ui.element(guide, rule);
         }
         ui.element(content, |ui| {
             let icon = match (node.kind, tree.is_archive(row.last), open) {
@@ -727,16 +712,4 @@ fn regions(ui: &mut Ui, tree: &Tree, editions: u32) {
 /// A game ID's region, its fourth letter.
 fn region(id: &str) -> Option<&str> {
     id.get(3..4)
-}
-
-/// `text`, dim and centred, in place of a tree.
-fn empty(ui: &mut Ui, text: &str) {
-    let theme = ui.theme();
-    let middle = Element {
-        align: [Align::Center; 2],
-        ..Element::column()
-    };
-    ui.element(middle, |ui| {
-        ui.text(theme.ui_text(theme.color.dim), text);
-    });
 }

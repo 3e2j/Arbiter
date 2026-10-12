@@ -2,9 +2,9 @@
 
 use gui::{
     canvas::Rect,
-    components::{IconState, icon_button},
+    components::{IconState, icon_button, rule},
     input::{Button, Cursor},
-    ui::{Align, Border, Direction, Element, Size, Sizes, Ui},
+    ui::{Align, Direction, Element, Size, Sizes, Ui},
 };
 
 use std::ops::Range;
@@ -209,10 +209,7 @@ impl Dock {
                 // Inside its border, and down over the bar's line.
                 let style = ui.style();
                 style.background = Some(color.surface);
-                style.border = Some(Border {
-                    width: size.line,
-                    color: color.line,
-                });
+                style.border = Some(theme.border());
                 style.radius = radius;
                 style.padding = [size.line, 0., size.line, 0.];
                 ui.element(label, |ui| {
@@ -267,14 +264,9 @@ fn on_line(ui: &mut Ui, width: Size, body: impl FnOnce(&mut Ui)) {
         align: [Align::Center; 2],
         ..Element::DEFAULT
     };
-    let line = Element {
-        size: [Size::Grow, Size::Fixed(size.line)],
-        background: Some(theme.color.line),
-        ..Element::DEFAULT
-    };
     ui.element(cell, |ui| {
         ui.element(above, body);
-        ui.element(line, |_| {});
+        rule(ui);
     });
 }
 

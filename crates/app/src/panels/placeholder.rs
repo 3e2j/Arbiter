@@ -1,6 +1,6 @@
 //! A panel that only shows its title, standing in for one not written yet.
 
-use gui::ui::{Align, Element, Ui};
+use gui::{components::notice, ui::Ui};
 
 use crate::workspace::Places;
 
@@ -25,13 +25,6 @@ impl Placeholder {
     }
 
     pub fn ui(&mut self, ui: &mut Ui) {
-        let theme = ui.theme();
-        let middle = Element {
-            align: [Align::Center; 2],
-            ..Element::column()
-        };
-        ui.element(middle, |ui| {
-            ui.text(theme.ui_text(theme.color.dim), self.title)
-        });
+        notice(ui, self.title);
     }
 }
