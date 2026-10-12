@@ -2,12 +2,14 @@ use std::ops::Range;
 
 use encoding_rs::SHIFT_JIS;
 
-use super::{Entry, File, Header, Info, Node, Preload, Rarc, flag, is_plain, name_hash, next_id};
-use crate::{Be32, Error, Reader, Result};
+use super::{
+    Entry, Header, Info, Node, Preload, Rarc, RarcFile, flag, is_plain, name_hash, next_id,
+};
+use crate::{Be32, ByteReader, FormatError, Result};
 
 /// An archive's tables, borrowed in place, every offset made absolute.
 struct Tables<'a> {
-    reader: Reader<'a>,
+    reader: ByteReader<'a>,
     nodes: &'a [Node],
     entries: &'a [Entry],
     names_at: usize,
@@ -15,7 +17,7 @@ struct Tables<'a> {
 }
 
 pub(super) fn decode(bytes: &[u8]) -> Result<Rarc> {
-    let mut r = Reader::new(bytes);
+    let mut r = ByteReader::new(bytes);
     r.magic(Rarc::MAGIC)?;
     let header: &Header = r.record()?;
     if header.size.get() as usize != bytes.len() {
@@ -66,7 +68,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Rarc> {
 impl Tables<'_> {
     /// Flattens the tree depth first from the root, directories into their
     /// files' paths. Returns the files and the next free id they derive.
-    fn walk(&self) -> Result<(Vec<File>, u16)> {
+    fn walk(&self) -> Result<(Vec<RarcFile>, u16)> {
         let mut files = Vec::new();
         let mut visited = vec![false; self.nodes.len()];
         let mut highest = None;
@@ -87,7 +89,7 @@ impl Tables<'_> {
                 continue;
             }
             if !is_plain(&name) {
-                return Err(Error::Name { name });
+                return Err(FormatError::Name { name });
             }
             let path = if dir.is_empty() {
                 name
@@ -116,7 +118,7 @@ impl Tables<'_> {
                 self.data_at.saturating_add(entry.target.get() as usize),
                 entry.size.get() as usize,
             )?;
-            files.push(File {
+            files.push(RarcFile {
                 path,
                 data: data.to_vec(),
                 id: Some(id),
@@ -159,6 +161,6 @@ impl Tables<'_> {
     }
 }
 
-const fn malformed(what: &'static str) -> Error {
-    Error::Malformed { what }
+const fn malformed(what: &'static str) -> FormatError {
+    FormatError::Malformed { what }
 }

@@ -5,7 +5,7 @@ use super::{
     Preload, Rarc, flag, is_plain, name_hash, next_id,
 };
 use crate::compression::Compression;
-use crate::{Be16, Be32, Error, Flag, Record, Result, Writer};
+use crate::{Be16, Be32, ByteWriter, Flag, FormatError, Record, Result};
 
 struct Dir {
     name: Vec<u8>,
@@ -56,7 +56,7 @@ struct Names {
     files: Vec<u32>,
 }
 
-pub(super) fn encode(rarc: &Rarc, out: &mut Writer) -> Result<()> {
+pub(super) fn encode(rarc: &Rarc, out: &mut ByteWriter) -> Result<()> {
     let tree = Tree::build(rarc)?;
     let placed = place(rarc, &tree)?;
     let next = match rarc.next_id {
@@ -242,7 +242,7 @@ fn grow(rarc: &Rarc) -> Result<Vec<Dir>> {
         children: Vec::new(),
     }];
     for (file, f) in rarc.files.iter().enumerate() {
-        let bad = || Error::Name {
+        let bad = || FormatError::Name {
             name: f.path.clone(),
         };
         let mut at = 0;
@@ -294,7 +294,7 @@ fn place(rarc: &Rarc, tree: &Tree) -> Result<Placed> {
     let mut claimed: Vec<u16> = rarc.files.iter().filter_map(|f| f.id).collect();
     claimed.sort_unstable();
     if claimed.windows(2).any(|w| w[0] == w[1]) {
-        return Err(Error::Malformed {
+        return Err(FormatError::Malformed {
             what: "two files share an id",
         });
     }
@@ -313,7 +313,7 @@ fn place(rarc: &Rarc, tree: &Tree) -> Result<Placed> {
         let f = &rarc.files[file];
         // The header's sizes can only describe one run per memory.
         if f.preload < memory {
-            return Err(Error::Malformed {
+            return Err(FormatError::Malformed {
                 what: "files aren't grouped by memory: main, then ARAM, then disc",
             });
         }
@@ -364,7 +364,7 @@ fn names(rarc: &Rarc, tree: &Tree) -> Result<Names> {
     Ok(names)
 }
 
-fn dir_entry(out: &mut Writer, name: &[u8], name_at: u32, node: u32) -> Result<()> {
+fn dir_entry(out: &mut ByteWriter, name: &[u8], name_at: u32, node: u32) -> Result<()> {
     out.record(&Entry {
         id: Be16::new(NO_ID),
         hash: Be16::new(name_hash(name)),
@@ -389,7 +389,7 @@ fn name_offset(name_at: u32) -> Result<[u8; 3]> {
 fn sjis(name: &str) -> Result<Vec<u8>> {
     let (bytes, _, unmappable) = SHIFT_JIS.encode(name);
     if unmappable || name.is_empty() || name.contains('\0') {
-        return Err(Error::Name {
+        return Err(FormatError::Name {
             name: name.to_owned(),
         });
     }
@@ -404,6 +404,6 @@ fn be32(value: usize) -> Result<Be32> {
     u32_of(value).map(Be32::new)
 }
 
-const fn too_large(what: &'static str) -> Error {
-    Error::TooLarge { what }
+const fn too_large(what: &'static str) -> FormatError {
+    FormatError::TooLarge { what }
 }

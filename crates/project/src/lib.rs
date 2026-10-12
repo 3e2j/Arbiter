@@ -34,7 +34,7 @@ pub use base::{PeekedDisc, StagedDisc};
 pub use config::EditionChange;
 use config::{Edition, ProjectConfig, ProjectKind};
 use diag::Diagnostics;
-pub use game::edition::{Game, Verdict};
+pub use game::edition::{DumpVerdict, Game};
 use hash::Hash;
 pub use log::{Log, LogWriter};
 
@@ -239,7 +239,9 @@ impl Project {
     /// # Errors
     ///
     /// If a disc can't be read.
-    pub fn verify(discs: &[(&Path, &PeekedDisc)]) -> Result<Vec<(Hash, Verdict)>, ProjectError> {
+    pub fn verify(
+        discs: &[(&Path, &PeekedDisc)],
+    ) -> Result<Vec<(Hash, DumpVerdict)>, ProjectError> {
         Ok(base::verify(discs)?)
     }
 

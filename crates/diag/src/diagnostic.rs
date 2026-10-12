@@ -11,7 +11,7 @@ pub enum Severity {
 /// Defined once as a const in the crate that emits it, and listed in that
 /// crate's `CODES`. The id's prefix is its category (`bmg/faulty-tag`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Code {
+pub struct DiagnosticCode {
     pub id: &'static str,
     pub severity: Severity,
     pub summary: &'static str,
@@ -19,13 +19,13 @@ pub struct Code {
 
 /// One step of a path into a document, such as `("message", "0x1234")`. An
 /// edit's touched items use the same keys, so the store can match the two.
-pub type Key = (&'static str, String);
+pub type AddressStep = (&'static str, String);
 
 /// Something inside a document that an edit touches and a diagnostic can sit
 /// on, such as one message.
 pub trait Address {
     /// Outermost first, as [`Location::key`] holds it.
-    fn key(&self) -> Vec<Key>;
+    fn key(&self) -> Vec<AddressStep>;
 }
 
 /// Relative to the file the store holds it under. A producer knows keys and
@@ -33,7 +33,7 @@ pub trait Address {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct Location {
     /// Outermost first.
-    pub key: Vec<Key>,
+    pub key: Vec<AddressStep>,
     /// Bytes into the file, for the hex view.
     pub offset: Option<u64>,
 }
@@ -58,7 +58,7 @@ pub struct Snippet {
 #[must_use = "a diagnostic does nothing until it's pushed into a `Diagnostics`"]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Diagnostic {
-    pub code: &'static Code,
+    pub code: &'static DiagnosticCode,
     pub message: String,
     pub at: Option<Location>,
     pub snippet: Option<Snippet>,
@@ -66,7 +66,7 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
-    pub fn new(code: &'static Code, message: impl Into<String>) -> Self {
+    pub fn new(code: &'static DiagnosticCode, message: impl Into<String>) -> Self {
         Self {
             code,
             message: message.into(),
@@ -138,7 +138,7 @@ impl Location {
     /// Whether this is at `item` or inside it. A location with no keys is the
     /// whole file and inside nothing.
     #[must_use]
-    pub fn starts_with(&self, item: &[Key]) -> bool {
+    pub fn starts_with(&self, item: &[AddressStep]) -> bool {
         !item.is_empty() && self.key.starts_with(item)
     }
 }

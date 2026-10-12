@@ -5,8 +5,8 @@ use std::fmt;
 
 /// A type whose memory layout is its file layout.
 ///
-/// [`Reader::record`](crate::Reader::record) borrows one straight out of the
-/// buffer, and [`Writer::record`](crate::Writer::record) appends one as it
+/// [`ByteReader::record`](crate::ByteReader::record) borrows one straight out of the
+/// buffer, and [`ByteWriter::record`](crate::ByteWriter::record) appends one as it
 /// stands.
 ///
 /// Every record is built from these, and only these:
@@ -180,7 +180,7 @@ unsafe impl Record for Flag {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Error, Reader, Writer};
+    use crate::{ByteReader, ByteWriter, FormatError};
 
     record! {
         /// Fields of every width, so one at an odd position proves nothing
@@ -210,7 +210,7 @@ mod tests {
         assert_eq!(Sample::LEN, SAMPLE.len());
         assert_eq!(sample().as_bytes(), SAMPLE);
 
-        let mut out = Writer::new();
+        let mut out = ByteWriter::new();
         out.record(&sample());
         assert_eq!(out.finish(), SAMPLE);
     }
@@ -229,7 +229,7 @@ mod tests {
         bytes.extend_from_slice(&SAMPLE);
         bytes.extend_from_slice(&SAMPLE);
 
-        let mut reader = Reader::new(&bytes);
+        let mut reader = ByteReader::new(&bytes);
         reader.seek(1);
         assert_eq!(*reader.record::<Sample>().unwrap(), sample());
         assert_eq!(reader.pos(), 1 + SAMPLE.len());
@@ -238,7 +238,7 @@ mod tests {
         assert_eq!(both, [sample(), sample()]);
         assert!(matches!(
             reader.records_at::<Sample>(1, 3),
-            Err(Error::OutOfBounds { .. })
+            Err(FormatError::OutOfBounds { .. })
         ));
         assert!(reader.records_at::<Sample>(0, usize::MAX).is_err());
     }

@@ -9,7 +9,7 @@
 
 use std::{collections::HashMap, mem};
 
-use diag::{Address, Code, Diagnostic, Diagnostics, Key, Location, Severity};
+use diag::{Address, AddressStep, Diagnostic, DiagnosticCode, Diagnostics, Location, Severity};
 use formats::rarc::{self, Rarc};
 use serde::{Deserialize, Serialize};
 
@@ -17,7 +17,7 @@ use super::Compression;
 
 pub const NAME: &str = ".rarc.toml";
 
-pub const MISSING_MEMBER: Code = Code {
+pub const MISSING_MEMBER: DiagnosticCode = DiagnosticCode {
     id: "packing/missing-member",
     severity: Severity::Warning,
     summary: "a change names an archive member the base doesn't hold",
@@ -136,7 +136,7 @@ pub enum SidecarItem {
 }
 
 impl Address for SidecarItem {
-    fn key(&self) -> Vec<Key> {
+    fn key(&self) -> Vec<AddressStep> {
         match self {
             Self::Root => vec![("field", "root".to_owned())],
             Self::Compression => vec![("field", "compression".to_owned())],
@@ -151,7 +151,7 @@ impl Sidecar {
     }
 }
 
-impl formats::Edit for Sidecar {
+impl formats::Editable for Sidecar {
     type Edit = SidecarEdit;
     type Item = SidecarItem;
 
@@ -242,7 +242,7 @@ impl formats::Patch for Sidecar {
 
     fn patch(&mut self, changes: &[SidecarEdit], diag: &mut Diagnostics) {
         for change in changes {
-            let (_, touched) = formats::Edit::apply(self, change.clone());
+            let (_, touched) = formats::Editable::apply(self, change.clone());
             if let (Some(path), true) = (change.member(), touched.is_empty()) {
                 diag.push(
                     Diagnostic::new(
@@ -258,7 +258,7 @@ impl formats::Patch for Sidecar {
 
 #[cfg(test)]
 mod tests {
-    use formats::{Edit as _, Patch as _};
+    use formats::{Editable as _, Patch as _};
 
     use super::*;
 

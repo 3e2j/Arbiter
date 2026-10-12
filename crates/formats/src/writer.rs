@@ -5,11 +5,11 @@ use crate::Record;
 /// Nothing here is fallible. There's no seeking back, so a value that depends
 /// on later data, like a total size, is computed before it's written.
 #[derive(Debug, Default)]
-pub struct Writer {
+pub struct ByteWriter {
     data: Vec<u8>,
 }
 
-impl Writer {
+impl ByteWriter {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     fn writes_go_out_big_endian() {
-        let mut writer = Writer::new();
+        let mut writer = ByteWriter::new();
         writer.u8(0x0D);
         writer.u16(0xACED);
         writer.u32(0x0001_0203);
@@ -84,7 +84,7 @@ mod tests {
 
     #[test]
     fn padding_stops_on_the_next_boundary() {
-        let mut writer = Writer::new();
+        let mut writer = ByteWriter::new();
         writer.bytes(b"abc");
         writer.align(4);
         assert_eq!(writer.len(), 4);

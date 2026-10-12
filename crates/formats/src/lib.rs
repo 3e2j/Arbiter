@@ -2,10 +2,10 @@
 //!
 //! Every format implements [`Decode`] and [`Encode`].
 //! One that can be edited implements:
-//! - [`Edit`], in either project kind.
+//! - [`Editable`], in either project kind.
 //! - [`Patch`], which stores the edits as changes against the base (for mods).
 //!
-//! Data is big-endian, read through [`Reader`] and written through [`Writer`].
+//! Data is big-endian, read through [`ByteReader`] and written through [`ByteWriter`].
 //! Fixed tables are [`record!`] structs, borrowed and copied whole. The types
 //! their fields can be are listed on [`Record`].
 
@@ -19,16 +19,16 @@ mod writer;
 use diag::{Address, Diagnostics};
 use serde::{Serialize, de::DeserializeOwned};
 
-pub use reader::Reader;
+pub use reader::ByteReader;
 pub use record::{Be16, Be32, Flag, Record, bytes_of};
-pub use writer::Writer;
+pub use writer::ByteWriter;
 
 /// Why bytes couldn't become a format, or a format couldn't become bytes.
 ///
 /// Every offset and count comes out of a file somebody else wrote.
 /// Problems a decode can carry on past go to `Diagnostics` instead.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum Error {
+pub enum FormatError {
     #[error("read of {len} bytes at {pos:#x} runs past the end of a {size:#x} byte buffer")]
     OutOfBounds { pos: usize, len: usize, size: usize },
 
@@ -48,7 +48,7 @@ pub enum Error {
     Name { name: String },
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, FormatError>;
 
 /// Bytes into a format. The decoded form owns its data.
 pub trait Decode: Sized {
@@ -59,8 +59,8 @@ pub trait Decode: Sized {
     ///
     /// # Errors
     ///
-    /// [`Error::WrongMagic`] when `bytes` aren't this format, any other
-    /// [`Error`] when they are but are broken.
+    /// [`FormatError::WrongMagic`] when `bytes` aren't this format, any other
+    /// [`FormatError`] when they are but are broken.
     fn decode(bytes: &[u8], diag: &mut Diagnostics) -> Result<Self>;
 }
 
@@ -70,15 +70,15 @@ pub trait Encode {
     /// # Errors
     ///
     /// When the value doesn't fit the format, such as a size field
-    /// overflowing ([`Error::TooLarge`]).
-    fn encode(&self, out: &mut Writer) -> Result<()>;
+    /// overflowing ([`FormatError::TooLarge`]).
+    fn encode(&self, out: &mut ByteWriter) -> Result<()>;
 }
 
 /// A document changed through edits, with undo. An edit is an intent keyed by
 /// stable ids, never a row index. It never fails for being invalid, only a
 /// check does, so one naming something the document doesn't hold changes
 /// nothing.
-pub trait Edit {
+pub trait Editable {
     type Edit;
     type Item: Address;
 
@@ -94,7 +94,7 @@ pub trait Edit {
 
 /// A document stored in a mod as its changes against the base.
 pub trait Patch: Sized {
-    /// Keyed by a stable id, as [`Edit::Edit`] is.
+    /// Keyed by a stable id, as [`Editable::Edit`] is.
     type Change: Serialize + DeserializeOwned;
 
     /// What turns `base` into `edited`.

@@ -1,16 +1,16 @@
 use super::*;
-use crate::Error;
+use crate::FormatError;
 use crate::Record;
 
-fn file(path: &str, data: &[u8]) -> File {
-    File {
+fn file(path: &str, data: &[u8]) -> RarcFile {
+    RarcFile {
         path: path.to_owned(),
         data: data.to_vec(),
-        ..File::default()
+        ..RarcFile::default()
     }
 }
 
-fn rarc(files: Vec<File>) -> Rarc {
+fn rarc(files: Vec<RarcFile>) -> Rarc {
     Rarc {
         root: "root".to_owned(),
         files,
@@ -19,7 +19,7 @@ fn rarc(files: Vec<File>) -> Rarc {
 }
 
 fn encode(rarc: &Rarc) -> Result<Vec<u8>> {
-    let mut out = Writer::new();
+    let mut out = ByteWriter::new();
     rarc.encode(&mut out)?;
     Ok(out.finish())
 }
@@ -244,7 +244,10 @@ fn shared_ids_are_refused() {
     let mut files = vec![file("a.bin", b"A"), file("b.bin", b"B")];
     files[0].id = Some(1);
     files[1].id = Some(1);
-    assert!(matches!(encode(&rarc(files)), Err(Error::Malformed { .. })));
+    assert!(matches!(
+        encode(&rarc(files)),
+        Err(FormatError::Malformed { .. })
+    ));
 }
 
 #[test]
@@ -275,7 +278,10 @@ fn memories_out_of_data_order_are_refused() {
     let listed = || vec![file("sub/b.bin", b"B"), file("a.bin", b"A")];
     let mut files = listed();
     files[1].preload = Preload::Aram;
-    assert!(matches!(encode(&rarc(files)), Err(Error::Malformed { .. })));
+    assert!(matches!(
+        encode(&rarc(files)),
+        Err(FormatError::Malformed { .. })
+    ));
     let mut files = listed();
     files[0].preload = Preload::Aram;
     assert!(encode(&rarc(files)).is_ok());
@@ -286,12 +292,15 @@ fn unusable_paths_are_refused() {
     for path in ["sub/../b.bin", "", "sub//b.bin", ".", "a\\b", "a.bin/x"] {
         let files = vec![file("a.bin", b"A"), file(path, b"")];
         assert!(
-            matches!(encode(&rarc(files)), Err(Error::Name { .. })),
+            matches!(encode(&rarc(files)), Err(FormatError::Name { .. })),
             "{path:?}"
         );
     }
     let files = vec![file("a.bin", b"A"), file("a.bin", b"B")];
-    assert!(matches!(encode(&rarc(files)), Err(Error::Name { .. })));
+    assert!(matches!(
+        encode(&rarc(files)),
+        Err(FormatError::Name { .. })
+    ));
 }
 
 #[test]
@@ -319,19 +328,19 @@ fn bad_names_are_refused() {
         rename_a(&mut data, name);
         let err = decode(&data).unwrap_err();
         assert_eq!(
-            matches!(err, Error::Name { .. }),
+            matches!(err, FormatError::Name { .. }),
             as_name,
             "{name:?}: {err}"
         );
         assert_eq!(
-            matches!(err, Error::Malformed { .. }),
+            matches!(err, FormatError::Malformed { .. }),
             !as_name,
             "{name:?}: {err}"
         );
     }
     let mut data = fixture();
     set_u16(&mut data, entry_at(0) + 2, 0xBEEF);
-    assert!(matches!(decode(&data), Err(Error::Malformed { .. })));
+    assert!(matches!(decode(&data), Err(FormatError::Malformed { .. })));
 }
 
 #[test]
@@ -354,5 +363,8 @@ fn broken_structure_is_refused() {
         corrupt(&mut data);
         assert!(decode(&data).is_err(), "corruption {n}");
     }
-    assert!(matches!(decode(b"Yaz0...."), Err(Error::WrongMagic { .. })));
+    assert!(matches!(
+        decode(b"Yaz0...."),
+        Err(FormatError::WrongMagic { .. })
+    ));
 }

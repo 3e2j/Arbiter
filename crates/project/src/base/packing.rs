@@ -1,7 +1,7 @@
 //! How a disc file goes back onto the disc, apart from its bytes. An
 //! archive's is in its sidecar instead, see `sidecar`.
 
-use diag::{Address, Diagnostics, Key};
+use diag::{Address, AddressStep, Diagnostics};
 use serde::{Deserialize, Serialize};
 
 use super::Compression;
@@ -28,14 +28,14 @@ pub enum PackingItem {
 }
 
 impl Address for PackingItem {
-    fn key(&self) -> Vec<Key> {
+    fn key(&self) -> Vec<AddressStep> {
         match self {
             Self::Compression => vec![("field", "compression".to_owned())],
         }
     }
 }
 
-impl formats::Edit for Packing {
+impl formats::Editable for Packing {
     type Edit = PackingEdit;
     type Item = PackingItem;
 
@@ -67,14 +67,14 @@ impl formats::Patch for Packing {
     /// Every change fits any base, so nothing is reported.
     fn patch(&mut self, changes: &[PackingEdit], _: &mut Diagnostics) {
         for &change in changes {
-            formats::Edit::apply(self, change);
+            formats::Editable::apply(self, change);
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use formats::{Edit as _, Patch as _};
+    use formats::{Editable as _, Patch as _};
     use serde::{Deserialize, Serialize};
 
     use super::*;

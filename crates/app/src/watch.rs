@@ -26,7 +26,7 @@ const QUIET: Duration = Duration::from_millis(150);
 const LONGEST: Duration = Duration::from_secs(1);
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum WatchError {
     #[error(transparent)]
     Notify(#[from] notify::Error),
     #[error(transparent)]
@@ -120,7 +120,7 @@ fn run(
 }
 
 /// Watches `root`, giving back its resolved path with the watcher.
-fn start(root: &Path, events: Sender<Got>) -> Result<(PathBuf, RecommendedWatcher), Error> {
+fn start(root: &Path, events: Sender<Got>) -> Result<(PathBuf, RecommendedWatcher), WatchError> {
     // notify reports resolved paths on some systems.
     let root = root.canonicalize()?;
     let mut watcher = notify::recommended_watcher(move |event| {

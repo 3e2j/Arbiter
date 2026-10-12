@@ -60,7 +60,7 @@ pub enum Unpacked<'a> {
 pub struct UnpackError {
     pub path: String,
     #[source]
-    pub source: formats::Error,
+    pub source: formats::FormatError,
 }
 
 /// A disc file with its compression taken off.
@@ -106,7 +106,7 @@ fn unpack_at<E: From<UnpackError>>(
         return Ok(compression);
     }
     if depth == MAX_DEPTH {
-        return Err(at(formats::Error::Malformed {
+        return Err(at(formats::FormatError::Malformed {
             what: "archives nest too deep",
         })
         .into());
@@ -120,7 +120,7 @@ fn unpack_at<E: From<UnpackError>>(
         if !is_plain(&member) {
             return Err(UnpackError {
                 path: member,
-                source: formats::Error::Name {
+                source: formats::FormatError::Name {
                     name: file.path.clone(),
                 },
             }
@@ -154,8 +154,8 @@ pub fn peel(bytes: &[u8]) -> formats::Result<Peeled<'_>> {
 #[cfg(test)]
 mod tests {
     use formats::compression::Strategy;
-    use formats::rarc::File;
-    use formats::{Encode, Writer};
+    use formats::rarc::RarcFile;
+    use formats::{ByteWriter, Encode};
 
     use super::*;
 
@@ -177,7 +177,7 @@ mod tests {
     }
 
     fn wrap(compression: Compression, data: &[u8]) -> Vec<u8> {
-        let mut out = Writer::new();
+        let mut out = ByteWriter::new();
         compression
             .compress(data, Strategy::Parity, &mut out)
             .unwrap();
@@ -189,15 +189,15 @@ mod tests {
             root: root.to_owned(),
             files: files
                 .iter()
-                .map(|&(path, data)| File {
+                .map(|&(path, data)| RarcFile {
                     path: path.to_owned(),
                     data: data.to_vec(),
-                    ..File::default()
+                    ..RarcFile::default()
                 })
                 .collect(),
             next_id: None,
         };
-        let mut out = Writer::new();
+        let mut out = ByteWriter::new();
         rarc.encode(&mut out).unwrap();
         out.finish()
     }
@@ -320,6 +320,6 @@ mod tests {
             nested = archive("nest", &[("n.arc", &nested)]);
         }
         let err = unpack_all("n.arc", &nested).unwrap_err();
-        assert!(matches!(err.source, formats::Error::Malformed { .. }));
+        assert!(matches!(err.source, formats::FormatError::Malformed { .. }));
     }
 }

@@ -23,7 +23,7 @@ mod encode;
 
 use diag::Diagnostics;
 
-use crate::{Be16, Be32, Decode, Encode, Flag, Result, Writer, record};
+use crate::{Be16, Be32, ByteWriter, Decode, Encode, Flag, Result, record};
 
 /// An archive taken apart into its root's name and every file under it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -32,14 +32,14 @@ pub struct Rarc {
     pub root: String,
     /// Depth first, in entry order. A directory is the shared prefix of its
     /// files' paths, so an empty one doesn't survive a round trip.
-    pub files: Vec<File>,
+    pub files: Vec<RarcFile>,
     /// The info block's next free id, `None` when it's the one
     /// [`encode`](Encode::encode) derives. Nothing reads it.
     pub next_id: Option<u16>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct File {
+pub struct RarcFile {
     /// `/`-separated under the root, every component a plain name.
     pub path: String,
     pub data: Vec<u8>,
@@ -80,7 +80,7 @@ impl Decode for Rarc {
 impl Encode for Rarc {
     /// Ids and paths must be unique, and files grouped by [`Preload`] in entry
     /// order. The entry flags' compression bits are set from each file's magic.
-    fn encode(&self, out: &mut Writer) -> Result<()> {
+    fn encode(&self, out: &mut ByteWriter) -> Result<()> {
         encode::encode(self, out)
     }
 }
@@ -193,7 +193,7 @@ fn next_id(entry_count: usize, highest: Option<u16>, synced: bool) -> Result<u16
     } else {
         highest.map_or(0, |id| usize::from(id) + 1)
     };
-    u16::try_from(next).map_err(|_| crate::Error::TooLarge {
+    u16::try_from(next).map_err(|_| crate::FormatError::TooLarge {
         what: "the next free id",
     })
 }

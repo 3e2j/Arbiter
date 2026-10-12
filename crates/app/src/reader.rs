@@ -16,13 +16,13 @@ use project::{
     tree::{self, Trees},
 };
 
-pub struct Reader {
+pub struct TreeReader {
     // Dropping it ends the thread once a read in flight is done.
     asks: Sender<()>,
     reads: Receiver<Result<Trees, tree::TreeError>>,
 }
 
-impl Reader {
+impl TreeReader {
     /// Reads `project`'s trees when asked, and wakes the window with each.
     ///
     /// # Errors

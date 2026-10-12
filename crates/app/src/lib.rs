@@ -22,12 +22,12 @@ use gui::{
 pub use panels::Capture;
 use panels::{Files, Output, Panel, Placeholder};
 use project::{Log, Project};
-use reader::Reader;
+use reader::TreeReader;
 use watch::Watch;
 use workspace::{Place, Places, Workspace};
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum AppError {
     #[error(transparent)]
     Window(#[from] window::RunError),
 }
@@ -38,7 +38,7 @@ pub enum Error {
 /// # Errors
 ///
 /// When the editor can't start, or the window fails.
-pub fn run(log: Arc<Log>, project: Option<Project>) -> Result<(), Error> {
+pub fn run(log: Arc<Log>, project: Option<Project>) -> Result<(), AppError> {
     window::run::<Editor>((log, project))?;
     Ok(())
 }
@@ -50,7 +50,7 @@ struct Editor {
     /// The open project's, unless it couldn't be watched.
     watch: Option<Watch>,
     /// The open project's, unless its thread couldn't start.
-    reader: Option<Reader>,
+    reader: Option<TreeReader>,
     wake: Wake,
 }
 
@@ -63,7 +63,7 @@ impl Editor {
         tracing::info!("opened {}", project.root.display());
         let root = project.root.clone();
         let project = Arc::new(project);
-        self.reader = match Reader::new(project.clone(), self.wake.clone()) {
+        self.reader = match TreeReader::new(project.clone(), self.wake.clone()) {
             Ok(reader) => Some(reader),
             Err(err) => {
                 tracing::warn!("can't start reading the project's files: {err}");
@@ -145,7 +145,7 @@ impl App for Editor {
         if input.focused() {
             self.read_trees();
         }
-        match self.reader.as_ref().and_then(Reader::take) {
+        match self.reader.as_ref().and_then(TreeReader::take) {
             Some(Ok(trees)) => {
                 if let Some(files) = self.files() {
                     files.refresh(trees);

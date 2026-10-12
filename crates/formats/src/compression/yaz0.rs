@@ -6,7 +6,7 @@ use super::search::Tokens;
 use super::token::Token;
 use super::token::backref::Backreference;
 use super::{Strategy, decompressed_size, header, size_of};
-use crate::{Be32, Decode, Encode, Reader, Result, Writer, record};
+use crate::{Be32, ByteReader, ByteWriter, Decode, Encode, Result, record};
 
 /// The flag byte: one bit per token in its group.
 type Flags = u8;
@@ -47,13 +47,13 @@ impl Decode for Yaz0 {
 }
 
 impl Encode for Yaz0 {
-    fn encode(&self, out: &mut Writer) -> Result<()> {
+    fn encode(&self, out: &mut ByteWriter) -> Result<()> {
         compress(&self.data, self.strategy, out)
     }
 }
 
 pub(super) fn decompress(input: &[u8]) -> Result<Vec<u8>> {
-    let mut reader = Reader::new(input);
+    let mut reader = ByteReader::new(input);
     let header: &Header = header(&mut reader, Yaz0::MAGIC)?;
     let size = decompressed_size(header.size, input.len())?;
 
@@ -85,7 +85,7 @@ pub(super) fn decompress(input: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-pub(super) fn compress(input: &[u8], strategy: Strategy, out: &mut Writer) -> Result<()> {
+pub(super) fn compress(input: &[u8], strategy: Strategy, out: &mut ByteWriter) -> Result<()> {
     let size = size_of(input)?;
     out.bytes(&Yaz0::MAGIC);
     out.record(&Header {
@@ -133,7 +133,7 @@ pub(super) fn compress(input: &[u8], strategy: Strategy, out: &mut Writer) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Error;
+    use crate::FormatError;
 
     fn header(size: u32) -> Vec<u8> {
         let mut data = b"Yaz0".to_vec();
@@ -164,7 +164,10 @@ mod tests {
     #[test]
     fn rejects_other_data() {
         assert!(!Yaz0::detect(b"RARC...."));
-        assert!(matches!(decode(b"RARC...."), Err(Error::WrongMagic { .. })));
+        assert!(matches!(
+            decode(b"RARC...."),
+            Err(FormatError::WrongMagic { .. })
+        ));
     }
 
     #[test]
@@ -180,7 +183,7 @@ mod tests {
         data.push(b'a');
         // Length (4 - 1) + 3, distance 0 + 1: 7 bytes total, not 3.
         data.extend_from_slice(&[0x40, 0x00]);
-        assert!(matches!(decode(&data), Err(Error::Malformed { .. })));
+        assert!(matches!(decode(&data), Err(FormatError::Malformed { .. })));
     }
 
     #[test]
@@ -188,6 +191,6 @@ mod tests {
         let mut data = header(4);
         data.push(0b0000_0000);
         data.extend_from_slice(&[0x40, 0x03]);
-        assert!(matches!(decode(&data), Err(Error::Malformed { .. })));
+        assert!(matches!(decode(&data), Err(FormatError::Malformed { .. })));
     }
 }

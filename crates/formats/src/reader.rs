@@ -1,16 +1,16 @@
-use crate::{Error, Record, Result};
+use crate::{FormatError, Record, Result};
 
 /// A cursor over a borrowed buffer.
 ///
 /// Sequential reads advance the cursor. The `_at` reads take an absolute
 /// position and leave it alone, which is what following an offset out of a
 /// header amounts to. Both hand back slices of the original buffer.
-pub struct Reader<'a> {
+pub struct ByteReader<'a> {
     data: &'a [u8],
     pos: usize,
 }
 
-impl<'a> Reader<'a> {
+impl<'a> ByteReader<'a> {
     #[must_use]
     pub const fn new(data: &'a [u8]) -> Self {
         Self { data, pos: 0 }
@@ -48,9 +48,9 @@ impl<'a> Reader<'a> {
     ///
     /// # Errors
     ///
-    /// [`Error::OutOfBounds`] if `pos..pos + len` runs past the end.
+    /// [`FormatError::OutOfBounds`] if `pos..pos + len` runs past the end.
     pub fn bytes_at(&self, pos: usize, len: usize) -> Result<&'a [u8]> {
-        let out_of_bounds = || Error::OutOfBounds {
+        let out_of_bounds = || FormatError::OutOfBounds {
             pos,
             len,
             size: self.data.len(),
@@ -63,7 +63,7 @@ impl<'a> Reader<'a> {
     ///
     /// # Errors
     ///
-    /// [`Error::OutOfBounds`] if `len` bytes are not left.
+    /// [`FormatError::OutOfBounds`] if `len` bytes are not left.
     pub fn bytes(&mut self, len: usize) -> Result<&'a [u8]> {
         let out = self.bytes_at(self.pos, len)?;
         // `bytes_at` proved `pos + len` fits in the buffer.
@@ -79,7 +79,7 @@ impl<'a> Reader<'a> {
 
     fn array_at<const N: usize>(&self, pos: usize) -> Result<[u8; N]> {
         let bytes = self.bytes_at(pos, N)?;
-        bytes.try_into().map_err(|_| Error::OutOfBounds {
+        bytes.try_into().map_err(|_| FormatError::OutOfBounds {
             pos,
             len: N,
             size: self.data.len(),
@@ -88,7 +88,7 @@ impl<'a> Reader<'a> {
 
     /// # Errors
     ///
-    /// [`Error::OutOfBounds`] if a byte is not left.
+    /// [`FormatError::OutOfBounds`] if a byte is not left.
     pub fn u8(&mut self) -> Result<u8> {
         let [byte] = self.array()?;
         Ok(byte)
@@ -96,14 +96,14 @@ impl<'a> Reader<'a> {
 
     /// # Errors
     ///
-    /// [`Error::OutOfBounds`] if 2 bytes are not left.
+    /// [`FormatError::OutOfBounds`] if 2 bytes are not left.
     pub fn u16(&mut self) -> Result<u16> {
         Ok(u16::from_be_bytes(self.array()?))
     }
 
     /// # Errors
     ///
-    /// [`Error::OutOfBounds`] if 4 bytes are not left.
+    /// [`FormatError::OutOfBounds`] if 4 bytes are not left.
     pub fn u32(&mut self) -> Result<u32> {
         Ok(u32::from_be_bytes(self.array()?))
     }
@@ -113,14 +113,14 @@ impl<'a> Reader<'a> {
     ///
     /// # Errors
     ///
-    /// [`Error::WrongMagic`] if the next 4 bytes differ, or fewer are left.
+    /// [`FormatError::WrongMagic`] if the next 4 bytes differ, or fewer are left.
     pub fn magic(&mut self, expected: [u8; 4]) -> Result<()> {
         match self.array_at::<4>(self.pos) {
             Ok(found) if found == expected => {
                 self.pos = self.pos.saturating_add(4);
                 Ok(())
             }
-            _ => Err(Error::WrongMagic { expected }),
+            _ => Err(FormatError::WrongMagic { expected }),
         }
     }
 
@@ -128,7 +128,7 @@ impl<'a> Reader<'a> {
     ///
     /// # Errors
     ///
-    /// [`Error::OutOfBounds`] if the record runs past the end.
+    /// [`FormatError::OutOfBounds`] if the record runs past the end.
     pub fn record<T: Record>(&mut self) -> Result<&'a T> {
         const { assert!(align_of::<T>() == 1, "a record must be aligned to 1") };
         let bytes = self.bytes(T::LEN)?;
@@ -144,10 +144,10 @@ impl<'a> Reader<'a> {
     ///
     /// # Errors
     ///
-    /// [`Error::OutOfBounds`] if the records run past the end.
+    /// [`FormatError::OutOfBounds`] if the records run past the end.
     pub fn records_at<T: Record>(&self, pos: usize, count: usize) -> Result<&'a [T]> {
         const { assert!(align_of::<T>() == 1, "a record must be aligned to 1") };
-        let len = count.checked_mul(T::LEN).ok_or(Error::OutOfBounds {
+        let len = count.checked_mul(T::LEN).ok_or(FormatError::OutOfBounds {
             pos,
             len: usize::MAX,
             size: self.data.len(),
@@ -165,10 +165,10 @@ impl<'a> Reader<'a> {
     ///
     /// # Errors
     ///
-    /// [`Error::OutOfBounds`] if `pos` is past the end, or
-    /// [`Error::Unterminated`] if no null byte follows it.
+    /// [`FormatError::OutOfBounds`] if `pos` is past the end, or
+    /// [`FormatError::Unterminated`] if no null byte follows it.
     pub fn cstr_at(&self, pos: usize) -> Result<&'a [u8]> {
-        let rest = self.data.get(pos..).ok_or(Error::OutOfBounds {
+        let rest = self.data.get(pos..).ok_or(FormatError::OutOfBounds {
             pos,
             len: 1,
             size: self.data.len(),
@@ -176,8 +176,8 @@ impl<'a> Reader<'a> {
         let end = rest
             .iter()
             .position(|&b| b == 0)
-            .ok_or(Error::Unterminated { pos })?;
-        rest.get(..end).ok_or(Error::Unterminated { pos })
+            .ok_or(FormatError::Unterminated { pos })?;
+        rest.get(..end).ok_or(FormatError::Unterminated { pos })
     }
 }
 
@@ -187,16 +187,16 @@ mod tests {
 
     #[test]
     fn reads_advance_and_stay_in_bounds() {
-        let mut reader = Reader::new(&[0x00, 0x01, 0x02, 0x03, 0x04]);
+        let mut reader = ByteReader::new(&[0x00, 0x01, 0x02, 0x03, 0x04]);
         assert_eq!(reader.u32().unwrap(), 0x0001_0203);
         assert_eq!(reader.pos(), 4);
         assert_eq!(reader.u8().unwrap(), 0x04);
-        assert!(matches!(reader.u8(), Err(Error::OutOfBounds { .. })));
+        assert!(matches!(reader.u8(), Err(FormatError::OutOfBounds { .. })));
     }
 
     #[test]
     fn absolute_reads_leave_the_cursor_alone() {
-        let reader = Reader::new(&[0x0D, 0xEF, 0xAC, 0xED]);
+        let reader = ByteReader::new(&[0x0D, 0xEF, 0xAC, 0xED]);
         assert_eq!(reader.bytes_at(2, 2).unwrap(), [0xAC, 0xED]);
         assert_eq!(reader.pos(), 0);
     }
@@ -205,39 +205,39 @@ mod tests {
     /// of bounds rather than wrapping into a range that happens to exist.
     #[test]
     fn absurd_lengths_do_not_wrap() {
-        let reader = Reader::new(&[0u8; 8]);
+        let reader = ByteReader::new(&[0u8; 8]);
         assert!(matches!(
             reader.bytes_at(4, usize::MAX),
-            Err(Error::OutOfBounds { .. })
+            Err(FormatError::OutOfBounds { .. })
         ));
     }
 
     #[test]
     fn magic_steps_over_only_a_match() {
-        let mut reader = Reader::new(b"Yaz0rest");
+        let mut reader = ByteReader::new(b"Yaz0rest");
         assert_eq!(
             reader.magic(*b"RARC"),
-            Err(Error::WrongMagic { expected: *b"RARC" })
+            Err(FormatError::WrongMagic { expected: *b"RARC" })
         );
         assert_eq!(reader.pos(), 0);
         reader.magic(*b"Yaz0").unwrap();
         assert_eq!(reader.pos(), 4);
 
-        let mut short = Reader::new(b"Ya");
+        let mut short = ByteReader::new(b"Ya");
         assert!(matches!(
             short.magic(*b"Yaz0"),
-            Err(Error::WrongMagic { .. })
+            Err(FormatError::WrongMagic { .. })
         ));
     }
 
     #[test]
     fn strings_stop_at_the_terminator() {
-        let reader = Reader::new(b"name\0next\0");
+        let reader = ByteReader::new(b"name\0next\0");
         assert_eq!(reader.cstr_at(0).unwrap(), b"name");
         assert_eq!(reader.cstr_at(5).unwrap(), b"next");
         assert!(matches!(
-            Reader::new(b"unterminated").cstr_at(0),
-            Err(Error::Unterminated { .. })
+            ByteReader::new(b"unterminated").cstr_at(0),
+            Err(FormatError::Unterminated { .. })
         ));
     }
 }

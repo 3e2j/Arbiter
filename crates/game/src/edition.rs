@@ -12,7 +12,7 @@ pub enum Game {
 }
 
 #[derive(Debug)]
-pub struct Edition {
+pub struct KnownEdition {
     pub id: [u8; 6],
     pub game: Game,
     /// Revision and XXH3-128 of a clean dump's logical disc stream, see
@@ -21,7 +21,7 @@ pub struct Edition {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Verdict {
+pub enum DumpVerdict {
     Retail,
     /// A catalogued revision with another hash.
     Mismatch {
@@ -33,7 +33,7 @@ pub enum Verdict {
 
 /// Sorted by id, for `edition`'s binary search.
 #[rustfmt::skip]
-pub static EDITIONS: &[Edition] = &[
+pub static EDITIONS: &[KnownEdition] = &[
     // Twilight Princess.
     // Hashes from Dusklight's `src/dusk/iso_validate.cpp` so both tools agree.
     entry(*b"GZ2E01", Game::TwilightPrincess, &[(0, 0x14e8_86f0_8e54_8a00_0afd_e98a_3195_e788)]),
@@ -46,13 +46,13 @@ pub static EDITIONS: &[Edition] = &[
     entry(*b"RZDP01", Game::TwilightPrincess, &[(0, 0x6095_a924_a57e_5fb4_294a_c96f_b85a_09a1)]),
 ];
 
-const fn entry(id: [u8; 6], game: Game, retail: &'static [(u8, u128)]) -> Edition {
-    Edition { id, game, retail }
+const fn entry(id: [u8; 6], game: Game, retail: &'static [(u8, u128)]) -> KnownEdition {
+    KnownEdition { id, game, retail }
 }
 
 /// The edition with this disc id, if it's known.
 #[must_use]
-pub fn edition(id: &str) -> Option<&'static Edition> {
+pub fn edition(id: &str) -> Option<&'static KnownEdition> {
     let id = <[u8; 6]>::try_from(id.as_bytes()).ok()?;
     let i = EDITIONS.binary_search_by_key(&id, |e| e.id).ok()?;
     EDITIONS.get(i)
@@ -74,14 +74,14 @@ pub fn guess(id: &str) -> Option<Game> {
     GAME_CODES.get(i).map(|&(_, game)| game)
 }
 
-impl Edition {
+impl KnownEdition {
     /// How a disc's hash compares to the clean dump of its revision.
     #[must_use]
-    pub fn check(&self, revision: u8, hash: u128) -> Verdict {
+    pub fn check(&self, revision: u8, hash: u128) -> DumpVerdict {
         match self.retail.iter().find(|&&(r, _)| r == revision) {
-            Some(&(_, expected)) if expected == hash => Verdict::Retail,
-            Some(&(_, expected)) => Verdict::Mismatch { expected },
-            None => Verdict::Uncatalogued,
+            Some(&(_, expected)) if expected == hash => DumpVerdict::Retail,
+            Some(&(_, expected)) => DumpVerdict::Mismatch { expected },
+            None => DumpVerdict::Uncatalogued,
         }
     }
 }
@@ -127,12 +127,12 @@ mod tests {
     fn checks_revision_and_hash() {
         let na = edition("GZ2E01").unwrap();
         let hash = 0x14e8_86f0_8e54_8a00_0afd_e98a_3195_e788;
-        assert_eq!(na.check(0, hash), Verdict::Retail);
-        assert_eq!(na.check(0, 1), Verdict::Mismatch { expected: hash });
-        assert_eq!(na.check(1, hash), Verdict::Uncatalogued);
+        assert_eq!(na.check(0, hash), DumpVerdict::Retail);
+        assert_eq!(na.check(0, 1), DumpVerdict::Mismatch { expected: hash });
+        assert_eq!(na.check(1, hash), DumpVerdict::Uncatalogued);
         assert_eq!(
             edition("RZDK01").unwrap().check(0, hash),
-            Verdict::Uncatalogued
+            DumpVerdict::Uncatalogued
         );
     }
 }

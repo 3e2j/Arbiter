@@ -10,7 +10,7 @@ use super::search::Tokens;
 use super::token::Token;
 use super::token::backref::Backreference;
 use super::{Strategy, decompressed_size, header, size_of};
-use crate::{Be32, Decode, Encode, Error, Reader, Record, Result, Writer, record};
+use crate::{Be32, ByteReader, ByteWriter, Decode, Encode, FormatError, Record, Result, record};
 
 /// One mask word: one bit per token.
 type Mask = u32;
@@ -51,18 +51,18 @@ impl Decode for Yay0 {
 }
 
 impl Encode for Yay0 {
-    fn encode(&self, out: &mut Writer) -> Result<()> {
+    fn encode(&self, out: &mut ByteWriter) -> Result<()> {
         compress(&self.data, self.strategy, out)
     }
 }
 
 pub(super) fn decompress(input: &[u8]) -> Result<Vec<u8>> {
-    let mut masks = Reader::new(input);
+    let mut masks = ByteReader::new(input);
     let header: &Header = header(&mut masks, Yay0::MAGIC)?;
     let size = decompressed_size(header.size, input.len())?;
-    let mut links = Reader::new(input);
+    let mut links = ByteReader::new(input);
     links.seek(header.links_at.get() as usize);
-    let mut chunks = Reader::new(input);
+    let mut chunks = ByteReader::new(input);
     chunks.seek(header.chunks_at.get() as usize);
 
     let mut out = vec![0; size];
@@ -93,12 +93,12 @@ pub(super) fn decompress(input: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-pub(super) fn compress(input: &[u8], strategy: Strategy, out: &mut Writer) -> Result<()> {
+pub(super) fn compress(input: &[u8], strategy: Strategy, out: &mut ByteWriter) -> Result<()> {
     let size = size_of(input)?;
 
-    let mut masks = Writer::new();
-    let mut links = Writer::new();
-    let mut chunks = Writer::new();
+    let mut masks = ByteWriter::new();
+    let mut links = ByteWriter::new();
+    let mut chunks = ByteWriter::new();
     let mut mask: Mask = 0;
     let mut bits = 0;
 
@@ -133,7 +133,7 @@ pub(super) fn compress(input: &[u8], strategy: Strategy, out: &mut Writer) -> Re
     let offset = |pos: usize| {
         u32::try_from(pos)
             .map(Be32::new)
-            .map_err(|_| Error::TooLarge {
+            .map_err(|_| FormatError::TooLarge {
                 what: "a Yay0 stream offset",
             })
     };
@@ -178,7 +178,10 @@ mod tests {
     #[test]
     fn rejects_other_data() {
         assert!(!Yay0::detect(b"Yaz0...."));
-        assert!(matches!(decode(b"Yaz0...."), Err(Error::WrongMagic { .. })));
+        assert!(matches!(
+            decode(b"Yaz0...."),
+            Err(FormatError::WrongMagic { .. })
+        ));
     }
 
     /// A stream offset past the end is truncation, not an empty stream.
@@ -186,6 +189,9 @@ mod tests {
     fn rejects_a_stream_past_the_end() {
         let mut data = sample();
         data[15] = 0xFF;
-        assert!(matches!(decode(&data), Err(Error::OutOfBounds { .. })));
+        assert!(matches!(
+            decode(&data),
+            Err(FormatError::OutOfBounds { .. })
+        ));
     }
 }

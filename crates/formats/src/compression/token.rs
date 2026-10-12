@@ -5,7 +5,7 @@ pub enum Token {
 }
 
 pub mod backref {
-    use crate::{Error, Result};
+    use crate::{FormatError, Result};
 
     /// A 4-bit length nibble and a 12-bit distance. An extra byte follows for
     /// lengths the nibble can't hold.
@@ -91,16 +91,16 @@ pub mod backref {
         ///
         /// # Errors
         ///
-        /// [`Error::Malformed`] if it reaches before the start of `out`, or
+        /// [`FormatError::Malformed`] if it reaches before the start of `out`, or
         /// runs past its end.
         pub fn copy(self, out: &mut [u8], pos: usize) -> Result<usize> {
             let (distance, length) = (usize::from(self.distance), usize::from(self.length));
-            let start = pos.checked_sub(distance).ok_or(Error::Malformed {
+            let start = pos.checked_sub(distance).ok_or(FormatError::Malformed {
                 what: "a back-reference reaches before the start of the output",
             })?;
             let end = pos + length;
             if end > out.len() {
-                return Err(Error::Malformed {
+                return Err(FormatError::Malformed {
                     what: "a back-reference runs past the decompressed size",
                 });
             }

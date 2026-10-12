@@ -28,7 +28,7 @@ use std::{
     thread,
 };
 
-use game::edition::{self, Edition, Game, Verdict};
+use game::edition::{self, DumpVerdict, Game, KnownEdition};
 use pack::{
     disc::{self, Disc},
     unpack::{self, Unpacked},
@@ -154,7 +154,7 @@ pub struct StagedDisc {
     /// See `config::Edition::disc_hash`.
     pub disc_hash: Hash,
     /// `None` for an id with no tables, which shows raw values.
-    pub edition: Option<&'static Edition>,
+    pub edition: Option<&'static KnownEdition>,
     /// For an unknown id, the game its game code suggests.
     pub guess: Option<Game>,
     pub bytes: u64,
@@ -193,7 +193,9 @@ pub(crate) fn peek(path: &Path) -> Result<PeekedDisc, BaseError> {
 /// # Errors
 ///
 /// If a disc can't be read.
-pub(crate) fn verify(discs: &[(&Path, &PeekedDisc)]) -> Result<Vec<(Hash, Verdict)>, BaseError> {
+pub(crate) fn verify(
+    discs: &[(&Path, &PeekedDisc)],
+) -> Result<Vec<(Hash, DumpVerdict)>, BaseError> {
     thread::scope(|s| {
         let hashing: Vec<_> = discs
             .iter()
@@ -210,8 +212,8 @@ pub(crate) fn verify(discs: &[(&Path, &PeekedDisc)]) -> Result<Vec<(Hash, Verdic
     })
 }
 
-fn check(id: &str, revision: u8, hash: Hash) -> Verdict {
-    edition::edition(id).map_or(Verdict::Uncatalogued, |e| e.check(revision, hash.0))
+fn check(id: &str, revision: u8, hash: Hash) -> DumpVerdict {
+    edition::edition(id).map_or(DumpVerdict::Uncatalogued, |e| e.check(revision, hash.0))
 }
 
 /// Unpacks a disc beside the edition's current tree, so the current one stays
@@ -442,27 +444,27 @@ mod tests {
     }
 
     fn archive(files: &[(&str, &[u8])]) -> Vec<u8> {
-        use formats::{Encode, Writer, rarc};
+        use formats::{ByteWriter, Encode, rarc};
         let rarc = rarc::Rarc {
             root: "archive".to_owned(),
             files: files
                 .iter()
-                .map(|&(path, data)| rarc::File {
+                .map(|&(path, data)| rarc::RarcFile {
                     path: path.to_owned(),
                     data: data.to_vec(),
-                    ..rarc::File::default()
+                    ..rarc::RarcFile::default()
                 })
                 .collect(),
             next_id: None,
         };
-        let mut out = Writer::new();
+        let mut out = ByteWriter::new();
         rarc.encode(&mut out).unwrap();
         out.finish()
     }
 
     fn yaz0(data: &[u8]) -> Vec<u8> {
-        use formats::{Writer, compression::Strategy};
-        let mut out = Writer::new();
+        use formats::{ByteWriter, compression::Strategy};
+        let mut out = ByteWriter::new();
         formats::compression::Compression::Yaz0
             .compress(data, Strategy::Parity, &mut out)
             .unwrap();

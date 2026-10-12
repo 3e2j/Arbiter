@@ -51,7 +51,7 @@ enum Error {
     Project(#[from] project::ProjectError),
 
     #[error(transparent)]
-    App(#[from] app::Error),
+    App(#[from] app::AppError),
 
     #[error("{0} was given more than once, and no one picked which to keep")]
     Duplicate(String),

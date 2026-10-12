@@ -21,7 +21,7 @@ mod yaz0;
 pub use yay0::Yay0;
 pub use yaz0::Yaz0;
 
-use crate::{Be32, Error, Reader, Record, Result, Writer};
+use crate::{Be32, ByteReader, ByteWriter, FormatError, Record, Result};
 
 /// A compression wrapper, told apart by its magic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -64,7 +64,7 @@ impl Compression {
     ///
     /// # Errors
     ///
-    /// [`Error::WrongMagic`] for another wrapper, or any other [`Error`] for a
+    /// [`FormatError::WrongMagic`] for another wrapper, or any other [`FormatError`] for a
     /// broken one.
     pub fn decompress(self, bytes: &[u8]) -> Result<Vec<u8>> {
         match self {
@@ -77,8 +77,8 @@ impl Compression {
     ///
     /// # Errors
     ///
-    /// [`Error::TooLarge`] if `data` doesn't fit a 32-bit size.
-    pub fn compress(self, data: &[u8], strategy: Strategy, out: &mut Writer) -> Result<()> {
+    /// [`FormatError::TooLarge`] if `data` doesn't fit a 32-bit size.
+    pub fn compress(self, data: &[u8], strategy: Strategy, out: &mut ByteWriter) -> Result<()> {
         match self {
             Self::Yaz0 => yaz0::compress(data, strategy, out),
             Self::Yay0 => yay0::compress(data, strategy, out),
@@ -92,7 +92,7 @@ impl Compression {
 const MAX_EXPANSION: usize = token::backref::MAX_LENGTH as usize / 3;
 
 /// Steps over `magic` and borrows the header after it.
-fn header<'a, T: Record>(reader: &mut Reader<'a>, magic: [u8; 4]) -> Result<&'a T> {
+fn header<'a, T: Record>(reader: &mut ByteReader<'a>, magic: [u8; 4]) -> Result<&'a T> {
     reader.magic(magic)?;
     reader.record()
 }
@@ -103,7 +103,7 @@ fn header<'a, T: Record>(reader: &mut Reader<'a>, magic: [u8; 4]) -> Result<&'a 
 fn decompressed_size(size: Be32, input_len: usize) -> Result<usize> {
     let size = size.get() as usize;
     if size > input_len.saturating_mul(MAX_EXPANSION) {
-        return Err(Error::Malformed {
+        return Err(FormatError::Malformed {
             what: "the decompressed size is more than the data can expand to",
         });
     }
@@ -112,7 +112,7 @@ fn decompressed_size(size: Be32, input_len: usize) -> Result<usize> {
 
 /// `input`'s length, for a header's 32-bit size.
 fn size_of(input: &[u8]) -> Result<u32> {
-    u32::try_from(input.len()).map_err(|_| Error::TooLarge {
+    u32::try_from(input.len()).map_err(|_| FormatError::TooLarge {
         what: "the decompressed data",
     })
 }
@@ -136,7 +136,7 @@ mod tests {
     fn round_trip(input: &[u8]) {
         for compression in Compression::ALL {
             for strategy in [Strategy::Parity, Strategy::Extensive] {
-                let mut out = Writer::new();
+                let mut out = ByteWriter::new();
                 compression.compress(input, strategy, &mut out).unwrap();
                 let encoded = out.finish();
                 assert_eq!(Compression::detect(&encoded), Some(compression));
@@ -192,7 +192,7 @@ mod tests {
             data.extend_from_slice(&[0; 8]);
             assert!(matches!(
                 compression.decompress(&data),
-                Err(Error::Malformed { .. })
+                Err(FormatError::Malformed { .. })
             ));
         }
     }

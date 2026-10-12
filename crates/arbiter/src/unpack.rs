@@ -7,7 +7,7 @@ use std::{
 };
 
 use diag::Severity;
-use project::{EditionChange, Game, PeekedDisc, Project, StagedDisc, Verdict, hash::Hash};
+use project::{DumpVerdict, EditionChange, Game, PeekedDisc, Project, StagedDisc, hash::Hash};
 
 use crate::{
     Error,
@@ -19,7 +19,7 @@ struct Given<'a> {
     path: &'a Path,
     peeked: PeekedDisc,
     hash: Hash,
-    verdict: Verdict,
+    verdict: DumpVerdict,
 }
 
 /// Reads and hashes every disc first, so the target's game, which disc to keep
@@ -113,9 +113,9 @@ fn pick_discs<'a, 'b>(given: &'b [Given<'a>]) -> Result<Vec<(&'b Given<'a>, bool
             .iter()
             .map(|d| {
                 let verdict = match d.verdict {
-                    Verdict::Retail => "retail",
-                    Verdict::Mismatch { .. } => "not retail",
-                    Verdict::Uncatalogued => "unchecked",
+                    DumpVerdict::Retail => "retail",
+                    DumpVerdict::Mismatch { .. } => "not retail",
+                    DumpVerdict::Uncatalogued => "unchecked",
                 };
                 format!(
                     "{} (rev {}, {verdict})",
@@ -144,8 +144,8 @@ fn pick_discs<'a, 'b>(given: &'b [Given<'a>]) -> Result<Vec<(&'b Given<'a>, bool
 fn retail(disc: &Given, picked: bool) -> bool {
     let Given { peeked: p, .. } = disc;
     match disc.verdict {
-        Verdict::Retail => true,
-        Verdict::Mismatch { expected } => {
+        DumpVerdict::Retail => true,
+        DumpVerdict::Mismatch { expected } => {
             eprintln!(
                 "warning: {} rev {} isn't a clean retail disc, expected xxh3:{expected:032x}",
                 p.id, p.revision
@@ -153,7 +153,7 @@ fn retail(disc: &Given, picked: bool) -> bool {
             eprintln!("note: a scrubbed, trimmed or modified disc can unpack different files");
             picked || confirm("unpack anyway?")
         }
-        Verdict::Uncatalogued => {
+        DumpVerdict::Uncatalogued => {
             println!(
                 "note: no clean dump of {} rev {} is known, so it can't be checked",
                 p.id, p.revision
