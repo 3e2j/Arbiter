@@ -1,7 +1,7 @@
 //! A dock: its tab bar and the active tab's panel.
 
 use gui::{
-    canvas::{IconId, Rect},
+    canvas::Rect,
     components::icon_button,
     input::{Button, Cursor},
     ui::{Align, Border, Direction, Element, Size, Sizes, Ui},
@@ -9,7 +9,7 @@ use gui::{
 
 use std::ops::Range;
 
-use crate::assets::{Icon, Icons};
+use crate::assets::Icon;
 use crate::panels::Panel;
 
 pub(super) struct Tab {
@@ -55,7 +55,7 @@ impl Dock {
     /// at the right end. Tabs that would be cut off there are left out, the
     /// active one never, and arrows beside the menu step through them all.
     ///
-    pub(super) fn ui(&mut self, ui: &mut Ui, icons: &Icons) -> DockOut {
+    pub(super) fn ui(&mut self, ui: &mut Ui) -> DockOut {
         let mut out = DockOut::default();
         if self.tabs.is_empty() {
             return out;
@@ -121,15 +121,15 @@ impl Dock {
                 ui.element(buttons, |ui| {
                     if !all {
                         let last = self.tabs.len() - 1;
-                        if arrow(ui, icons.get(Icon::ChevronLeft), active > 0) {
+                        if arrow(ui, Icon::ChevronLeft, active > 0) {
                             active -= 1;
                         }
-                        if arrow(ui, icons.get(Icon::ChevronRight), active < last) {
+                        if arrow(ui, Icon::ChevronRight, active < last) {
                             active += 1;
                         }
                     }
                     let (rect, clicked) = ui.element(Element::DEFAULT, |ui| {
-                        (ui.rect(), icon_button(ui, icons.get(Icon::Menu)))
+                        (ui.rect(), icon_button(ui, Icon::Menu))
                     });
                     if let Some(rect) = rect.filter(|_| clicked) {
                         out.menu = Some((active, rect, Align::End));
@@ -271,7 +271,7 @@ fn on_line(ui: &mut Ui, width: Size, body: impl FnOnce(&mut Ui)) {
 /// A button that steps between tabs, dimmed and inert when there's no tab
 /// that way. Returns whether it was clicked.
 #[track_caller]
-fn arrow(ui: &mut Ui, icon: IconId, enabled: bool) -> bool {
+fn arrow(ui: &mut Ui, icon: Icon, enabled: bool) -> bool {
     if enabled {
         return icon_button(ui, icon);
     }

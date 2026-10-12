@@ -9,7 +9,7 @@ use std::{
 };
 
 use gui::{
-    canvas::{Color, IconId},
+    canvas::Color,
     components::{ListScroll, button, list},
     input::{Button, Cursor},
     ui::{Align, Direction, Element, Size, TextStyle, Ui},
@@ -20,7 +20,7 @@ use tracing::{
 };
 use tracing_subscriber::layer::{Context, Layer};
 
-use crate::assets::{Icon, Icons};
+use crate::assets::Icon;
 use crate::theme;
 
 /// What [`Capture`] took in since the [`Output`] last looked. A static, since
@@ -75,7 +75,6 @@ struct Fields {
 }
 
 pub struct Output {
-    icons: Icons,
     lines: Lines,
     /// Which levels are shown, by [`Level`].
     shown: [bool; Level::ALL.len()],
@@ -245,9 +244,8 @@ impl Visit for Fields {
 impl Output {
     pub const TITLE: &str = "Output";
 
-    pub const fn new(icons: Icons) -> Self {
+    pub const fn new() -> Self {
         Self {
-            icons,
             lines: Lines::new(),
             shown: [true; Level::ALL.len()],
             rows: Vec::new(),
@@ -288,7 +286,7 @@ impl Output {
             let mut time = String::new();
             list(ui, &mut self.scroll, &self.rows, height, |ui, &index| {
                 if let Some(entry) = self.lines.entries.get(index) {
-                    entry_ui(ui, &self.lines, entry, &self.icons, &mut time);
+                    entry_ui(ui, &self.lines, entry, &mut time);
                 }
             });
             if let Some(view) = view {
@@ -325,7 +323,7 @@ impl Output {
             );
             for (level, shown) in Level::ALL.into_iter().zip(&mut self.shown) {
                 let count = self.lines.counts[level as usize];
-                if toggle(ui, self.icons.get(level.icon()), level, count, *shown) {
+                if toggle(ui, level, count, *shown) {
                     *shown = !*shown;
                     self.stale = true;
                 }
@@ -336,7 +334,7 @@ impl Output {
 
 /// A level's icon and how many came in, filled while `on`. Returns whether
 /// it was clicked this pass.
-fn toggle(ui: &mut Ui, icon: IconId, level: Level, count: u32, on: bool) -> bool {
+fn toggle(ui: &mut Ui, level: Level, count: u32, on: bool) -> bool {
     let theme = ui.theme();
     let (c, s) = (theme.color, theme.size);
     let element = Element {
@@ -360,7 +358,7 @@ fn toggle(ui: &mut Ui, icon: IconId, level: Level, count: u32, on: bool) -> bool
         } else {
             (c.dim, c.dim)
         };
-        ui.icon(icon, s.icon, icon_color);
+        ui.icon(level.icon(), s.icon, icon_color);
         ui.text(theme.ui_text(text_color), &count.to_string());
         ui.clicked(Button::Left)
     })
@@ -368,7 +366,7 @@ fn toggle(ui: &mut Ui, icon: IconId, level: Level, count: u32, on: bool) -> bool
 
 /// Its level's icon, how many times it repeated, when, where from, and the
 /// first line of its message. `time` is scratch space for formatting.
-fn entry_ui(ui: &mut Ui, lines: &Lines, entry: &Entry, icons: &Icons, time: &mut String) {
+fn entry_ui(ui: &mut Ui, lines: &Lines, entry: &Entry, time: &mut String) {
     let theme = ui.theme();
     let (c, s) = (theme.color, theme.size);
     let element = Element {
@@ -387,7 +385,7 @@ fn entry_ui(ui: &mut Ui, lines: &Lines, entry: &Entry, icons: &Icons, time: &mut
     ui.element(element, |ui| {
         ui.style().background = ui.hovered().then_some(c.hover);
         let color = entry.level.color(c.dim, c.text);
-        ui.icon(icons.get(entry.level.icon()), s.icon, color);
+        ui.icon(entry.level.icon(), s.icon, color);
         time.clear();
         let _ = write!(time, "{:>9.3}", entry.at.as_secs_f64());
         ui.text(buffer(c.dim), time);

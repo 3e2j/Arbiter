@@ -30,7 +30,7 @@ pub fn button(ui: &mut Ui, label: &str) -> bool {
 
 /// An icon in a square box. Returns whether it was clicked this pass.
 #[track_caller]
-pub fn icon_button(ui: &mut Ui, icon: IconId) -> bool {
+pub fn icon_button(ui: &mut Ui, icon: impl Into<IconId>) -> bool {
     let theme = ui.theme();
     let (c, s) = (theme.color, theme.size);
     let element = Element {

@@ -25,7 +25,6 @@ use gui::{
     ui::{Border, Direction, Element, Size, Ui},
 };
 
-use crate::assets::Icons;
 use crate::panels::Panel;
 
 use dock::{Dock, Tab, dock_radius};
@@ -58,12 +57,11 @@ pub struct Workspace {
     tab_drag: Option<TabDrag>,
     /// The menu that's open, which takes every press until it closes.
     menu: Option<Menu>,
-    icons: Icons,
 }
 
 impl Workspace {
     /// With no tabs, each band at its default size.
-    pub fn new(icons: Icons) -> Self {
+    pub fn new() -> Self {
         Self {
             docks: Default::default(),
             sizes: Band::ALL.map(Band::default_size),
@@ -72,7 +70,6 @@ impl Workspace {
             grip: None,
             tab_drag: None,
             menu: None,
-            icons,
         }
     }
 
@@ -217,10 +214,10 @@ impl Workspace {
             clip: true,
             ..Element::column().padded(theme.size.line)
         };
-        let (dock, icons) = (&mut self.docks[place.index()], &self.icons);
+        let dock = &mut self.docks[place.index()];
         let out = ui.element(element, |ui| {
             dock.rect = ui.rect();
-            dock.ui(ui, icons)
+            dock.ui(ui)
         });
         if let Some((index, rect)) = out.held {
             self.grip = Some(Grip { place, index, rect });

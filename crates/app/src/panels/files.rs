@@ -14,7 +14,7 @@ use project::{
     tree::{Filter, Key, Kind, Narrowed, NodeId, Order, Row, Status, Tree, Trees},
 };
 
-use crate::assets::{Icon, Icons};
+use crate::assets::Icon;
 use crate::theme;
 use crate::workspace::Places;
 
@@ -86,7 +86,6 @@ struct Opened {
 }
 
 pub struct Files {
-    icons: Icons,
     /// `None` until a project is open.
     opened: Option<Box<Opened>>,
     tab: Tab,
@@ -175,11 +174,10 @@ impl Files {
     pub const PLACES: Places = Places::BANDS;
 
     /// Binds Ctrl+F (Command+F on macOS) in `keymap` to focus the search.
-    pub fn new(icons: Icons, keymap: &mut Keymap) -> Self {
+    pub fn new(keymap: &mut Keymap) -> Self {
         let find = Chord::new(input::Key::Char('f'), Modifiers::COMMAND);
         keymap.bind(find, FILES, Some(SEARCH));
         Self {
-            icons,
             opened: None,
             tab: Tab::Project,
             search: TextField::default(),
@@ -308,7 +306,6 @@ impl Files {
             return empty(ui, "No matches");
         }
         let height = ui.theme().size.row;
-        let icons = &self.icons;
         let columns = Columns {
             gutter: self.tab == Tab::Game,
             letters: self.letters,
@@ -318,7 +315,7 @@ impl Files {
         list(ui, &mut scroll, &view.rows, height, |ui, &row| {
             let open = view.is_open(row.last, narrowing);
             let selected = view.selected == Some(row.last);
-            if row_ui(ui, tree, row, open, selected, columns, icons) {
+            if row_ui(ui, tree, row, open, selected, columns) {
                 clicked = Some(row.last);
             }
         });
@@ -358,7 +355,7 @@ impl Files {
             ..Element::DEFAULT
         };
         ui.element(strip, |ui| {
-            let icon = Some(self.icons.get(Icon::Search));
+            let icon = Some(Icon::Search.into());
             if text_field(ui, &mut self.search, icon, "Search") {
                 self.renarrow();
             }
@@ -377,7 +374,7 @@ impl Files {
     /// pointer is over either.
     fn popover_button(&mut self, ui: &mut Ui, popover: Popover, icon: Icon, set: bool) -> bool {
         let open = self.popover == Some(popover);
-        let (clicked, mut over) = icon_button(ui, &self.icons, icon, open || set);
+        let (clicked, mut over) = icon_button(ui, icon, open || set);
         if clicked {
             self.popover = (!open).then_some(popover);
         }
@@ -421,10 +418,9 @@ impl Files {
     /// What the mod changed and each edition, ticked to show only what it
     /// has that another doesn't.
     fn filter_ui(&mut self, ui: &mut Ui) {
-        let icons = &self.icons;
         let mut filter = self.filter;
         heading(ui, "Show only");
-        if check(ui, icons, "Changed", filter.modded) {
+        if check(ui, "Changed", filter.modded) {
             filter.modded = !filter.modded;
         }
         let editions = self
@@ -434,7 +430,7 @@ impl Files {
         if editions.len() > 1 {
             heading(ui, "Differing in");
             for (bit, id) in (0..).zip(editions) {
-                if check(ui, icons, id, filter.editions >> bit & 1 != 0) {
+                if check(ui, id, filter.editions >> bit & 1 != 0) {
                     filter.editions ^= 1 << bit;
                 }
             }
@@ -448,17 +444,16 @@ impl Files {
     /// Each [`Key`], then each direction, the one in use ticked. Then how
     /// rows are shown.
     fn view_ui(&mut self, ui: &mut Ui) {
-        let icons = self.icons;
         let mut order = self.order;
         heading(ui, "Sort by");
         for (key, label) in [(Key::Name, "Name"), (Key::Type, "Type")] {
-            if check(ui, &icons, label, order.key == key) {
+            if check(ui, label, order.key == key) {
                 order.key = key;
             }
         }
         heading(ui, "Order");
         for (descending, label) in [(false, "Ascending"), (true, "Descending")] {
-            if check(ui, &icons, label, order.descending == descending) {
+            if check(ui, label, order.descending == descending) {
                 order.descending = descending;
             }
         }
@@ -466,11 +461,11 @@ impl Files {
             self.sort(order);
         }
         heading(ui, "Display");
-        if check(ui, &icons, "Compact folders", self.compact) {
+        if check(ui, "Compact folders", self.compact) {
             self.compact = !self.compact;
             self.restale();
         }
-        if check(ui, &icons, "Edition letters", self.letters) {
+        if check(ui, "Edition letters", self.letters) {
             self.letters = !self.letters;
         }
     }
@@ -558,7 +553,6 @@ fn row_ui(
     open: bool,
     selected: bool,
     columns: Columns,
-    icons: &Icons,
 ) -> bool {
     let theme = ui.theme();
     let (c, s) = (theme.color, theme.size);
@@ -623,7 +617,7 @@ fn row_ui(
                 (Kind::Folder, false, false) => Icon::Folder,
                 (Kind::File, ..) => Icon::File,
             };
-            ui.icon(icons.get(icon), s.icon, c.dim);
+            ui.icon(icon, s.icon, c.dim);
             // Each folder in a run is its own text, to be picked on its own.
             for id in row.nodes() {
                 if id != row.first {
@@ -647,7 +641,7 @@ fn row_ui(
 
 /// A square button showing `icon`, in the accent while `lit`. Returns
 /// whether it was clicked this pass, and whether the pointer is over it.
-fn icon_button(ui: &mut Ui, icons: &Icons, icon: Icon, lit: bool) -> (bool, bool) {
+fn icon_button(ui: &mut Ui, icon: Icon, lit: bool) -> (bool, bool) {
     let theme = ui.theme();
     let (c, s) = (theme.color, theme.size);
     let element = Element {
@@ -661,7 +655,7 @@ fn icon_button(ui: &mut Ui, icons: &Icons, icon: Icon, lit: bool) -> (bool, bool
         let hovered = ui.hovered();
         ui.style().background = hovered.then_some(c.hover);
         let color = if lit { c.accent } else { c.dim };
-        ui.icon(icons.get(icon), s.icon, color);
+        ui.icon(icon, s.icon, color);
         (ui.clicked(Button::Left), hovered)
     })
 }
@@ -683,7 +677,7 @@ fn heading(ui: &mut Ui, text: &str) {
 
 /// A line in a popover: a tick while `on`, then `label`. Returns whether it
 /// was clicked this pass.
-fn check(ui: &mut Ui, icons: &Icons, label: &str, on: bool) -> bool {
+fn check(ui: &mut Ui, label: &str, on: bool) -> bool {
     let theme = ui.theme();
     let (c, s) = (theme.color, theme.size);
     let element = Element {
@@ -704,7 +698,7 @@ fn check(ui: &mut Ui, icons: &Icons, label: &str, on: bool) -> bool {
         ui.style().background = ui.hovered().then_some(c.hover);
         ui.element(tick, |ui| {
             if on {
-                ui.icon(icons.get(Icon::Check), s.icon, c.accent);
+                ui.icon(Icon::Check, s.icon, c.accent);
             }
         });
         ui.text(theme.ui_text(c.text), label);

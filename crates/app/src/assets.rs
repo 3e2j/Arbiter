@@ -1,8 +1,13 @@
 //! The fonts and icons built into the editor, from the workspace's `assets/`.
 //! Each folder there carries its license.
 
+use std::sync::OnceLock;
+
 use gui::canvas::{Error, FontFile, Glyphs, IconId};
 use gui::ui::Fonts;
+
+/// Every [`Icon`]'s id, set by [`load_icons`].
+static ICONS: OnceLock<[IconId; Icon::ALL.len()]> = OnceLock::new();
 
 /// A file under `assets/`.
 macro_rules! asset {
@@ -141,21 +146,25 @@ impl Icon {
     }
 }
 
-/// Each [`Icon`]'s id in the glyphs, indexed by the icon.
-#[derive(Clone, Copy)]
-pub struct Icons([IconId; Icon::ALL.len()]);
-
-impl Icons {
-    pub fn load(glyphs: &mut Glyphs) -> Result<Self, Error> {
-        let mut ids = [IconId::default(); Icon::ALL.len()];
-        for (id, icon) in ids.iter_mut().zip(Icon::ALL) {
-            let (name, svg) = icon.file();
-            *id = glyphs.add_icon(name, svg)?;
-        }
-        Ok(Self(ids))
+/// Adds every [`Icon`] to `glyphs`, so each converts to its [`IconId`].
+pub fn load_icons(glyphs: &mut Glyphs) -> Result<(), Error> {
+    let mut ids = [IconId::default(); Icon::ALL.len()];
+    for (id, icon) in ids.iter_mut().zip(Icon::ALL) {
+        let (name, svg) = icon.file();
+        *id = glyphs.add_icon(name, svg)?;
     }
+    // Already set by an earlier window, which loaded the same icons in the
+    // same order.
+    let _ = ICONS.set(ids);
+    Ok(())
+}
 
-    pub const fn get(&self, icon: Icon) -> IconId {
-        self.0[icon as usize]
+impl From<Icon> for IconId {
+    /// The default id until [`load_icons`] runs, which the editor does
+    /// before drawing anything.
+    fn from(icon: Icon) -> Self {
+        ICONS
+            .get()
+            .map_or_else(Self::default, |ids| ids[icon as usize])
     }
 }

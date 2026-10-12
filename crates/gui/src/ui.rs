@@ -381,9 +381,9 @@ impl<'a> Ui<'a> {
     /// `icon` in a square `size` logical pixels wide. Returns its rect last
     /// pass.
     #[track_caller]
-    pub fn icon(&mut self, icon: IconId, size: f32, color: Color) -> Option<Rect> {
+    pub fn icon(&mut self, icon: impl Into<IconId>, size: f32, color: Color) -> Option<Rect> {
         let slot = self.next_slot(Location::caller());
-        self.layout.icon(slot, icon, size, color)
+        self.layout.icon(slot, icon.into(), size, color)
     }
 
     /// A box its owner paints into. Use elements first, as [`Painter`] says.

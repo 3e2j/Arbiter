@@ -8,7 +8,7 @@ use gui::{
     ui::{Align, Anchor, Border, Direction, Element, Size, Ui},
 };
 
-use crate::assets::{Icon, Icons};
+use crate::assets::Icon;
 
 use super::Workspace;
 use super::dock::{Dock, TAB_GAP, TAB_PADDING, dock_radius, tab_height};
@@ -100,7 +100,7 @@ impl Workspace {
             self.menu = None;
             return;
         }
-        let choice = menu_ui(ui, menu, &self.docks, &self.icons, window);
+        let choice = menu_ui(ui, menu, &self.docks, window);
         let dock = &mut self.docks[menu.place.index()];
         match choice {
             None => return,
@@ -141,13 +141,7 @@ impl Workspace {
 /// Declares `menu` inside `window`: a row per tab of its dock over a map of
 /// the places, as [`tab_row`] and [`map_cell`] draw them. Returns what was
 /// clicked.
-fn menu_ui(
-    ui: &mut Ui,
-    menu: Menu,
-    docks: &[Dock; Place::COUNT],
-    icons: &Icons,
-    window: Rect,
-) -> Option<Choice> {
+fn menu_ui(ui: &mut Ui, menu: Menu, docks: &[Dock; Place::COUNT], window: Rect) -> Option<Choice> {
     let theme = ui.theme();
     let (color, size) = (theme.color, theme.size);
     let dock = &docks[menu.place.index()];
@@ -192,7 +186,7 @@ fn menu_ui(
         ui.element(across, |ui| {
             for (key, (index, tab)) in (0..).zip(dock.tabs.iter().enumerate()) {
                 let picked = ui.keyed(key, across, |ui| {
-                    tab_row(ui, icons, tab.panel.title(), index == menu.tab)
+                    tab_row(ui, tab.panel.title(), index == menu.tab)
                 });
                 chosen = chosen.or(picked.map(|row| match row {
                     RowClick::Show => Choice::Show(index),
@@ -235,7 +229,7 @@ enum RowClick {
 /// A tab's row, filling the menu across, titled `title` from the left. The
 /// `selected` one is lit. A close button shows at its right end while the
 /// pointer is on the row.
-fn tab_row(ui: &mut Ui, icons: &Icons, title: &str, selected: bool) -> Option<RowClick> {
+fn tab_row(ui: &mut Ui, title: &str, selected: bool) -> Option<RowClick> {
     let theme = ui.theme();
     let (color, size) = (theme.color, theme.size);
     let row = tab_height(size);
@@ -273,7 +267,7 @@ fn tab_row(ui: &mut Ui, icons: &Icons, title: &str, selected: bool) -> Option<Ro
         let closed = ui.element(close, |ui| {
             if hovered {
                 let lit = if ui.hovered() { color.text } else { color.dim };
-                ui.icon(icons.get(Icon::Close), size.icon, lit);
+                ui.icon(Icon::Close, size.icon, lit);
             }
             ui.clicked(Button::Left)
         });

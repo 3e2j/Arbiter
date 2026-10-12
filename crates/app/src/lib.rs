@@ -13,7 +13,6 @@ mod workspace;
 
 use std::sync::Arc;
 
-use assets::Icons;
 use gui::{
     host::{App, Startup, Wake},
     input::Input,
@@ -110,20 +109,20 @@ impl App for Editor {
         (log, project): Self::Args,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         start.theme = theme::theme(assets::fonts(start.glyphs)?);
-        let icons = Icons::load(start.glyphs)?;
+        assets::load_icons(start.glyphs)?;
         // TODO: from the session, once the workspace is saved.
-        let mut workspace = Workspace::new(icons);
+        let mut workspace = Workspace::new();
         let editor = |title| Panel::Placeholder(Placeholder::new(title, Places::MAIN));
         let tool = |title| Panel::Placeholder(Placeholder::new(title, Places::BANDS));
         workspace.add(editor("Messages"), Place::Main);
         workspace.add(
-            Panel::Files(Files::new(icons, &mut start.keymap)),
+            Panel::Files(Files::new(&mut start.keymap)),
             Place::LeftInnerTop,
         );
         workspace.add(tool("Search"), Place::LeftInnerTop);
         workspace.add(tool("Outline"), Place::LeftInnerBottom);
         workspace.add(tool("Inspector"), Place::RightInnerTop);
-        workspace.add(Panel::Output(Output::new(icons)), Place::BelowMain);
+        workspace.add(Panel::Output(Output::new()), Place::BelowMain);
         workspace.add(tool("Diagnostics"), Place::BelowMain);
         let mut app = Self {
             workspace,
