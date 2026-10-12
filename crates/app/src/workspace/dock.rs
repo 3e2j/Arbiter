@@ -2,7 +2,7 @@
 
 use gui::{
     canvas::Rect,
-    components::icon_button,
+    components::{IconState, icon_button},
     input::{Button, Cursor},
     ui::{Align, Border, Direction, Element, Size, Sizes, Ui},
 };
@@ -121,15 +121,25 @@ impl Dock {
                 ui.element(buttons, |ui| {
                     if !all {
                         let last = self.tabs.len() - 1;
-                        if arrow(ui, Icon::ChevronLeft, active > 0) {
+                        let state = |enabled| {
+                            if enabled {
+                                IconState::Normal
+                            } else {
+                                IconState::Disabled
+                            }
+                        };
+                        if icon_button(ui, Icon::ChevronLeft, state(active > 0)).clicked {
                             active -= 1;
                         }
-                        if arrow(ui, Icon::ChevronRight, active < last) {
+                        if icon_button(ui, Icon::ChevronRight, state(active < last)).clicked {
                             active += 1;
                         }
                     }
                     let (rect, clicked) = ui.element(Element::DEFAULT, |ui| {
-                        (ui.rect(), icon_button(ui, Icon::Menu))
+                        (
+                            ui.rect(),
+                            icon_button(ui, Icon::Menu, IconState::Normal).clicked,
+                        )
                     });
                     if let Some(rect) = rect.filter(|_| clicked) {
                         out.menu = Some((active, rect, Align::End));
@@ -266,26 +276,6 @@ fn on_line(ui: &mut Ui, width: Size, body: impl FnOnce(&mut Ui)) {
         ui.element(above, body);
         ui.element(line, |_| {});
     });
-}
-
-/// A button that steps between tabs, dimmed and inert when there's no tab
-/// that way. Returns whether it was clicked.
-#[track_caller]
-fn arrow(ui: &mut Ui, icon: Icon, enabled: bool) -> bool {
-    if enabled {
-        return icon_button(ui, icon);
-    }
-    let theme = ui.theme();
-    let size = theme.size;
-    let element = Element {
-        size: [Size::Fixed(size.row); 2],
-        align: [Align::Center; 2],
-        ..Element::DEFAULT
-    };
-    ui.element(element, |ui| {
-        ui.icon(icon, size.icon, theme.color.dim.alpha(0x60));
-    });
-    false
 }
 
 /// Which of the tabs `widths` wide show, each followed by `gap`. All of them

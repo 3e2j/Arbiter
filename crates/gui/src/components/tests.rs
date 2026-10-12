@@ -156,3 +156,36 @@ fn a_button_reports_a_click_over_it() {
     assert!(pass(&mut kept));
     assert!(!pass(&mut kept));
 }
+
+/// A popover 50 wide hanging under the right end of a box 100 by 20.
+/// Returns whether it saw a press outside.
+fn popover_pass(kept: &mut Kept) -> bool {
+    kept.pass(|ui| {
+        ui.element(fixed(100., 20.), |ui| {
+            popover(ui, 50., |ui| ui.element(fixed(10., 10.), |_| ())).1
+        })
+    })
+}
+
+#[test]
+fn a_popover_closes_on_a_press_outside_it() {
+    let mut kept = Kept::default();
+    kept.input.push(Event::Pointer(Some([5., 5.])));
+    // The pass it opens, the press is the one that opened it.
+    kept.input.push(Event::Pressed(Button::Left));
+    assert!(!popover_pass(&mut kept));
+    kept.input.push(Event::Released(Button::Left));
+    popover_pass(&mut kept);
+    kept.input.push(Event::Pressed(Button::Left));
+    assert!(popover_pass(&mut kept));
+}
+
+#[test]
+fn a_popover_stays_open_on_a_press_inside_it() {
+    let mut kept = Kept::default();
+    popover_pass(&mut kept);
+    kept.input.push(Event::Pointer(Some([75., 25.])));
+    popover_pass(&mut kept);
+    kept.input.push(Event::Pressed(Button::Left));
+    assert!(!popover_pass(&mut kept));
+}

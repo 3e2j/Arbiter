@@ -4,10 +4,10 @@
 //! Includes Search, Filter, and View options.
 
 use gui::{
-    components::{self, ListScroll, TextField, list, text_field},
+    components::{self, IconState, ListScroll, TextField, icon_button, list, text_field},
     input::{self, Button, Cursor, Modifiers},
     keymap::{Action, Chord, Command, Context, Keymap},
-    ui::{Align, Anchor, Border, Direction, Element, Size, TextStyle, Ui},
+    ui::{Align, Border, Direction, Element, Size, TextStyle, Ui},
 };
 use project::{
     git,
@@ -261,7 +261,6 @@ impl Files {
         }
     }
 
-    /// A press anywhere but a popover or its button closes it.
     pub fn ui(&mut self, ui: &mut Ui) {
         if ui.input().pressed(Button::Left) {
             self.active = ui.hovered();
@@ -270,10 +269,7 @@ impl Files {
         if self.opened.is_none() {
             return empty(ui, "No project open");
         }
-        let over = self.toolbar(ui);
-        if !over && ui.input().pressed(Button::Left) {
-            self.popover = None;
-        }
+        self.toolbar(ui);
         let query = self.search.text.trim();
         let filter = self.filter(self.tab);
         let narrowing = !query.is_empty() || !filter.is_empty();
@@ -333,9 +329,8 @@ impl Files {
         }
     }
 
-    /// The search across, then Filter on the Game tab, then View. Returns
-    /// whether the pointer is over either or its popover.
-    fn toolbar(&mut self, ui: &mut Ui) -> bool {
+    /// The search across, then Filter on the Game tab, then View.
+    fn toolbar(&mut self, ui: &mut Ui) {
         let input = ui.input();
         let keymap = ui.keymap();
         let focus = input
@@ -359,60 +354,37 @@ impl Files {
             if text_field(ui, &mut self.search, icon, "Search") {
                 self.renarrow();
             }
-            let mut over = false;
             if self.tab == Tab::Game {
                 let set = !self.filter.is_empty();
-                over |= self.popover_button(ui, Popover::Filter, Icon::Filter, set);
+                self.popover_button(ui, Popover::Filter, Icon::Filter, set);
             }
-            over | self.popover_button(ui, Popover::View, Icon::View, false)
-        })
+            self.popover_button(ui, Popover::View, Icon::View, false);
+        });
     }
 
-    /// A button with `icon` that opens `popover` under the right end of the
-    /// box `ui` has open, lit while it's open or while `set` says what it
-    /// holds narrows the tree. Returns whether the
-    /// pointer is over either.
-    fn popover_button(&mut self, ui: &mut Ui, popover: Popover, icon: Icon, set: bool) -> bool {
+    /// A button with `icon` that toggles `popover` under the right end of
+    /// the box `ui` has open, lit while it's open or while `set` says what it
+    /// holds narrows the tree.
+    fn popover_button(&mut self, ui: &mut Ui, popover: Popover, icon: Icon, set: bool) {
         let open = self.popover == Some(popover);
-        let (clicked, mut over) = icon_button(ui, icon, open || set);
-        if clicked {
+        let state = if open || set {
+            IconState::Lit
+        } else {
+            IconState::Normal
+        };
+        if icon_button(ui, icon, state).pressed {
             self.popover = (!open).then_some(popover);
         }
-        if self.popover == Some(popover) {
-            over |= self.popover_ui(ui, popover);
+        if self.popover != Some(popover) {
+            return;
         }
-        over
-    }
-
-    /// `popover` hanging under the right end of the box `ui` has open.
-    /// Returns whether the pointer is over it.
-    fn popover_ui(&mut self, ui: &mut Ui, popover: Popover) -> bool {
-        let theme = ui.theme();
-        let (c, s) = (theme.color, theme.size);
-        let element = Element {
-            size: [Size::Fixed(POPOVER), Size::Fit],
-            padding: [s.gap / 2.; 4],
-            background: Some(c.surface),
-            border: Some(Border {
-                width: s.line,
-                color: c.line,
-            }),
-            radius: [s.radius; 4],
-            float: Some(Anchor::Parent {
-                parent: [Align::End; 2],
-                own: [Align::End, Align::Start],
-                offset: [-s.gap / 2., 0.],
-                clipped: false,
-            }),
-            ..Element::DEFAULT
-        };
-        ui.element(element, |ui| {
-            match popover {
-                Popover::Filter => self.filter_ui(ui),
-                Popover::View => self.view_ui(ui),
-            }
-            ui.hovered()
-        })
+        let ((), outside) = components::popover(ui, POPOVER, |ui| match popover {
+            Popover::Filter => self.filter_ui(ui),
+            Popover::View => self.view_ui(ui),
+        });
+        if outside {
+            self.popover = None;
+        }
     }
 
     /// What the mod changed and each edition, ticked to show only what it
@@ -629,27 +601,6 @@ fn row_ui(
         }
     });
     clicked
-}
-
-/// A square button showing `icon`, in the accent while `lit`. Returns
-/// whether it was clicked this pass, and whether the pointer is over it.
-fn icon_button(ui: &mut Ui, icon: Icon, lit: bool) -> (bool, bool) {
-    let theme = ui.theme();
-    let (c, s) = (theme.color, theme.size);
-    let element = Element {
-        size: [Size::Fixed(s.row); 2],
-        align: [Align::Center; 2],
-        radius: [s.radius; 4],
-        cursor: Some(Cursor::Pointer),
-        ..Element::DEFAULT
-    };
-    ui.element(element, |ui| {
-        let hovered = ui.hovered();
-        ui.style().background = hovered.then_some(c.hover);
-        let color = if lit { c.accent } else { c.dim };
-        ui.icon(icon, s.icon, color);
-        (ui.clicked(Button::Left), hovered)
-    })
 }
 
 /// A dim line naming the checks below it in a popover.

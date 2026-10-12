@@ -11,11 +11,13 @@
 
 mod button;
 mod field;
+mod popover;
 mod row;
 mod scroll;
 
-pub use button::{button, icon_button};
+pub use button::{Clicks, IconState, button, icon_button};
 pub use field::{TextField, text_field};
+pub use popover::popover;
 pub use row::row;
 pub use scroll::{ListScroll, Scroll, list, scroll};
 
