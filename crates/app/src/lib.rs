@@ -7,20 +7,22 @@
 mod assets;
 mod panels;
 mod theme;
+mod watch;
 mod workspace;
 
 use std::sync::Arc;
 
 use assets::Icons;
 use gui::{
-    host::{App, Startup},
+    host::{App, Startup, Wake},
     input::Input,
     platform::window,
     ui::Ui,
 };
 pub use panels::Capture;
 use panels::{Files, Output, Panel, Placeholder};
-use project::{Log, Project};
+use project::{Log, Project, tree::Trees};
+use watch::Watch;
 use workspace::{Place, Places, Workspace};
 
 #[derive(Debug, thiserror::Error)]
@@ -41,12 +43,13 @@ pub fn run(log: Arc<Log>, project: Option<Project>) -> Result<(), Error> {
 }
 
 /// The editor, as one [`App`]. Owns what only Arbiter knows about.
-// TODO: owns `Watch` once `app::watch` exists, which ignores `.arbiter/`, as
-// the log and cache there change all the time.
 struct Editor {
     workspace: Workspace,
     log: Arc<Log>,
     project: Option<Project>,
+    /// The open project's, unless it couldn't be watched.
+    watch: Option<Watch>,
+    wake: Wake,
 }
 
 impl Editor {
@@ -56,6 +59,23 @@ impl Editor {
             tracing::warn!("can't write a log in {}: {err}", project.root.display());
         }
         tracing::info!("opened {}", project.root.display());
+        // Before the trees are read, so nothing changed in between is missed.
+        self.watch = match Watch::new(&project.root, self.wake.clone()) {
+            Ok(watch) => Some(watch),
+            Err(err) => {
+                tracing::warn!("can't watch the project, so its files won't refresh: {err}");
+                None
+            }
+        };
+        self.project = Some(project);
+        self.read_trees(Files::set);
+    }
+
+    /// Reads the open project's trees into the Files panel through `show`.
+    fn read_trees(&mut self, show: fn(&mut Files, Trees)) {
+        let Some(project) = &self.project else {
+            return;
+        };
         match project.trees() {
             Ok(trees) => {
                 let files = self.workspace.panels_mut().find_map(|panel| match panel {
@@ -63,12 +83,11 @@ impl Editor {
                     _ => None,
                 });
                 if let Some(files) = files {
-                    files.set(trees);
+                    show(files, trees);
                 }
             }
             Err(err) => tracing::warn!("can't read the project's files: {err}"),
         }
-        self.project = Some(project);
     }
 }
 
@@ -101,6 +120,8 @@ impl App for Editor {
             workspace,
             log,
             project: None,
+            watch: None,
+            wake: start.wake.clone(),
         };
         if let Some(project) = project {
             app.open(project);
@@ -109,6 +130,12 @@ impl App for Editor {
     }
 
     fn input(&mut self, input: &Input) {
+        let batch = self.watch.as_ref().and_then(Watch::take);
+        if let (Some(batch), Some(project)) = (batch, &self.project)
+            && (batch.rescan || batch.paths.iter().any(|path| project.trees_read(path)))
+        {
+            self.read_trees(Files::refresh);
+        }
         self.workspace.input(input);
     }
 

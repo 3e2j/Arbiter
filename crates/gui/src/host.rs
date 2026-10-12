@@ -2,7 +2,7 @@
 //!
 //! The window drives a [`Host`] and never calls the app itself.
 
-use std::error::Error;
+use std::{error::Error, sync::Arc};
 
 use crate::canvas::{AtlasUpdate, Canvas, Glyphs, Rect};
 use crate::clipboard::Clipboard;
@@ -40,8 +40,23 @@ pub trait App: Sized {
     fn on_close(&mut self) {}
 }
 
+/// Wakes the window from any thread, so a frame runs without input and the
+/// app picks up what the thread made, such as in [`App::input`].
+#[derive(Clone)]
+pub struct Wake(Arc<dyn Fn() + Send + Sync>);
+
+impl Wake {
+    /// Calling `wake`, which the window makes its own, or a test does.
+    pub fn new(wake: impl Fn() + Send + Sync + 'static) -> Self {
+        Self(Arc::new(wake))
+    }
+
+    pub fn wake(&self) {
+        (self.0)();
+    }
+}
+
 /// What the app sets up before the first pass.
-// TODO: `wake` once something runs off the main thread, such as `app::watch`.
 pub struct Startup<'a> {
     /// What everything is drawn with, and the window cleared to. Black and
     /// zero sized until the app fills it in.
@@ -50,6 +65,8 @@ pub struct Startup<'a> {
     pub glyphs: &'a mut Glyphs,
     /// The default keys, for the app to bind its own over.
     pub keymap: Keymap,
+    /// For the app's threads to keep.
+    pub wake: Wake,
 }
 
 pub struct Host<A> {
@@ -66,12 +83,13 @@ impl<A: App> Host<A> {
     /// # Errors
     ///
     /// When [`App::new`] fails.
-    pub fn new(args: A::Args) -> Result<Self, Box<dyn Error>> {
+    pub fn new(args: A::Args, wake: Wake) -> Result<Self, Box<dyn Error>> {
         let mut glyphs = Glyphs::default();
         let mut start = Startup {
             theme: Theme::default(),
             glyphs: &mut glyphs,
             keymap: Keymap::default(),
+            wake,
         };
         let app = A::new(&mut start, args)?;
         let Startup { theme, keymap, .. } = start;

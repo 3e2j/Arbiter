@@ -10,7 +10,7 @@ use super::pacer::Pacer;
 use crate::{
     canvas::{Canvas, Rect},
     cast::narrow,
-    host::{App, Host},
+    host::{App, Host, Wake},
     input::{Button, Code, Cursor, Event, Key, Modifiers},
     render::{self, Gpu},
 };
@@ -53,13 +53,19 @@ pub enum Error {
 /// When the app can't start, or the window or its GPU surface can't be opened,
 /// including again after the surface is lost.
 pub fn run<A: App>(args: A::Args) -> Result<(), Error> {
+    let event_loop = EventLoop::new()?;
+    let proxy = event_loop.create_proxy();
+    // Fails only once the loop has closed, when there's nothing to wake.
+    let wake = Wake::new(move || {
+        let _ = proxy.send_event(());
+    });
     let mut runner = Runner {
-        host: Host::<A>::new(args).map_err(Error::App)?,
+        host: Host::<A>::new(args, wake).map_err(Error::App)?,
         canvas: Canvas::default(),
         open: None,
         error: None,
     };
-    EventLoop::new()?.run_app(&mut runner)?;
+    event_loop.run_app(&mut runner)?;
     runner.error.map_or(Ok(()), Err)
 }
 
@@ -209,6 +215,13 @@ impl<A: App> ApplicationHandler for Runner<A> {
                     open.pacer.request();
                 }
             }
+        }
+    }
+
+    // From a `Wake`.
+    fn user_event(&mut self, _: &ActiveEventLoop, (): ()) {
+        if let Some(open) = &mut self.open {
+            open.pacer.request();
         }
     }
 

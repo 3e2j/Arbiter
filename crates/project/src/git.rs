@@ -36,9 +36,12 @@ pub(crate) fn status(root: &Path) -> Option<Vec<(String, Status)>> {
     let prefix = git(root, &["rev-parse", "--show-prefix"])?;
     let prefix = prefix.trim_end_matches('\n');
     // Without renames, a rename is its old path deleted and its new one added.
+    // Without optional locks, status doesn't refresh the index, which would
+    // wake a watch on `.git/index` into reading the status again.
     let out = git(
         root,
         &[
+            "--no-optional-locks",
             "status",
             "--porcelain=v1",
             "-z",

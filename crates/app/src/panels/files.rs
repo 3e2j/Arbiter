@@ -127,13 +127,13 @@ impl Open {
     }
 
     /// Itself with each node moved to its id in `map`, by old
-    /// [`NodeId::index`].
-    fn remapped(&self, map: &[NodeId]) -> Self {
+    /// [`NodeId::index`], and those with none dropped.
+    fn remapped(&self, map: &[Option<NodeId>]) -> Self {
         let mut open = Self::default();
         let words = map.chunks(64).zip(&self.0);
         for (ids, &word) in words {
             let set = ids.iter().zip(0..).filter(|&(_, bit)| word >> bit & 1 != 0);
-            for (&new, _) in set {
+            for new in set.filter_map(|(&new, _)| new) {
                 open.toggle(new);
             }
         }
@@ -150,11 +150,13 @@ impl View {
     }
 
     /// Moves what it remembers of each node to its id in `map`, by old
-    /// [`NodeId::index`], as [`Tree::sort`] returns.
-    fn remap(&mut self, map: &[NodeId]) {
+    /// [`NodeId::index`], and forgets those with none.
+    fn remap(&mut self, map: &[Option<NodeId>]) {
         self.open = self.open.remapped(map);
         self.flipped = self.flipped.remapped(map);
-        self.selected = self.selected.and_then(|id| map.get(id.index()).copied());
+        self.selected = self
+            .selected
+            .and_then(|id| map.get(id.index()).copied().flatten());
         self.stale = true;
     }
 
@@ -201,6 +203,25 @@ impl Files {
         self.filter.editions = 0;
     }
 
+    /// Shows `trees`, read again, in place of what was shown. Each tab keeps
+    /// what it had open and selected wherever the same path still is.
+    pub fn refresh(&mut self, mut trees: Trees) {
+        let Some(opened) = self.opened.as_deref_mut() else {
+            return self.set(trees);
+        };
+        if self.order != Order::default() {
+            trees.game.sort(self.order);
+            trees.project.sort(self.order);
+        }
+        if trees.game.editions != opened.trees.game.editions {
+            self.filter.editions = 0;
+        }
+        let [project, game] = &mut opened.views;
+        project.remap(&opened.trees.project.ids_in(&trees.project));
+        game.remap(&opened.trees.game.ids_in(&trees.game));
+        opened.trees = trees;
+    }
+
     /// The filter as `tab`'s tree takes it.
     fn filter(&self, tab: Tab) -> Filter {
         match tab {
@@ -215,9 +236,10 @@ impl Files {
         let Some(opened) = self.opened.as_deref_mut() else {
             return;
         };
+        let sort = |tree: &mut Tree| -> Vec<_> { tree.sort(order).into_iter().map(Some).collect() };
         let [project, game] = &mut opened.views;
-        project.remap(&opened.trees.project.sort(order));
-        game.remap(&opened.trees.game.sort(order));
+        project.remap(&sort(&mut opened.trees.project));
+        game.remap(&sort(&mut opened.trees.game));
     }
 
     /// Rebuilds every tab's rows.

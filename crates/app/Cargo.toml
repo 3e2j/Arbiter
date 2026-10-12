@@ -11,9 +11,13 @@ name = "app"
 [dependencies]
 arbiter-gui.workspace = true
 arbiter-project.workspace = true
+notify.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

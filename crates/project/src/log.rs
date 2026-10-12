@@ -15,7 +15,7 @@ use std::{
 };
 
 /// Under the project root.
-const DIR: &str = ".arbiter/logs";
+pub(crate) const DIR: &str = ".arbiter/logs";
 /// The current log is `<NAME>.log`, and older ones `<NAME>.<age>.log`.
 const NAME: &str = "arbiter";
 /// How many old logs are kept beside the current one.

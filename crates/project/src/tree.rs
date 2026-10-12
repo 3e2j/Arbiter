@@ -230,6 +230,38 @@ impl Project {
     pub fn trees(&self) -> Result<Trees, Error> {
         Trees::read(&self.root, &self.config)
     }
+
+    /// Whether a change at `path`, relative to the root with `/` between
+    /// components, can change what [`Self::trees`] reads: a file either tree
+    /// shows, a target's manifest, or what git compares against.
+    // TODO: a repo above the root keeps its `.git` out of the watch, so its
+    // commits wait for a manual refresh.
+    #[must_use]
+    pub fn trees_read(&self, path: &str) -> bool {
+        let git = [
+            ".git/HEAD",
+            ".git/index",
+            ".git/packed-refs",
+            ".git/info/exclude",
+        ];
+        if git.contains(&path)
+            || path.starts_with(".git/refs/")
+            || path.rsplit('/').next() == Some(".gitignore")
+        {
+            return true;
+        }
+        if path.split('/').any(is_hidden) {
+            return false;
+        }
+        // A mod's Game tree reads `base/` through its manifests alone.
+        let below = path
+            .strip_prefix(base::DIR)
+            .and_then(|rest| rest.strip_prefix('/'));
+        match below {
+            Some(rest) if self.config.kind == config::Kind::Mod => !rest.contains('/'),
+            _ => true,
+        }
+    }
 }
 
 impl Trees {
@@ -721,6 +753,47 @@ impl Tree {
         }
         self.nodes = nodes;
         map
+    }
+
+    /// Each node's id in `other`, by its [`NodeId::index`] here: the node of
+    /// the same kind at the same path, if `other` has one. So what's kept per
+    /// node follows it into a tree read again.
+    #[must_use]
+    pub fn ids_in(&self, other: &Self) -> Vec<Option<NodeId>> {
+        let mut map = vec![None; self.nodes.len()];
+        map[0] = Some(NodeId::ROOT);
+        let mut theirs = Vec::new();
+        // Parents come before their children, so each is mapped by the time
+        // its children are.
+        for (id, node) in (0..).map(NodeId).zip(&self.nodes) {
+            let Some(at) = map[id.index()] else {
+                continue;
+            };
+            if node.kind != Kind::Folder {
+                continue;
+            }
+            theirs.clear();
+            theirs.extend(other.children(at).map(|child| (other.name(child), child)));
+            theirs.sort_unstable_by(|a, b| a.0.cmp(b.0));
+            for child in self.children(id) {
+                let name = self.name(child);
+                let found = theirs.binary_search_by(|&(theirs, _)| theirs.cmp(name));
+                map[child.index()] = found
+                    .ok()
+                    .map(|i| theirs[i].1)
+                    .filter(|&theirs| other[theirs].kind == self[child].kind);
+            }
+        }
+        map
+    }
+
+    /// The nodes directly inside `id`, in order.
+    fn children(&self, id: NodeId) -> impl Iterator<Item = NodeId> + '_ {
+        let end = self[id].end;
+        let first = Some(NodeId(id.0 + 1)).filter(|&child| child < end);
+        iter::successors(first, move |&child| {
+            Some(self[child].end).filter(|&next| next < end)
+        })
     }
 
     fn sibling_order(&self, order: Order, a: NodeId, b: NodeId) -> Ordering {
@@ -1481,5 +1554,99 @@ mod tests {
         entries.sort_by(tree_order);
         let paths: Vec<_> = entries.iter().map(|e| e.path.as_str()).collect();
         assert_eq!(paths, ["c", "z/y", "A", "a", "b"]);
+    }
+
+    #[test]
+    fn ids_follow_paths_into_a_tree_read_again() {
+        let entry = |path: &str, kind| Entry {
+            kind,
+            ..Entry::file(path.to_owned())
+        };
+        let old = Tree::build(
+            vec![
+                entry("res/Msgus/zel_00.bmg", Kind::File),
+                entry("res/Msgus/zel_01.bmg", Kind::File),
+                entry("res/al.arc", Kind::File),
+                entry("sys/main.dol", Kind::File),
+            ],
+            Vec::new(),
+        )
+        .unwrap();
+        let mut new = Tree::build(
+            vec![
+                entry("res/Msgus/zel_00.bmg", Kind::File),
+                entry("res/al.arc/al.bmd", Kind::File),
+                entry("res/Layout/logo.bti", Kind::File),
+                entry("sys/main.dol", Kind::File),
+            ],
+            Vec::new(),
+        )
+        .unwrap();
+        new.sort(Order {
+            descending: true,
+            ..Order::default()
+        });
+        let map = old.ids_in(&new);
+        let path = |tree: &Tree, mut id: NodeId| {
+            let mut parts = Vec::new();
+            while id != NodeId::ROOT {
+                parts.push(tree.name(id));
+                id = tree[id].parent;
+            }
+            parts.reverse();
+            parts.join("/")
+        };
+        let followed: Vec<_> = (0..)
+            .map(NodeId)
+            .zip(&map)
+            .skip(1)
+            .map(|(id, new_id)| (path(&old, id), new_id.map(|new_id| path(&new, new_id))))
+            .collect();
+        let same = |p: &str| (p.to_owned(), Some(p.to_owned()));
+        assert_eq!(
+            followed,
+            [
+                same("res"),
+                same("res/Msgus"),
+                same("res/Msgus/zel_00.bmg"),
+                ("res/Msgus/zel_01.bmg".to_owned(), None),
+                // A file that became a folder isn't the same node.
+                ("res/al.arc".to_owned(), None),
+                same("sys"),
+                same("sys/main.dol"),
+            ]
+        );
+    }
+
+    #[test]
+    fn trees_read_what_they_show_and_what_git_compares() {
+        let project = |kind| Project {
+            root: PathBuf::new(),
+            config: config(kind, &["GZ2E01"], None),
+        };
+        let mod_project = project(config::Kind::Mod);
+        for path in [
+            "changes/res/Msgus/zel_00.bmg",
+            "code/mod.cpp",
+            "base",
+            "base/GZ2E01.toml",
+            ".gitignore",
+            "changes/.gitignore",
+            ".git/index",
+            ".git/HEAD",
+            ".git/refs/heads/main",
+        ] {
+            assert!(mod_project.trees_read(path), "{path}");
+        }
+        for path in [
+            "base/GZ2E01/res/Msgus/zel_00.bmg",
+            "base/.GZ2E01.partial",
+            ".arbiter/cache/preview.png",
+            ".git/config",
+            "res/Object/al.arc/.rarc.toml",
+        ] {
+            assert!(!mod_project.trees_read(path), "{path}");
+        }
+        assert!(project(config::Kind::Game).trees_read("base/GZ2E01/res/Msgus/zel_00.bmg"));
     }
 }
