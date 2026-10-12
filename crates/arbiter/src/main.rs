@@ -48,7 +48,7 @@ enum Command {
 #[derive(Debug, thiserror::Error)]
 enum Error {
     #[error(transparent)]
-    Project(#[from] project::Error),
+    Project(#[from] project::ProjectError),
 
     #[error(transparent)]
     App(#[from] app::Error),
@@ -83,7 +83,7 @@ fn main() -> ExitCode {
         Err(err) => {
             eprintln!("error: {err}");
             match err {
-                Error::Project(project::Error::NotEmpty(_)) => {
+                Error::Project(project::ProjectError::NotEmpty(_)) => {
                     eprintln!("help: pass --force to replace it (will wipe all project files!)");
                 }
                 Error::Duplicate(_) => eprintln!("help: pass only one disc per edition"),

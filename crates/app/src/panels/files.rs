@@ -8,13 +8,16 @@ use gui::{
         self, IconState, ListScroll, TextField, icon_button, list, notice, rule, text_field,
         toolbar,
     },
-    input::{CursorIcon, Modifiers, PointerButton},
+    input::{CursorIcon, Key, Modifiers, PointerButton},
     keymap::{AppCommand, Chord, ChordAction, KeyContext, Keymap},
     ui::{Align, Border, Direction, Element, Length, TextStyle, Ui},
 };
 use project::{
-    git,
-    tree::{Filter, Key, Kind, Narrowed, NodeId, Order, Row, Status, Tree, Trees},
+    git::GitStatus,
+    tree::{
+        Narrowed, NodeId, NodeKind, NodeStatus, SortKey, SortOrder, Tree, TreeFilter, TreeRow,
+        Trees,
+    },
 };
 
 use crate::assets::Icon;
@@ -76,7 +79,7 @@ struct View {
     selected: Option<NodeId>,
     scroll: ListScroll,
     /// The lines shown, rebuilt when `stale`.
-    rows: Vec<Row>,
+    rows: Vec<TreeRow>,
     /// Something changed what's shown, so `rows` are rebuilt next pass.
     stale: bool,
 }
@@ -94,13 +97,13 @@ pub struct Files {
     tab: Tab,
     search: TextField,
     /// The Game tree's, as everything in the Project tree is a change.
-    filter: Filter,
+    filter: TreeFilter,
     /// Folders holding only one folder share its line.
     compact: bool,
     /// Each file's edition letters, when it isn't in every edition.
     letters: bool,
     /// Both trees'.
-    order: Order,
+    order: SortOrder,
     popover: Option<Popover>,
     /// The last press landed in the panel, so its [`FILES`] keys apply.
     active: bool,
@@ -178,16 +181,16 @@ impl Files {
 
     /// Binds Ctrl+F (Command+F on macOS) in `keymap` to focus the search.
     pub fn new(keymap: &mut Keymap) -> Self {
-        let find = Chord::new(gui::input::Key::Char('f'), Modifiers::COMMAND);
+        let find = Chord::new(Key::Char('f'), Modifiers::COMMAND);
         keymap.bind(find, FILES, Some(SEARCH));
         Self {
             opened: None,
             tab: Tab::Project,
             search: TextField::default(),
-            filter: Filter::default(),
+            filter: TreeFilter::default(),
             compact: true,
             letters: true,
-            order: Order::default(),
+            order: SortOrder::default(),
             popover: None,
             active: false,
         }
@@ -195,7 +198,7 @@ impl Files {
 
     /// Shows `trees` in place of what was shown, every folder closed.
     fn set(&mut self, mut trees: Trees) {
-        if self.order != Order::default() {
+        if self.order != SortOrder::default() {
             trees.game.sort(self.order);
             trees.project.sort(self.order);
         }
@@ -215,7 +218,7 @@ impl Files {
         let Some(opened) = self.opened.as_deref_mut() else {
             return self.set(trees);
         };
-        if self.order != Order::default() {
+        if self.order != SortOrder::default() {
             trees.game.sort(self.order);
             trees.project.sort(self.order);
         }
@@ -229,15 +232,15 @@ impl Files {
     }
 
     /// The filter as `tab`'s tree takes it.
-    fn filter(&self, tab: Tab) -> Filter {
+    fn filter(&self, tab: Tab) -> TreeFilter {
         match tab {
             Tab::Game => self.filter,
-            Tab::Project => Filter::default(),
+            Tab::Project => TreeFilter::default(),
         }
     }
 
     /// Sorts both trees by `order`, keeping what each tab has open.
-    fn sort(&mut self, order: Order) {
+    fn sort(&mut self, order: SortOrder) {
         self.order = order;
         let Some(opened) = self.opened.as_deref_mut() else {
             return;
@@ -321,7 +324,7 @@ impl Files {
         view.scroll = scroll;
         if let Some(id) = clicked {
             view.selected = Some(id);
-            if tree[id].kind == Kind::Folder {
+            if tree[id].kind == NodeKind::Folder {
                 if narrowing {
                     view.flipped.toggle(id);
                 } else {
@@ -407,12 +410,12 @@ impl Files {
         }
     }
 
-    /// Each [`Key`], then each direction, the one in use ticked. Then how
+    /// Each [`SortKey`], then each direction, the one in use ticked. Then how
     /// rows are shown.
     fn view_ui(&mut self, ui: &mut Ui) {
         let mut order = self.order;
         heading(ui, "Sort by");
-        for (key, label) in [(Key::Name, "Name"), (Key::Type, "Type")] {
+        for (key, label) in [(SortKey::Name, "Name"), (SortKey::Type, "Type")] {
             if check(ui, label, order.key == key) {
                 order.key = key;
             }
@@ -510,7 +513,7 @@ struct Columns {
 fn row_ui(
     ui: &mut Ui,
     tree: &Tree,
-    row: Row,
+    row: TreeRow,
     open: bool,
     selected: bool,
     columns: Columns,
@@ -560,11 +563,11 @@ fn row_ui(
         }
         ui.element(content, |ui| {
             let icon = match (node.kind, tree.is_archive(row.last), open) {
-                (Kind::Folder, true, true) => Icon::ContainerOpen,
-                (Kind::Folder, true, false) => Icon::Container,
-                (Kind::Folder, false, true) => Icon::FolderOpen,
-                (Kind::Folder, false, false) => Icon::Folder,
-                (Kind::File, ..) => Icon::File,
+                (NodeKind::Folder, true, true) => Icon::ContainerOpen,
+                (NodeKind::Folder, true, false) => Icon::Container,
+                (NodeKind::Folder, false, true) => Icon::FolderOpen,
+                (NodeKind::Folder, false, false) => Icon::Folder,
+                (NodeKind::File, ..) => Icon::File,
             };
             ui.icon(icon, s.icon, c.dim);
             // Each folder in a run is its own text, to be picked on its own.
@@ -573,10 +576,10 @@ fn row_ui(
                     ui.text(theme.ui_text(c.dim), "/");
                 }
                 let color = match tree[id].git {
-                    git::Status::Clean => c.text,
-                    git::Status::Added => theme::GIT_ADDED,
-                    git::Status::Modified => theme::GIT_MODIFIED,
-                    git::Status::Deleted => theme::GIT_DELETED,
+                    GitStatus::Clean => c.text,
+                    GitStatus::Added => theme::GIT_ADDED,
+                    GitStatus::Modified => theme::GIT_MODIFIED,
+                    GitStatus::Deleted => theme::GIT_DELETED,
                 };
                 ui.text(theme.ui_text(color), tree.name(id));
             }
@@ -631,7 +634,7 @@ fn check(ui: &mut Ui, label: &str, on: bool) -> bool {
 
 /// A bar for what the mod does to a node: solid where it changes a file,
 /// outlined where it adds one, faint on a folder with either inside.
-fn gutter(ui: &mut Ui, status: Status) {
+fn gutter(ui: &mut Ui, status: NodeStatus) {
     let theme = ui.theme();
     let (s, color) = (theme.size, theme.color.accent);
     let pad = [(s.gap - BAR) / 2., (s.row - s.icon) / 2.];
@@ -646,19 +649,19 @@ fn gutter(ui: &mut Ui, status: Status) {
         ..Element::DEFAULT
     };
     let bar = match status {
-        Status::Unchanged => None,
-        Status::Changed => Some(Element {
+        NodeStatus::Unchanged => None,
+        NodeStatus::Changed => Some(Element {
             background: Some(color),
             ..bar
         }),
-        Status::Added => Some(Element {
+        NodeStatus::Added => Some(Element {
             border: Some(Border {
                 width: s.line,
                 color,
             }),
             ..bar
         }),
-        Status::Inside => Some(Element {
+        NodeStatus::Inside => Some(Element {
             background: Some(color.alpha(INSIDE)),
             ..bar
         }),

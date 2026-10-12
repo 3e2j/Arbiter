@@ -36,7 +36,7 @@ use pack::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::{Config, Country, Platform, Recorded, Region},
+    config::{Country, EditionChange, Platform, ProjectConfig, Region},
     hash::Hash,
 };
 use sidecar::Sidecar;
@@ -44,7 +44,7 @@ use sidecar::Sidecar;
 pub const DIR: &str = "base";
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum BaseError {
     #[error(transparent)]
     Disc(#[from] disc::Error),
     #[error("{path}: {source}")]
@@ -85,12 +85,12 @@ pub enum Error {
 ///
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct Manifest {
-    pub files: BTreeMap<String, Entry>,
+    pub files: BTreeMap<String, ManifestEntry>,
 }
 
 /// What an unpack made of one file, a disc file or an archive member.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Entry {
+pub struct ManifestEntry {
     /// Of the stored bytes, with everything taken off.
     pub hash: Hash,
     /// What came off a disc file. A member's is in its archive's sidecar.
@@ -134,8 +134,8 @@ impl Manifest {
 }
 
 /// `value` as TOML, for writing to `path`.
-fn to_toml(value: &impl Serialize, path: &Path) -> Result<String, Error> {
-    toml::to_string(value).map_err(|source| Error::Toml {
+fn to_toml(value: &impl Serialize, path: &Path) -> Result<String, BaseError> {
+    toml::to_string(value).map_err(|source| BaseError::Toml {
         path: path.to_path_buf(),
         source,
     })
@@ -144,7 +144,7 @@ fn to_toml(value: &impl Serialize, path: &Path) -> Result<String, Error> {
 /// A disc unpacked to `base/.<id>.partial/`, not yet in place. Either
 /// `commit` it or `discard` it.
 #[derive(Debug)]
-pub struct Staged {
+pub struct StagedDisc {
     pub id: String,
     pub revision: u8,
     pub platform: Platform,
@@ -159,13 +159,13 @@ pub struct Staged {
     pub guess: Option<Game>,
     pub bytes: u64,
     /// Decided against `arbiter.toml` as it was when staged.
-    pub outcome: Recorded,
+    pub outcome: EditionChange,
     pub(crate) tree: PathBuf,
 }
 
 /// A disc's header, read without unpacking it.
 #[derive(Debug)]
-pub struct Peeked {
+pub struct PeekedDisc {
     pub id: String,
     pub revision: u8,
     /// `None` for an unknown id.
@@ -177,10 +177,10 @@ pub struct Peeked {
 /// # Errors
 ///
 /// If the disc can't be read.
-pub(crate) fn peek(path: &Path) -> Result<Peeked, Error> {
+pub(crate) fn peek(path: &Path) -> Result<PeekedDisc, BaseError> {
     let disc = Disc::open(path)?;
     let game = edition::edition(&disc.id).map(|e| e.game);
-    Ok(Peeked {
+    Ok(PeekedDisc {
         id: disc.id,
         revision: disc.revision,
         game,
@@ -193,7 +193,7 @@ pub(crate) fn peek(path: &Path) -> Result<Peeked, Error> {
 /// # Errors
 ///
 /// If a disc can't be read.
-pub(crate) fn verify(discs: &[(&Path, &Peeked)]) -> Result<Vec<(Hash, Verdict)>, Error> {
+pub(crate) fn verify(discs: &[(&Path, &PeekedDisc)]) -> Result<Vec<(Hash, Verdict)>, BaseError> {
     thread::scope(|s| {
         let hashing: Vec<_> = discs
             .iter()
@@ -203,7 +203,7 @@ pub(crate) fn verify(discs: &[(&Path, &Peeked)]) -> Result<Vec<(Hash, Verdict)>,
             .into_iter()
             .zip(discs)
             .map(|(hashing, (_, peeked))| {
-                let hash = Hash(hashing.join().map_err(|_| Error::HashPanicked)??);
+                let hash = Hash(hashing.join().map_err(|_| BaseError::HashPanicked)??);
                 Ok((hash, check(&peeked.id, peeked.revision, hash)))
             })
             .collect()
@@ -215,7 +215,7 @@ fn check(id: &str, revision: u8, hash: Hash) -> Verdict {
 }
 
 /// Unpacks a disc beside the edition's current tree, so the current one stays
-/// whole until `Staged::commit` swaps them. `disc_hash` is from `verify`.
+/// whole until `StagedDisc::commit` swaps them. `disc_hash` is from `verify`.
 ///
 /// # Errors
 ///
@@ -224,8 +224,8 @@ pub(crate) fn stage(
     base: &Path,
     path: &Path,
     disc_hash: Hash,
-    config: &Config,
-) -> Result<Staged, Error> {
+    config: &ProjectConfig,
+) -> Result<StagedDisc, BaseError> {
     let mut disc = Disc::open(path)?;
     let tree = base.join(format!(".{}.partial", disc.id));
     remove_tree(&tree)?;
@@ -238,7 +238,7 @@ pub(crate) fn stage(
         .then(|| edition::guess(&disc.id))
         .flatten();
     let outcome = config.record(&disc.id, disc.revision, manifest.files_digest());
-    Ok(Staged {
+    Ok(StagedDisc {
         id: disc.id,
         revision: disc.revision,
         platform: disc.platform.into(),
@@ -256,7 +256,7 @@ pub(crate) fn stage(
 
 /// Writes every file to `tree` with its packaging unpacked (compression, archives).
 /// Returns their manifest and total size.
-fn unpack(tree: &Path, disc: &mut Disc) -> Result<(Manifest, u64), Error> {
+fn unpack(tree: &Path, disc: &mut Disc) -> Result<(Manifest, u64), BaseError> {
     let mut out = Out {
         tree,
         files: BTreeMap::new(),
@@ -281,14 +281,14 @@ fn unpack(tree: &Path, disc: &mut Disc) -> Result<(Manifest, u64), Error> {
 /// An unpack in progress.
 struct Out<'a> {
     tree: &'a Path,
-    files: BTreeMap<String, Entry>,
+    files: BTreeMap<String, ManifestEntry>,
     bytes: u64,
     /// The last directory made. Files come in tree order, so siblings share it.
     made_dir: Option<PathBuf>,
 }
 
 impl Out<'_> {
-    fn store(&mut self, piece: Piece<'_>) -> Result<(), Error> {
+    fn store(&mut self, piece: Piece<'_>) -> Result<(), BaseError> {
         match piece {
             Piece::File {
                 path,
@@ -318,9 +318,9 @@ impl Out<'_> {
         path: &str,
         bytes: &[u8],
         compression: Option<Compression>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), BaseError> {
         let btree_map::Entry::Vacant(slot) = self.files.entry(path.to_owned()) else {
-            return Err(Error::Duplicate(path.to_owned()));
+            return Err(BaseError::Duplicate(path.to_owned()));
         };
         let dest = self.tree.join(path);
         let parent = dest.parent().unwrap_or(self.tree);
@@ -330,7 +330,7 @@ impl Out<'_> {
         }
         write_readonly(&dest, bytes)?;
         self.bytes += bytes.len() as u64;
-        slot.insert(Entry {
+        slot.insert(ManifestEntry {
             hash: Hash::of(bytes),
             compression,
         });
@@ -338,7 +338,7 @@ impl Out<'_> {
     }
 }
 
-impl Staged {
+impl StagedDisc {
     /// The unpacked files, for checks that need the new base before it's in place.
     #[must_use]
     pub fn tree(&self) -> &Path {
@@ -346,7 +346,7 @@ impl Staged {
     }
 
     /// Replaces `base/<id>/` with the staged tree, then writes the manifest.
-    pub(crate) fn commit(&self, base: &Path) -> Result<(), Error> {
+    pub(crate) fn commit(&self, base: &Path) -> Result<(), BaseError> {
         let dest = base.join(&self.id);
         remove_tree(&dest)?;
         fs::rename(&self.tree, &dest).map_err(io_err(&dest))?;
@@ -358,12 +358,12 @@ impl Staged {
     /// # Errors
     ///
     /// If the staged tree can't be removed.
-    pub fn discard(self) -> Result<(), Error> {
+    pub fn discard(self) -> Result<(), BaseError> {
         remove_tree(&self.tree)
     }
 }
 
-fn write_readonly(path: &Path, bytes: &[u8]) -> Result<(), Error> {
+fn write_readonly(path: &Path, bytes: &[u8]) -> Result<(), BaseError> {
     let err = io_err(path);
     let mut file = File::create(path).map_err(err)?;
     file.write_all(bytes).map_err(io_err(path))?;
@@ -373,7 +373,7 @@ fn write_readonly(path: &Path, bytes: &[u8]) -> Result<(), Error> {
 }
 
 /// Removes a tree of read-only files. A missing tree is fine.
-pub(crate) fn remove_tree(path: &Path) -> Result<(), Error> {
+pub(crate) fn remove_tree(path: &Path) -> Result<(), BaseError> {
     // Unix only needs the directories writable. Windows refuses to delete a
     // read-only file, so the flag comes off first.
     #[cfg(windows)]
@@ -385,7 +385,7 @@ pub(crate) fn remove_tree(path: &Path) -> Result<(), Error> {
 }
 
 #[cfg(windows)]
-fn clear_readonly(path: &Path) -> Result<(), Error> {
+fn clear_readonly(path: &Path) -> Result<(), BaseError> {
     let entries = match fs::read_dir(path) {
         Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
         entries => entries.map_err(io_err(path))?,
@@ -406,7 +406,7 @@ fn clear_readonly(path: &Path) -> Result<(), Error> {
 
 /// Written beside its destination and renamed over it, so the path never
 /// holds half a file.
-pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), Error> {
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), BaseError> {
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".tmp");
     let tmp = PathBuf::from(tmp);
@@ -414,8 +414,8 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), Error> {
     fs::rename(&tmp, path).map_err(io_err(path))
 }
 
-pub(crate) fn io_err(path: &Path) -> impl FnOnce(io::Error) -> Error + '_ {
-    |source| Error::Io {
+pub(crate) fn io_err(path: &Path) -> impl FnOnce(io::Error) -> BaseError + '_ {
+    |source| BaseError::Io {
         path: path.to_path_buf(),
         source,
     }
@@ -469,7 +469,7 @@ mod tests {
         out.finish()
     }
 
-    fn store<'a>(tree: &'a Path, path: &str, bytes: &[u8]) -> Result<Out<'a>, Error> {
+    fn store<'a>(tree: &'a Path, path: &str, bytes: &[u8]) -> Result<Out<'a>, BaseError> {
         let mut out = Out {
             tree,
             files: BTreeMap::new(),
@@ -533,12 +533,12 @@ mod tests {
         let outer = archive(&[(sidecar::NAME, b"not a sidecar")]);
         assert!(matches!(
             store(dir.path(), "a.arc", &outer),
-            Err(Error::Duplicate(path)) if path == "a.arc/.rarc.toml"
+            Err(BaseError::Duplicate(path)) if path == "a.arc/.rarc.toml"
         ));
     }
 
-    fn entry(hash: u128, compression: Option<Compression>) -> Entry {
-        Entry {
+    fn entry(hash: u128, compression: Option<Compression>) -> ManifestEntry {
+        ManifestEntry {
             hash: Hash(hash),
             compression,
         }

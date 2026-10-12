@@ -30,9 +30,9 @@ use std::{
     process::Command,
 };
 
-pub use base::{Peeked, Staged};
-pub use config::Recorded;
-use config::{Config, Edition, Kind};
+pub use base::{PeekedDisc, StagedDisc};
+pub use config::EditionChange;
+use config::{Edition, ProjectConfig, ProjectKind};
 use diag::Diagnostics;
 pub use game::edition::{Game, Verdict};
 use hash::Hash;
@@ -59,11 +59,11 @@ const MOD_GITIGNORE: &str = "\
 ";
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum ProjectError {
     #[error(transparent)]
-    Base(#[from] base::Error),
+    Base(#[from] base::BaseError),
     #[error(transparent)]
-    Tree(#[from] tree::Error),
+    Tree(#[from] tree::TreeError),
     #[error("{0} isn't empty")]
     NotEmpty(PathBuf),
     #[error("{0} has no directory name to build a project beside")]
@@ -79,32 +79,32 @@ pub enum Error {
     #[error("{0} is a game project, which has no base to unpack into")]
     NoBase(PathBuf),
     #[error(transparent)]
-    Target(#[from] config::Conflict),
+    Target(#[from] config::EditionConflict),
     #[error("git init failed: {0}")]
     Git(String),
 }
 
 pub struct Project {
     pub root: PathBuf,
-    pub config: Config,
+    pub config: ProjectConfig,
 }
 
 /// A mod project built in `.<name>.partial/` beside its root, leaving the root
 /// as it was until `finish` moves it in. Dropping it removes the partial tree.
-pub struct Draft {
+pub struct DraftProject {
     pub project: Project,
     root: PathBuf,
     partial: Partial,
 }
 
-impl Draft {
+impl DraftProject {
     /// Replaces the root with the project. The old root waits at
     /// `.<name>.old/` until the new one is in, and goes back if it can't be.
     ///
     /// # Errors
     ///
     /// If a tree can't be moved, or the old root can't be removed.
-    pub fn finish(self) -> Result<Project, Error> {
+    pub fn finish(self) -> Result<Project, ProjectError> {
         let Self {
             mut project,
             root,
@@ -148,17 +148,17 @@ fn beside(root: &Path, suffix: &str) -> PathBuf {
 
 impl Project {
     /// Builds a mod project for `root` and runs `git init` in it. Nothing
-    /// in `root` changes until `Draft::finish`. A directory that isn't empty
+    /// in `root` changes until `DraftProject::finish`. A directory that isn't empty
     /// is replaced only if `force`.
     ///
     /// # Errors
     ///
     /// If `root` has no name, isn't empty and `force` isn't set, a file can't
     /// be written, or `git init` fails.
-    pub fn create(root: &Path, force: bool) -> Result<Draft, Error> {
+    pub fn create(root: &Path, force: bool) -> Result<DraftProject, ProjectError> {
         let root = path::absolute(root).map_err(base::io_err(root))?;
         if root.file_name().is_none() {
-            return Err(Error::NoName(root));
+            return Err(ProjectError::NoName(root));
         }
         let empty = match fs::read_dir(&root) {
             Ok(mut entries) => entries.next().is_none(),
@@ -166,7 +166,7 @@ impl Project {
             Err(err) => return Err(base::io_err(&root)(err).into()),
         };
         if !empty && !force {
-            return Err(Error::NotEmpty(root));
+            return Err(ProjectError::NotEmpty(root));
         }
 
         let partial = Partial(beside(&root, "partial"));
@@ -179,8 +179,8 @@ impl Project {
         fs::write(&gitignore, MOD_GITIGNORE).map_err(base::io_err(&gitignore))?;
         let project = Self {
             root: partial.0.clone(),
-            config: Config {
-                kind: Kind::Mod,
+            config: ProjectConfig {
+                kind: ProjectKind::Mod,
                 target: Some(BTreeSet::new()),
                 editions: BTreeMap::new(),
             },
@@ -191,13 +191,13 @@ impl Project {
             .args(["init", "--quiet"])
             .current_dir(&partial.0)
             .output()
-            .map_err(|err| Error::Git(err.to_string()))?;
+            .map_err(|err| ProjectError::Git(err.to_string()))?;
         if !out.status.success() {
-            return Err(Error::Git(
+            return Err(ProjectError::Git(
                 String::from_utf8_lossy(&out.stderr).trim().to_owned(),
             ));
         }
-        Ok(Draft {
+        Ok(DraftProject {
             project,
             root,
             partial,
@@ -207,15 +207,16 @@ impl Project {
     /// # Errors
     ///
     /// If `root` has no `arbiter.toml` or it can't be read.
-    pub fn open(root: &Path) -> Result<Self, Error> {
+    pub fn open(root: &Path) -> Result<Self, ProjectError> {
         let path = root.join(config::FILE);
         let text = match fs::read_to_string(&path) {
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
-                return Err(Error::NotAProject(root.to_path_buf()));
+                return Err(ProjectError::NotAProject(root.to_path_buf()));
             }
             text => text.map_err(base::io_err(&path))?,
         };
-        let config = toml::from_str(&text).map_err(|source| Error::Config { path, source })?;
+        let config =
+            toml::from_str(&text).map_err(|source| ProjectError::Config { path, source })?;
         Ok(Self {
             root: root.to_path_buf(),
             config,
@@ -228,7 +229,7 @@ impl Project {
     /// # Errors
     ///
     /// If the disc can't be read.
-    pub fn peek(disc: &Path) -> Result<Peeked, Error> {
+    pub fn peek(disc: &Path) -> Result<PeekedDisc, ProjectError> {
         Ok(base::peek(disc)?)
     }
 
@@ -238,7 +239,7 @@ impl Project {
     /// # Errors
     ///
     /// If a disc can't be read.
-    pub fn verify(discs: &[(&Path, &Peeked)]) -> Result<Vec<(Hash, Verdict)>, Error> {
+    pub fn verify(discs: &[(&Path, &PeekedDisc)]) -> Result<Vec<(Hash, Verdict)>, ProjectError> {
         Ok(base::verify(discs)?)
     }
 
@@ -248,9 +249,9 @@ impl Project {
     /// # Errors
     ///
     /// If this is a game project, or unpacking fails.
-    pub fn stage(&self, disc: &Path, disc_hash: Hash) -> Result<Staged, Error> {
-        if self.config.kind != Kind::Mod {
-            return Err(Error::NoBase(self.root.clone()));
+    pub fn stage(&self, disc: &Path, disc_hash: Hash) -> Result<StagedDisc, ProjectError> {
+        if self.config.kind != ProjectKind::Mod {
+            return Err(ProjectError::NoBase(self.root.clone()));
         }
         Ok(base::stage(
             &self.root.join(base::DIR),
@@ -262,7 +263,7 @@ impl Project {
 
     /// Every change in `changes/` that wouldn't apply cleanly to the staged base.
     #[must_use]
-    pub fn switch_check(&self, staged: &Staged) -> Diagnostics {
+    pub fn switch_check(&self, staged: &StagedDisc) -> Diagnostics {
         let mut diag = Diagnostics::default();
         changes::check(&self.root.join(changes::DIR), staged.tree(), &mut diag);
         diag
@@ -276,13 +277,17 @@ impl Project {
     ///
     /// If `target` and it's a known edition of another game than the target's,
     /// the tree can't be swapped in, or the project can't be saved.
-    pub fn commit(&mut self, staged: Staged, target: bool) -> Result<Recorded, Error> {
+    pub fn commit(
+        &mut self,
+        staged: StagedDisc,
+        target: bool,
+    ) -> Result<EditionChange, ProjectError> {
         if target {
             self.config.check_target(&staged.id)?;
         }
         staged.commit(&self.root.join(base::DIR))?;
         let mut dirty = self.config.set_target(&staged.id, target);
-        if let Recorded::Added | Recorded::Switched { .. } = staged.outcome {
+        if let EditionChange::Added | EditionChange::Switched { .. } = staged.outcome {
             let edition = Edition {
                 platform: staged.platform,
                 region: staged.region,
@@ -300,9 +305,9 @@ impl Project {
         Ok(staged.outcome)
     }
 
-    fn save(&self) -> Result<(), Error> {
+    fn save(&self) -> Result<(), ProjectError> {
         let path = self.root.join(config::FILE);
-        let text = toml::to_string(&self.config).map_err(|source| base::Error::Toml {
+        let text = toml::to_string(&self.config).map_err(|source| base::BaseError::Toml {
             path: path.clone(),
             source,
         })?;
@@ -332,7 +337,10 @@ mod tests {
         for d in MOD_DIRS.iter().chain(&[".git"]) {
             assert!(project.root.join(d).is_dir(), "{d}");
         }
-        assert_eq!(Project::open(&project.root).unwrap().config.kind, Kind::Mod);
+        assert_eq!(
+            Project::open(&project.root).unwrap().config.kind,
+            ProjectKind::Mod
+        );
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
@@ -346,7 +354,7 @@ mod tests {
 
         assert!(matches!(
             Project::create(&project.root, false),
-            Err(Error::NotEmpty(_))
+            Err(ProjectError::NotEmpty(_))
         ));
         assert!(readme.exists());
 
@@ -371,14 +379,14 @@ mod tests {
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
-    fn stage_fake(project: &Project, id: &str, revision: u8, file: &[u8]) -> Staged {
+    fn stage_fake(project: &Project, id: &str, revision: u8, file: &[u8]) -> StagedDisc {
         let tree = project.root.join(base::DIR).join(format!(".{id}.partial"));
         fs::create_dir_all(&tree).unwrap();
         fs::write(tree.join("a.arc"), file).unwrap();
         let manifest = base::Manifest {
             files: [(
                 "a.arc".to_owned(),
-                base::Entry {
+                base::ManifestEntry {
                     hash: Hash::of(file),
                     compression: None,
                 },
@@ -386,7 +394,7 @@ mod tests {
             .into(),
         };
         let outcome = project.config.record(id, revision, manifest.files_digest());
-        Staged {
+        StagedDisc {
             id: id.to_owned(),
             revision,
             platform: Platform::Wii,
@@ -411,14 +419,14 @@ mod tests {
             project.commit(staged, true).unwrap()
         };
 
-        assert_eq!(commit(0, b"rev 0"), Recorded::Added);
-        assert_eq!(commit(0, b"rev 0"), Recorded::Same);
+        assert_eq!(commit(0, b"rev 0"), EditionChange::Added);
+        assert_eq!(commit(0, b"rev 0"), EditionChange::Same);
         let was = Hash::of(b"rev 0");
-        let changed = Recorded::Changed {
+        let changed = EditionChange::Changed {
             was: base::Manifest {
                 files: [(
                     "a.arc".to_owned(),
-                    base::Entry {
+                    base::ManifestEntry {
                         hash: was,
                         compression: None,
                     },
@@ -428,7 +436,7 @@ mod tests {
             .files_digest(),
         };
         assert_eq!(commit(0, b"scrubbed"), changed);
-        assert_eq!(commit(2, b"rev 2"), Recorded::Switched { from: 0 });
+        assert_eq!(commit(2, b"rev 2"), EditionChange::Switched { from: 0 });
 
         let project = Project::open(&root).unwrap();
         assert_eq!(project.config.editions["RZDE01"].revision, 2);

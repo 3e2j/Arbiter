@@ -7,7 +7,7 @@ use std::{
 };
 
 use diag::Severity;
-use project::{Game, Peeked, Project, Recorded, Staged, Verdict, hash::Hash};
+use project::{EditionChange, Game, PeekedDisc, Project, StagedDisc, Verdict, hash::Hash};
 
 use crate::{
     Error,
@@ -17,7 +17,7 @@ use crate::{
 /// A disc to unpack, read and hashed before any is.
 struct Given<'a> {
     path: &'a Path,
-    peeked: Peeked,
+    peeked: PeekedDisc,
     hash: Hash,
     verdict: Verdict,
 }
@@ -29,7 +29,7 @@ pub fn unpack(project: &mut Project, discs: &[PathBuf]) -> Result<(), Error> {
     let peeked = discs
         .iter()
         .map(|disc| Ok((disc.as_path(), Project::peek(disc)?)))
-        .collect::<Result<Vec<_>, project::Error>>()?;
+        .collect::<Result<Vec<_>, project::ProjectError>>()?;
     if !io::stdin().is_terminal()
         && let Some((_, p)) = peeked
             .iter()
@@ -70,7 +70,7 @@ pub fn unpack(project: &mut Project, discs: &[PathBuf]) -> Result<(), Error> {
 }
 
 /// `None` if a known game can't be picked. Then every known edition is a reference.
-fn pick_game(peeked: &[(&Path, Peeked)]) -> Option<Game> {
+fn pick_game(peeked: &[(&Path, PeekedDisc)]) -> Option<Game> {
     let mut games: Vec<Game> = Vec::new();
     for game in peeked.iter().filter_map(|(_, p)| p.game) {
         if !games.contains(&game) {
@@ -165,7 +165,7 @@ fn retail(disc: &Given, picked: bool) -> bool {
 
 /// An edition already in the project keeps its place. A known one is a target
 /// if it's the target's game, an unknown one if the user says so.
-fn is_target(project: &Project, staged: &Staged, game: Option<Game>) -> bool {
+fn is_target(project: &Project, staged: &StagedDisc, game: Option<Game>) -> bool {
     if project.config.editions.contains_key(&staged.id) {
         return project.config.is_target(&staged.id);
     }
@@ -182,7 +182,7 @@ fn is_target(project: &Project, staged: &Staged, game: Option<Game>) -> bool {
 }
 
 /// Unpacks and reports a disc.
-fn stage(project: &Project, disc: &Given) -> Result<Staged, project::Error> {
+fn stage(project: &Project, disc: &Given) -> Result<StagedDisc, project::ProjectError> {
     let start = Instant::now();
     let staged = project.stage(disc.path, disc.hash)?;
     println!(
@@ -207,8 +207,12 @@ fn stage(project: &Project, disc: &Given) -> Result<Staged, project::Error> {
 }
 
 /// Checks a revision switch against `changes/`, then commits.
-fn commit(project: &mut Project, staged: Staged, target: bool) -> Result<(), project::Error> {
-    if let Recorded::Switched { from } = staged.outcome {
+fn commit(
+    project: &mut Project,
+    staged: StagedDisc,
+    target: bool,
+) -> Result<(), project::ProjectError> {
+    if let EditionChange::Switched { from } = staged.outcome {
         println!(
             "switching {} from rev {from} to rev {}",
             staged.id, staged.revision
@@ -236,7 +240,7 @@ fn commit(project: &mut Project, staged: Staged, target: bool) -> Result<(), pro
     }
 
     let id = staged.id.clone();
-    if let Recorded::Changed { was } = project.commit(staged, target)? {
+    if let EditionChange::Changed { was } = project.commit(staged, target)? {
         println!("warning: {id} differs from the base this project was made against ({was})");
     }
     if target {

@@ -11,8 +11,8 @@ use crate::hash::Hash;
 pub const FILE: &str = "arbiter.toml";
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-pub struct Config {
-    pub kind: Kind,
+pub struct ProjectConfig {
+    pub kind: ProjectKind,
     /// The editions changes apply to, and builds are made for.
     /// Every other edition is a reference: read-only and never built.
     ///
@@ -34,7 +34,7 @@ pub struct Config {
 /// Picked at creation and never changed.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum Kind {
+pub enum ProjectKind {
     Mod,
     Game,
 }
@@ -42,13 +42,13 @@ pub enum Kind {
 /// A known edition of one game can't join a target of another.
 #[derive(Debug, thiserror::Error)]
 #[error("{id} is {}, but the target is {}", .game.title(), .target.title())]
-pub struct Conflict {
+pub struct EditionConflict {
     pub id: String,
     pub game: Game,
     pub target: Game,
 }
 
-impl Config {
+impl ProjectConfig {
     #[must_use]
     pub fn is_target(&self, id: &str) -> bool {
         self.target.as_ref().is_none_or(|t| t.contains(id))
@@ -68,14 +68,14 @@ impl Config {
     /// # Errors
     ///
     /// If it's a known edition of another game than the target's.
-    pub fn check_target(&self, id: &str) -> Result<(), Conflict> {
+    pub fn check_target(&self, id: &str) -> Result<(), EditionConflict> {
         let (Some(e), Some(target)) = (edition::edition(id), self.target_game()) else {
             return Ok(());
         };
         if e.game == target {
             return Ok(());
         }
-        Err(Conflict {
+        Err(EditionConflict {
             id: id.to_owned(),
             game: e.game,
             target,
@@ -100,12 +100,12 @@ impl Config {
 
     /// What committing a disc with this edition would do to the project.
     #[must_use]
-    pub fn record(&self, id: &str, revision: u8, files_digest: Hash) -> Recorded {
+    pub fn record(&self, id: &str, revision: u8, files_digest: Hash) -> EditionChange {
         match self.editions.get(id) {
-            None => Recorded::Added,
-            Some(old) if old.revision != revision => Recorded::Switched { from: old.revision },
-            Some(old) if old.files_digest == files_digest => Recorded::Same,
-            Some(old) => Recorded::Changed {
+            None => EditionChange::Added,
+            Some(old) if old.revision != revision => EditionChange::Switched { from: old.revision },
+            Some(old) if old.files_digest == files_digest => EditionChange::Same,
+            Some(old) => EditionChange::Changed {
                 was: old.files_digest,
             },
         }
@@ -114,7 +114,7 @@ impl Config {
 
 /// What committing a staged disc does to its edition.
 #[derive(Debug, PartialEq, Eq)]
-pub enum Recorded {
+pub enum EditionChange {
     Added,
     Same,
     /// Same revision, different files: likely a modified or bad dump.
@@ -122,7 +122,7 @@ pub enum Recorded {
     Changed {
         was: Hash,
     },
-    /// Another revision replaced the old one, see `Config::editions`.
+    /// Another revision replaced the old one, see `ProjectConfig::editions`.
     Switched {
         from: u8,
     },
@@ -240,8 +240,8 @@ mod tests {
 
     #[test]
     fn round_trips() {
-        let config = Config {
-            kind: Kind::Mod,
+        let config = ProjectConfig {
+            kind: ProjectKind::Mod,
             target: Some(BTreeSet::from(["GZ2E01".to_owned()])),
             editions: BTreeMap::from([(
                 "GZ2E01".to_owned(),
@@ -256,10 +256,10 @@ mod tests {
             )]),
         };
         let text = toml::to_string(&config).unwrap();
-        assert_eq!(toml::from_str::<Config>(&text).unwrap(), config);
+        assert_eq!(toml::from_str::<ProjectConfig>(&text).unwrap(), config);
     }
 
-    fn with(ids: &[&str], target: Option<&[&str]>) -> Config {
+    fn with(ids: &[&str], target: Option<&[&str]>) -> ProjectConfig {
         let edition = || Edition {
             platform: Platform::GameCube,
             region: None,
@@ -268,8 +268,8 @@ mod tests {
             disc_hash: Hash(0),
             files_digest: Hash(0),
         };
-        Config {
-            kind: Kind::Mod,
+        ProjectConfig {
+            kind: ProjectKind::Mod,
             target: target.map(|t| t.iter().map(|&id| id.to_owned()).collect()),
             editions: ids.iter().map(|&id| (id.to_owned(), edition())).collect(),
         }

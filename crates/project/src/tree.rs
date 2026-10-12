@@ -3,7 +3,7 @@
 //! - The Project tree, everything on disk.
 //!
 //! A tree is one flat list of nodes in preorder, folders before files,
-//! each level sorted by name, or by another [`Order`] once [`Tree::sort`]ed.
+//! each level sorted by name, or by another [`SortOrder`] once [`Tree::sort`]ed.
 //! Each node knows its parent, its depth, and where its subtree ends,
 //! so a closed folder is skipped in one step and anything folders take from
 //! their contents is one pass backwards.
@@ -31,12 +31,12 @@ use serde::{
 
 use crate::{
     Project, base, changes,
-    config::{self, Config},
-    git,
+    config::{ProjectConfig, ProjectKind},
+    git::{self, GitStatus},
 };
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum TreeError {
     #[error("{path}: {source}")]
     Io {
         path: PathBuf,
@@ -76,7 +76,7 @@ impl NodeId {
 /// nodes are back to back, `first` to `last`, and `last` is the one that
 /// opens.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Row {
+pub struct TreeRow {
     pub first: NodeId,
     pub last: NodeId,
     /// How many rows it's inside, which is less than `first`'s depth once a
@@ -89,7 +89,7 @@ pub struct Row {
     pub leads: bool,
 }
 
-impl Row {
+impl TreeRow {
     /// Its nodes, `first` to `last`.
     pub fn nodes(self) -> impl Iterator<Item = NodeId> {
         (self.first.0..=self.last.0).map(NodeId)
@@ -97,14 +97,14 @@ impl Row {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Kind {
+pub enum NodeKind {
     Folder,
     File,
 }
 
 /// What the mod does to a node. A folder is only ever `Unchanged` or `Inside`.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub enum Status {
+pub enum NodeStatus {
     Unchanged,
     /// The mod changes a file the target has.
     Changed,
@@ -123,15 +123,15 @@ pub struct Node {
     pub end: NodeId,
     /// The root is 0, the top level 1.
     pub depth: u16,
-    pub kind: Kind,
-    pub status: Status,
+    pub kind: NodeKind,
+    pub status: NodeStatus,
     /// Which of the tree's editions have it, by bit. A folder has every bit
     /// any node inside has, so it lacks one only when everything inside does.
     /// Empty in the Project tree.
     pub editions: u32,
     /// What git sees changed, or for a game path, in its files under
     /// `changes/`. Always clean when the project doesn't use git.
-    pub git: git::Status,
+    pub git: GitStatus,
 }
 
 pub struct Tree {
@@ -144,7 +144,7 @@ pub struct Tree {
 /// Which files a tree keeps: those every set field keeps. One with nothing
 /// set keeps them all.
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
-pub struct Filter {
+pub struct TreeFilter {
     /// Changed or added by the mod.
     pub modded: bool,
     /// In any of the tree's editions with a bit set here, as in
@@ -152,7 +152,7 @@ pub struct Filter {
     pub editions: u32,
 }
 
-impl Filter {
+impl TreeFilter {
     #[must_use]
     pub const fn is_empty(self) -> bool {
         !self.modded && self.editions == 0
@@ -161,12 +161,12 @@ impl Filter {
     /// Whether it keeps `node`, of a tree whose editions are the bits in `all`.
     fn keeps(self, node: &Node, all: u32) -> bool {
         let differs = node.editions & self.editions != 0 && node.editions != all;
-        (!self.modded || matches!(node.status, Status::Changed | Status::Added))
+        (!self.modded || matches!(node.status, NodeStatus::Changed | NodeStatus::Added))
             && (self.editions == 0 || differs)
     }
 }
 
-/// What a search and a [`Filter`] leave of a tree, from [`Tree::narrow`],
+/// What a search and a [`TreeFilter`] leave of a tree, from [`Tree::narrow`],
 /// as bits by node.
 #[derive(Default)]
 pub struct Narrowed(Vec<u8>);
@@ -199,13 +199,13 @@ impl Narrowed {
 /// What a tree's siblings are sorted by, after folders, which always come
 /// first. The default is how a tree is read.
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
-pub struct Order {
-    pub key: Key,
+pub struct SortOrder {
+    pub key: SortKey,
     pub descending: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
-pub enum Key {
+pub enum SortKey {
     /// Ignoring ASCII case.
     #[default]
     Name,
@@ -227,7 +227,7 @@ impl Project {
     ///
     /// If a directory or a target edition's manifest can't be read, or the
     /// target has more than 32 editions.
-    pub fn trees(&self) -> Result<Trees, Error> {
+    pub fn trees(&self) -> Result<Trees, TreeError> {
         Trees::read(&self.root, &self.config)
     }
 
@@ -258,17 +258,17 @@ impl Project {
             .strip_prefix(base::DIR)
             .and_then(|rest| rest.strip_prefix('/'));
         match below {
-            Some(rest) if self.config.kind == config::Kind::Mod => !rest.contains('/'),
+            Some(rest) if self.config.kind == ProjectKind::Mod => !rest.contains('/'),
             _ => true,
         }
     }
 }
 
 impl Trees {
-    fn read(root: &Path, config: &Config) -> Result<Self, Error> {
+    fn read(root: &Path, config: &ProjectConfig) -> Result<Self, TreeError> {
         let git = git::status(root).unwrap_or_default();
         // TODO: a game project's Game tree, once game projects have a layout.
-        if config.kind == config::Kind::Game {
+        if config.kind == ProjectKind::Game {
             let mut project = Vec::new();
             walk(root, None, &mut String::new(), &mut project)?;
             mark(&mut project, &git);
@@ -283,13 +283,13 @@ impl Trees {
         let mut project = Vec::new();
         walk(root, Some(base::DIR), &mut String::new(), &mut project)?;
         let prefix = format!("{}/", changes::DIR);
-        for entry in project.iter_mut().filter(|e| e.kind == Kind::File) {
+        for entry in project.iter_mut().filter(|e| e.kind == NodeKind::File) {
             if let Some(rel) = entry.path.strip_prefix(&prefix) {
                 let (path, _) = target.game_path(rel, config);
                 entry.status = if target.has(&path) {
-                    Status::Changed
+                    NodeStatus::Changed
                 } else {
-                    Status::Added
+                    NodeStatus::Added
                 };
             }
         }
@@ -302,13 +302,13 @@ impl Trees {
             &mut String::new(),
             &mut changed,
         )?;
-        let changed = changed.into_iter().filter(|e| e.kind == Kind::File);
+        let changed = changed.into_iter().filter(|e| e.kind == NodeKind::File);
         let changed: Vec<_> = changed
             .map(|entry| {
                 let git = git::find(&git, &format!("{prefix}{}", entry.path));
                 let (path, editions) = target.game_path(&entry.path, config);
                 Entry {
-                    status: Status::Added,
+                    status: NodeStatus::Added,
                     editions,
                     git,
                     ..Entry::file(path)
@@ -319,7 +319,7 @@ impl Trees {
         // when only the change had it.
         let deleted = git
             .iter()
-            .filter(|(_, status)| *status == git::Status::Deleted);
+            .filter(|(_, status)| *status == GitStatus::Deleted);
         let deleted = deleted.filter_map(|(path, _)| path.strip_prefix(&prefix));
         let deleted: Vec<_> = deleted
             .filter(|rel| !rel.split('/').any(is_hidden))
@@ -327,7 +327,7 @@ impl Trees {
                 let (path, editions) = target.game_path(rel, config);
                 Entry {
                     editions,
-                    git: git::Status::Deleted,
+                    git: GitStatus::Deleted,
                     ..Entry::file(path)
                 }
             })
@@ -342,8 +342,8 @@ impl Trees {
             if change.path != first.path || change.kind != first.kind {
                 return false;
             }
-            if first.status == Status::Unchanged {
-                first.status = Status::Changed;
+            if first.status == NodeStatus::Unchanged {
+                first.status = NodeStatus::Changed;
             }
             first.editions |= change.editions;
             first.git = first.git.merge(change.git);
@@ -408,7 +408,7 @@ impl<'de> Deserialize<'de> for Keys {
 }
 
 impl Target {
-    fn read(root: &Path, config: &Config) -> Result<Self, Error> {
+    fn read(root: &Path, config: &ProjectConfig) -> Result<Self, TreeError> {
         let dir = root.join(base::DIR);
         let mut paths = Vec::new();
         let mut editions = Vec::new();
@@ -418,7 +418,7 @@ impl Target {
             .filter(|id| config.is_target(id))
             .collect();
         if ids.len() > 32 {
-            return Err(Error::Editions(ids.len()));
+            return Err(TreeError::Editions(ids.len()));
         }
         for id in ids {
             let path = dir.join(format!("{id}.toml"));
@@ -428,7 +428,7 @@ impl Target {
                 text => text.map_err(io_err(&path))?,
             };
             let manifest: Paths =
-                toml::from_str(&text).map_err(|source| Error::Manifest { path, source })?;
+                toml::from_str(&text).map_err(|source| TreeError::Manifest { path, source })?;
             let bit = 1u32 << editions.len();
             editions.push(id.clone());
             let files = manifest.files.0.into_iter();
@@ -467,7 +467,7 @@ impl Target {
     /// name scopes it to, if any. A stored change sits beside its working
     /// file as `.toml` or `.patch`, and an edition-scoped one names the
     /// edition just before its extension, as in `common.GZ2P01.jpc`.
-    fn game_path(&self, path: &str, config: &Config) -> (String, u32) {
+    fn game_path(&self, path: &str, config: &ProjectConfig) -> (String, u32) {
         let working = path
             .strip_suffix(".toml")
             .or_else(|| path.strip_suffix(".patch"))
@@ -511,33 +511,33 @@ fn is_hidden(name: &str) -> bool {
 #[derive(Clone, Debug)]
 struct Entry {
     path: String,
-    kind: Kind,
-    status: Status,
+    kind: NodeKind,
+    status: NodeStatus,
     editions: u32,
-    git: git::Status,
+    git: GitStatus,
 }
 
 impl Entry {
     fn file(path: String) -> Self {
         Self {
             path,
-            kind: Kind::File,
-            status: Status::Unchanged,
+            kind: NodeKind::File,
+            status: NodeStatus::Unchanged,
             editions: 0,
-            git: git::Status::Clean,
+            git: GitStatus::Clean,
         }
     }
 }
 
 /// Gives each of `entries` its state in `git`, and adds an entry for each
 /// file deleted from disk that git still has.
-fn mark(entries: &mut Vec<Entry>, git: &[(String, git::Status)]) {
-    for entry in entries.iter_mut().filter(|e| e.kind == Kind::File) {
+fn mark(entries: &mut Vec<Entry>, git: &[(String, GitStatus)]) {
+    for entry in entries.iter_mut().filter(|e| e.kind == NodeKind::File) {
         entry.git = git::find(git, &entry.path);
     }
     let deleted = git
         .iter()
-        .filter(|(_, status)| *status == git::Status::Deleted);
+        .filter(|(_, status)| *status == GitStatus::Deleted);
     let deleted = deleted.filter(|(path, _)| !path.split('/').any(is_hidden));
     entries.extend(deleted.map(|(path, status)| Entry {
         git: *status,
@@ -552,7 +552,7 @@ fn walk(
     skip: Option<&str>,
     rel: &mut String,
     out: &mut Vec<Entry>,
-) -> Result<(), Error> {
+) -> Result<(), TreeError> {
     let entries = match fs::read_dir(dir) {
         Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
         entries => entries.map_err(io_err(dir))?,
@@ -572,7 +572,11 @@ fn walk(
         let path = entry.path();
         let folder = entry.file_type().map_err(io_err(&path))?.is_dir();
         out.push(Entry {
-            kind: if folder { Kind::Folder } else { Kind::File },
+            kind: if folder {
+                NodeKind::Folder
+            } else {
+                NodeKind::File
+            },
             ..Entry::file(rel.clone())
         });
         if folder {
@@ -593,8 +597,8 @@ fn tree_order(left: &Entry, right: &Entry) -> Ordering {
             (Some(l), Some(r)) => (l, r),
             (l, r) => return l.is_some().cmp(&r.is_some()),
         };
-        let l_folder = lefts.peek().is_some() || left.kind == Kind::Folder;
-        let r_folder = rights.peek().is_some() || right.kind == Kind::Folder;
+        let l_folder = lefts.peek().is_some() || left.kind == NodeKind::Folder;
+        let r_folder = rights.peek().is_some() || right.kind == NodeKind::Folder;
         let order = r_folder.cmp(&l_folder).then_with(|| name_order(l, r));
         if order != Ordering::Equal {
             return order;
@@ -617,14 +621,14 @@ fn name_order(a: &str, b: &str) -> Ordering {
 impl Tree {
     /// Folders an entry sits in are made as needed, so only empty folders
     /// need their own entry.
-    fn build(mut entries: Vec<Entry>, editions: Vec<String>) -> Result<Self, Error> {
+    fn build(mut entries: Vec<Entry>, editions: Vec<String>) -> Result<Self, TreeError> {
         entries.sort_by(tree_order);
         let mut tree = Self {
             nodes: Vec::with_capacity(entries.len() + 1),
             names: String::new(),
             editions,
         };
-        tree.push("", NodeId::ROOT, 0, Kind::Folder)?;
+        tree.push("", NodeId::ROOT, 0, NodeKind::Folder)?;
         // The folders open above the next entry, each with its name.
         let mut open: Vec<(NodeId, &str)> = Vec::new();
         for entry in &entries {
@@ -640,7 +644,7 @@ impl Tree {
             tree.close(&mut open, kept)?;
             for &part in &folders[kept..] {
                 let parent = open.last().map_or(NodeId::ROOT, |&(id, _)| id);
-                let id = tree.push(part, parent, open.len() + 1, Kind::Folder)?;
+                let id = tree.push(part, parent, open.len() + 1, NodeKind::Folder)?;
                 open.push((id, part));
             }
             let parent = open.last().map_or(NodeId::ROOT, |&(id, _)| id);
@@ -649,7 +653,7 @@ impl Tree {
             node.status = entry.status;
             node.editions = entry.editions;
             node.git = entry.git;
-            if entry.kind == Kind::Folder {
+            if entry.kind == NodeKind::Folder {
                 open.push((id, last));
             }
         }
@@ -667,17 +671,17 @@ impl Tree {
             let parent = &mut tree.nodes[parent.0 as usize];
             parent.editions |= editions;
             parent.git = parent.git.merge(git);
-            if status != Status::Unchanged {
-                parent.status = Status::Inside;
+            if status != NodeStatus::Unchanged {
+                parent.status = NodeStatus::Inside;
             }
         }
         Ok(tree)
     }
 
-    fn next(&self) -> Result<NodeId, Error> {
+    fn next(&self) -> Result<NodeId, TreeError> {
         u32::try_from(self.nodes.len())
             .map(NodeId)
-            .map_err(|_| Error::Full)
+            .map_err(|_| TreeError::Full)
     }
 
     fn push(
@@ -685,29 +689,29 @@ impl Tree {
         name: &str,
         parent: NodeId,
         depth: usize,
-        kind: Kind,
-    ) -> Result<NodeId, Error> {
+        kind: NodeKind,
+    ) -> Result<NodeId, TreeError> {
         let id = self.next()?;
-        let end = id.0.checked_add(1).map(NodeId).ok_or(Error::Full)?;
-        let start = u32::try_from(self.names.len()).map_err(|_| Error::Full)?;
-        let len = u32::try_from(name.len()).map_err(|_| Error::Full)?;
+        let end = id.0.checked_add(1).map(NodeId).ok_or(TreeError::Full)?;
+        let start = u32::try_from(self.names.len()).map_err(|_| TreeError::Full)?;
+        let len = u32::try_from(name.len()).map_err(|_| TreeError::Full)?;
         self.names.push_str(name);
         self.nodes.push(Node {
             name: start,
             name_len: len,
             parent,
             end,
-            depth: u16::try_from(depth).map_err(|_| Error::Full)?,
+            depth: u16::try_from(depth).map_err(|_| TreeError::Full)?,
             kind,
-            status: Status::Unchanged,
+            status: NodeStatus::Unchanged,
             editions: 0,
-            git: git::Status::Clean,
+            git: GitStatus::Clean,
         });
         Ok(id)
     }
 
     /// Ends the subtrees of every open folder past the first `keep`.
-    fn close(&mut self, open: &mut Vec<(NodeId, &str)>, keep: usize) -> Result<(), Error> {
+    fn close(&mut self, open: &mut Vec<(NodeId, &str)>, keep: usize) -> Result<(), TreeError> {
         let end = self.next()?;
         for (id, _) in open.drain(keep..) {
             self.nodes[id.0 as usize].end = end;
@@ -727,7 +731,7 @@ impl Tree {
     /// Sorts each folder's children by `order`, keeping every node's subtree
     /// right after it. Returns each node's new id, by its old
     /// [`NodeId::index`].
-    pub fn sort(&mut self, order: Order) -> Vec<NodeId> {
+    pub fn sort(&mut self, order: SortOrder) -> Vec<NodeId> {
         let mut map = vec![NodeId::ROOT; self.nodes.len()];
         let mut nodes = Vec::with_capacity(self.nodes.len());
         // Parents are taken before their children, so a node's parent is
@@ -772,7 +776,7 @@ impl Tree {
             let Some(at) = map[id.index()] else {
                 continue;
             };
-            if node.kind != Kind::Folder {
+            if node.kind != NodeKind::Folder {
                 continue;
             }
             theirs.clear();
@@ -799,22 +803,22 @@ impl Tree {
         })
     }
 
-    fn sibling_order(&self, order: Order, a: NodeId, b: NodeId) -> Ordering {
+    fn sibling_order(&self, order: SortOrder, a: NodeId, b: NodeId) -> Ordering {
         let (a_name, b_name) = (self.name(a), self.name(b));
         let by = match order.key {
-            Key::Name => name_order(a_name, b_name),
-            Key::Type => name_order(extension(a_name), extension(b_name))
+            SortKey::Name => name_order(a_name, b_name),
+            SortKey::Type => name_order(extension(a_name), extension(b_name))
                 .then_with(|| name_order(a_name, b_name)),
         };
         let by = if order.descending { by.reverse() } else { by };
-        let folder = |id: NodeId| self[id].kind == Kind::Folder;
+        let folder = |id: NodeId| self[id].kind == NodeKind::Folder;
         folder(b).cmp(&folder(a)).then(by)
     }
 
     /// Whether it's an unpacked `.arc`, a folder that's a file in the game.
     #[must_use]
     pub fn is_archive(&self, id: NodeId) -> bool {
-        self[id].kind == Kind::Folder && extension(self.name(id)).eq_ignore_ascii_case("arc")
+        self[id].kind == NodeKind::Folder && extension(self.name(id)).eq_ignore_ascii_case("arc")
     }
 
     /// Every node but the root.
@@ -831,14 +835,14 @@ impl Tree {
     /// The lines a reader sees, in order: everything below the root that
     /// `kept` keeps and isn't inside a folder for which `open` is false. A
     /// node left out takes its subtree with it. With `compact`, a folder
-    /// holding only one folder shares its line, see [`Row`], unless either
+    /// holding only one folder shares its line, see [`TreeRow`], unless either
     /// is an archive.
     pub fn rows(
         &self,
         open: impl Fn(NodeId) -> bool,
         kept: impl Fn(NodeId) -> bool,
         compact: bool,
-    ) -> impl Iterator<Item = Row> {
+    ) -> impl Iterator<Item = TreeRow> {
         // The first node from `at` on that's kept, past each subtree that isn't.
         let skip = move |mut at: NodeId| {
             while let Some(node) = self.nodes.get(at.index())
@@ -863,29 +867,29 @@ impl Tree {
             let mut node = self.nodes.get(last.index())?;
             let leads = node.parent == above;
             while compact
-                && node.kind == Kind::Folder
+                && node.kind == NodeKind::Folder
                 && let Some(child) = self.nodes.get(last.index() + 1)
                 && last.0 + 1 < node.end.0
                 && child.end == node.end
-                && child.kind == Kind::Folder
+                && child.kind == NodeKind::Folder
                 && !self.is_archive(last)
                 && !self.is_archive(NodeId(last.0 + 1))
             {
                 last = NodeId(last.0 + 1);
                 node = child;
             }
-            at = skip(if node.kind == Kind::Folder && !open(last) {
+            at = skip(if node.kind == NodeKind::Folder && !open(last) {
                 node.end
             } else {
                 NodeId(last.0 + 1)
             });
             let ending = inside.iter().rev().take_while(|&&end| end <= at).count();
             let ends = u16::try_from(ending).ok()?;
-            if node.kind == Kind::Folder && at < node.end {
+            if node.kind == NodeKind::Folder && at < node.end {
                 inside.push(node.end);
             }
             above = last;
-            Some(Row {
+            Some(TreeRow {
                 first,
                 last,
                 depth,
@@ -908,7 +912,7 @@ impl Tree {
     /// above a hit are revealed: a hit is a node kept for its own name, or
     /// any file kept while `filter` keeps only what the mod changed. Editions
     /// alone reveal nothing, so folders stay as they were opened.
-    pub fn narrow(&self, query: &str, filter: Filter, out: &mut Narrowed) {
+    pub fn narrow(&self, query: &str, filter: TreeFilter, out: &mut Narrowed) {
         let bits = &mut out.0;
         bits.clear();
         bits.resize(self.nodes.len(), 0);
@@ -937,7 +941,7 @@ impl Tree {
         // Children come after their parents, so each has had all its
         // children's say by the time it's reached.
         for (node, index) in self.nodes.iter().zip(0..bits.len()).skip(1).rev() {
-            let file = node.kind == Kind::File;
+            let file = node.kind == NodeKind::File;
             let passes = if file {
                 filter.keeps(node, all)
             } else {
@@ -961,7 +965,7 @@ impl Tree {
     }
 
     /// Writes `row`'s name into `out`, its nodes' names joined by `/`.
-    pub fn row_name(&self, row: Row, out: &mut String) {
+    pub fn row_name(&self, row: TreeRow, out: &mut String) {
         out.clear();
         for id in row.nodes() {
             if id != row.first {
@@ -980,8 +984,8 @@ impl Index<NodeId> for Tree {
     }
 }
 
-fn io_err(path: &Path) -> impl FnOnce(io::Error) -> Error + '_ {
-    |source| Error::Io {
+fn io_err(path: &Path) -> impl FnOnce(io::Error) -> TreeError + '_ {
+    |source| TreeError::Io {
         path: path.to_path_buf(),
         source,
     }
@@ -991,12 +995,12 @@ fn io_err(path: &Path) -> impl FnOnce(io::Error) -> Error + '_ {
 mod tests {
     use super::*;
     use crate::{
-        base::{Entry as BaseEntry, Manifest},
+        base::{Manifest, ManifestEntry},
         config::{Edition, Platform},
         hash::Hash,
     };
 
-    fn config(kind: config::Kind, ids: &[&str], target: Option<&[&str]>) -> Config {
+    fn config(kind: ProjectKind, ids: &[&str], target: Option<&[&str]>) -> ProjectConfig {
         let edition = || Edition {
             platform: Platform::GameCube,
             region: None,
@@ -1005,7 +1009,7 @@ mod tests {
             disc_hash: Hash(0),
             files_digest: Hash(0),
         };
-        Config {
+        ProjectConfig {
             kind,
             target: target.map(|t| t.iter().map(|&id| id.to_owned()).collect()),
             editions: ids.iter().map(|&id| (id.to_owned(), edition())).collect(),
@@ -1025,7 +1029,7 @@ mod tests {
             files: paths
                 .iter()
                 .map(|&p| {
-                    let entry = BaseEntry {
+                    let entry = ManifestEntry {
                         hash: Hash(0),
                         compression: None,
                     };
@@ -1044,18 +1048,18 @@ mod tests {
     fn show(tree: &Tree, open: impl Fn(NodeId) -> bool) -> Vec<String> {
         let all = tree.every_edition();
         tree.rows(open, |_| true, false)
-            .map(|Row { last: id, .. }| {
+            .map(|TreeRow { last: id, .. }| {
                 let node = tree[id];
                 let mut line = "  ".repeat(usize::from(node.depth - 1));
                 line.push_str(tree.name(id));
-                if node.kind == Kind::Folder {
+                if node.kind == NodeKind::Folder {
                     line.push('/');
                 }
                 line.push_str(match node.status {
-                    Status::Unchanged => "",
-                    Status::Changed => " M",
-                    Status::Added => " A",
-                    Status::Inside => " •",
+                    NodeStatus::Unchanged => "",
+                    NodeStatus::Changed => " M",
+                    NodeStatus::Added => " A",
+                    NodeStatus::Inside => " •",
                 });
                 if node.editions != all && node.editions != 0 {
                     line.push(' ');
@@ -1066,17 +1070,17 @@ mod tests {
                     }
                 }
                 line.push_str(match node.git {
-                    git::Status::Clean => "",
-                    git::Status::Added => " +",
-                    git::Status::Modified => " ~",
-                    git::Status::Deleted => " -",
+                    GitStatus::Clean => "",
+                    GitStatus::Added => " +",
+                    GitStatus::Modified => " ~",
+                    GitStatus::Deleted => " -",
                 });
                 line
             })
             .collect()
     }
 
-    fn mod_project() -> (tempfile::TempDir, Config) {
+    fn mod_project() -> (tempfile::TempDir, ProjectConfig) {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let shared = [
@@ -1120,7 +1124,7 @@ mod tests {
         fs::create_dir_all(root.join("assets")).unwrap();
         let ids = ["GZ2E01", "GZ2J01", "GZ2P01", "GZLE01"];
         let target = ["GZ2E01", "GZ2J01", "GZ2P01"];
-        (dir, config(config::Kind::Mod, &ids, Some(&target)))
+        (dir, config(ProjectKind::Mod, &ids, Some(&target)))
     }
 
     #[test]
@@ -1330,7 +1334,7 @@ mod tests {
 
     /// The rows `query` and `filter` leave of `tree`, each revealed folder
     /// open and the rest closed, indented by depth.
-    fn narrow(tree: &Tree, query: &str, filter: Filter) -> Vec<String> {
+    fn narrow(tree: &Tree, query: &str, filter: TreeFilter) -> Vec<String> {
         let mut narrowed = Narrowed::default();
         tree.narrow(query, filter, &mut narrowed);
         let rows = tree.rows(|id| narrowed.revealed(id), |id| narrowed.kept(id), false);
@@ -1346,7 +1350,7 @@ mod tests {
         let (dir, config) = mod_project();
         let game = Trees::read(dir.path(), &config).unwrap().game;
         assert_eq!(
-            narrow(&game, "ZEL", Filter::default()),
+            narrow(&game, "ZEL", TreeFilter::default()),
             [
                 "res",
                 "  Msgjp",
@@ -1358,19 +1362,19 @@ mod tests {
         );
         // A folder that matches keeps what's inside, but stays closed.
         assert_eq!(
-            narrow(&game, "msgus", Filter::default()),
+            narrow(&game, "msgus", TreeFilter::default()),
             ["res", "  Msgus"]
         );
-        assert_eq!(narrow(&game, "nothing", Filter::default()), [""; 0]);
+        assert_eq!(narrow(&game, "nothing", TreeFilter::default()), [""; 0]);
     }
 
     #[test]
     fn changed_keeps_the_mods_files_and_opens_every_folder_above_them() {
         let (dir, config) = mod_project();
         let game = Trees::read(dir.path(), &config).unwrap().game;
-        let modded = Filter {
+        let modded = TreeFilter {
             modded: true,
-            ..Filter::default()
+            ..TreeFilter::default()
         };
         assert_eq!(
             narrow(&game, "", modded),
@@ -1391,13 +1395,13 @@ mod tests {
         let (dir, config) = mod_project();
         let game = Trees::read(dir.path(), &config).unwrap().game;
         // GZ2E01 is the first edition, GZ2J01 the second.
-        let american = Filter {
+        let american = TreeFilter {
             editions: 0b001,
-            ..Filter::default()
+            ..TreeFilter::default()
         };
-        let japanese = Filter {
+        let japanese = TreeFilter {
             editions: 0b010,
-            ..Filter::default()
+            ..TreeFilter::default()
         };
         assert_eq!(narrow(&game, "", japanese), ["res"]);
         let mut narrowed = Narrowed::default();
@@ -1418,7 +1422,7 @@ mod tests {
         let (dir, config) = mod_project();
         let game = Trees::read(dir.path(), &config).unwrap().game;
         let mut narrowed = Narrowed::default();
-        game.narrow("zel_50", Filter::default(), &mut narrowed);
+        game.narrow("zel_50", TreeFilter::default(), &mut narrowed);
         let rows = game.rows(|id| narrowed.revealed(id), |id| narrowed.kept(id), false);
         let rows: Vec<_> = rows
             .map(|row| (game.name(row.last), row.leads, row.ends))
@@ -1446,7 +1450,7 @@ mod tests {
     fn a_game_project_shows_only_its_files() {
         let dir = tempfile::tempdir().unwrap();
         touch(dir.path(), &["arbiter.toml", "res/a.bmg"]);
-        let config = config(config::Kind::Game, &[], None);
+        let config = config(ProjectKind::Game, &[], None);
         let trees = Trees::read(dir.path(), &config).unwrap();
         assert!(trees.game.is_empty());
         assert_eq!(
@@ -1474,7 +1478,7 @@ mod tests {
         let (dir, config) = mod_project();
         let mut game = Trees::read(dir.path(), &config).unwrap().game;
         let before = show(&game, |_| true);
-        let map = game.sort(Order::default());
+        let map = game.sort(SortOrder::default());
         assert!((0..).map(NodeId).zip(map).all(|(old, new)| old == new));
         assert_eq!(show(&game, |_| true), before);
     }
@@ -1492,8 +1496,8 @@ mod tests {
             .collect()
         };
         let msgjp = names(&game).iter().position(|n| n == "  Msgjp");
-        game.sort(Order {
-            key: Key::Name,
+        game.sort(SortOrder {
+            key: SortKey::Name,
             descending: true,
         });
         let sorted = names(&game);
@@ -1512,11 +1516,11 @@ mod tests {
             ..Entry::file(path.to_owned())
         };
         let entries = vec![
-            entry("b.txt", Kind::File),
-            entry("c.bmg", Kind::File),
-            entry("a.bmg", Kind::File),
-            entry("y.arc/al.bmd", Kind::File),
-            entry("z", Kind::Folder),
+            entry("b.txt", NodeKind::File),
+            entry("c.bmg", NodeKind::File),
+            entry("a.bmg", NodeKind::File),
+            entry("y.arc/al.bmd", NodeKind::File),
+            entry("z", NodeKind::Folder),
         ];
         let mut tree = Tree::build(entries, Vec::new()).unwrap();
         let names = |tree: &Tree| -> Vec<String> {
@@ -1529,9 +1533,9 @@ mod tests {
         );
         let bmd = NodeId(2);
         assert_eq!(tree.name(bmd), "al.bmd");
-        let order = Order {
-            key: Key::Type,
-            ..Order::default()
+        let order = SortOrder {
+            key: SortKey::Type,
+            ..SortOrder::default()
         };
         let map = tree.sort(order);
         assert_eq!(
@@ -1548,11 +1552,11 @@ mod tests {
             ..Entry::file(path.to_owned())
         };
         let mut entries = [
-            entry("b", Kind::File),
-            entry("A", Kind::File),
-            entry("z/y", Kind::File),
-            entry("c", Kind::Folder),
-            entry("a", Kind::File),
+            entry("b", NodeKind::File),
+            entry("A", NodeKind::File),
+            entry("z/y", NodeKind::File),
+            entry("c", NodeKind::Folder),
+            entry("a", NodeKind::File),
         ];
         entries.sort_by(tree_order);
         let paths: Vec<_> = entries.iter().map(|e| e.path.as_str()).collect();
@@ -1567,27 +1571,27 @@ mod tests {
         };
         let old = Tree::build(
             vec![
-                entry("res/Msgus/zel_00.bmg", Kind::File),
-                entry("res/Msgus/zel_01.bmg", Kind::File),
-                entry("res/al.arc", Kind::File),
-                entry("sys/main.dol", Kind::File),
+                entry("res/Msgus/zel_00.bmg", NodeKind::File),
+                entry("res/Msgus/zel_01.bmg", NodeKind::File),
+                entry("res/al.arc", NodeKind::File),
+                entry("sys/main.dol", NodeKind::File),
             ],
             Vec::new(),
         )
         .unwrap();
         let mut new = Tree::build(
             vec![
-                entry("res/Msgus/zel_00.bmg", Kind::File),
-                entry("res/al.arc/al.bmd", Kind::File),
-                entry("res/Layout/logo.bti", Kind::File),
-                entry("sys/main.dol", Kind::File),
+                entry("res/Msgus/zel_00.bmg", NodeKind::File),
+                entry("res/al.arc/al.bmd", NodeKind::File),
+                entry("res/Layout/logo.bti", NodeKind::File),
+                entry("sys/main.dol", NodeKind::File),
             ],
             Vec::new(),
         )
         .unwrap();
-        new.sort(Order {
+        new.sort(SortOrder {
             descending: true,
-            ..Order::default()
+            ..SortOrder::default()
         });
         let map = old.ids_in(&new);
         let path = |tree: &Tree, mut id: NodeId| {
@@ -1627,7 +1631,7 @@ mod tests {
             root: PathBuf::new(),
             config: config(kind, &["GZ2E01"], None),
         };
-        let mod_project = project(config::Kind::Mod);
+        let mod_project = project(ProjectKind::Mod);
         for path in [
             "changes/res/Msgus/zel_00.bmg",
             "code/mod.cpp",
@@ -1652,6 +1656,6 @@ mod tests {
         ] {
             assert!(!mod_project.trees_read(path), "{path}");
         }
-        assert!(project(config::Kind::Game).trees_read("base/GZ2E01/res/Msgus/zel_00.bmg"));
+        assert!(project(ProjectKind::Game).trees_read("base/GZ2E01/res/Msgus/zel_00.bmg"));
     }
 }

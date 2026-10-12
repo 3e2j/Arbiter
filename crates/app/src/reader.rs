@@ -19,7 +19,7 @@ use project::{
 pub struct Reader {
     // Dropping it ends the thread once a read in flight is done.
     asks: Sender<()>,
-    reads: Receiver<Result<Trees, tree::Error>>,
+    reads: Receiver<Result<Trees, tree::TreeError>>,
 }
 
 impl Reader {
@@ -44,7 +44,7 @@ impl Reader {
     }
 
     /// The latest read since the last call.
-    pub fn take(&self) -> Option<Result<Trees, tree::Error>> {
+    pub fn take(&self) -> Option<Result<Trees, tree::TreeError>> {
         self.reads.try_iter().last()
     }
 }
@@ -53,7 +53,7 @@ impl Reader {
 fn read(
     project: &Project,
     asked: &Receiver<()>,
-    done: &Sender<Result<Trees, tree::Error>>,
+    done: &Sender<Result<Trees, tree::TreeError>>,
     wake: &Wake,
 ) {
     while asked.recv().is_ok() {

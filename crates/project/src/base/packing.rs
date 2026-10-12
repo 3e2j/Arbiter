@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::Compression;
 
-/// Starts as the base's `Entry::compression`.
+/// Starts as the base's `ManifestEntry::compression`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Packing {
     pub compression: Option<Compression>,
@@ -15,7 +15,7 @@ pub struct Packing {
 /// Also what a mod stores. An omitted compression is none.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(tag = "edit", rename_all = "snake_case")]
-pub enum Edit {
+pub enum PackingEdit {
     Compression {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         compression: Option<Compression>,
@@ -23,11 +23,11 @@ pub enum Edit {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Item {
+pub enum PackingItem {
     Compression,
 }
 
-impl Address for Item {
+impl Address for PackingItem {
     fn key(&self) -> Vec<Key> {
         match self {
             Self::Compression => vec![("field", "compression".to_owned())],
@@ -36,16 +36,16 @@ impl Address for Item {
 }
 
 impl formats::Edit for Packing {
-    type Edit = Edit;
-    type Item = Item;
+    type Edit = PackingEdit;
+    type Item = PackingItem;
 
-    fn apply(&mut self, edit: Edit) -> (Edit, Vec<Item>) {
+    fn apply(&mut self, edit: PackingEdit) -> (PackingEdit, Vec<PackingItem>) {
         match edit {
-            Edit::Compression { compression } => {
+            PackingEdit::Compression { compression } => {
                 let old = std::mem::replace(&mut self.compression, compression);
                 (
-                    Edit::Compression { compression: old },
-                    vec![Item::Compression],
+                    PackingEdit::Compression { compression: old },
+                    vec![PackingItem::Compression],
                 )
             }
         }
@@ -53,19 +53,19 @@ impl formats::Edit for Packing {
 }
 
 impl formats::Patch for Packing {
-    type Change = Edit;
+    type Change = PackingEdit;
 
-    fn diff(base: &Self, edited: &Self) -> Vec<Edit> {
+    fn diff(base: &Self, edited: &Self) -> Vec<PackingEdit> {
         if base.compression == edited.compression {
             return Vec::new();
         }
-        vec![Edit::Compression {
+        vec![PackingEdit::Compression {
             compression: edited.compression,
         }]
     }
 
     /// Every change fits any base, so nothing is reported.
-    fn patch(&mut self, changes: &[Edit], _: &mut Diagnostics) {
+    fn patch(&mut self, changes: &[PackingEdit], _: &mut Diagnostics) {
         for &change in changes {
             formats::Edit::apply(self, change);
         }
@@ -81,7 +81,7 @@ mod tests {
 
     #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
     struct Stored {
-        change: Vec<Edit>,
+        change: Vec<PackingEdit>,
     }
 
     #[test]
@@ -90,9 +90,9 @@ mod tests {
             compression: Some(Compression::Yaz0),
         };
         let mut packing = base;
-        let (inverse, touched) = packing.apply(Edit::Compression { compression: None });
+        let (inverse, touched) = packing.apply(PackingEdit::Compression { compression: None });
         assert_eq!(packing.compression, None);
-        assert_eq!(touched, [Item::Compression]);
+        assert_eq!(touched, [PackingItem::Compression]);
         packing.apply(inverse);
         assert_eq!(packing, base);
     }
@@ -117,8 +117,8 @@ mod tests {
     fn changes_read_back_with_none_omitted() {
         let stored = Stored {
             change: vec![
-                Edit::Compression { compression: None },
-                Edit::Compression {
+                PackingEdit::Compression { compression: None },
+                PackingEdit::Compression {
                     compression: Some(Compression::Yay0),
                 },
             ],

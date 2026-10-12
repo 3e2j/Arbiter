@@ -7,7 +7,7 @@ use std::{path::Path, process::Command};
 /// A file's state against the last commit. A folder merges everything below
 /// it: one state when they all agree, `Modified` when they don't.
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
-pub enum Status {
+pub enum GitStatus {
     #[default]
     Clean,
     /// Untracked, or staged as new.
@@ -18,7 +18,7 @@ pub enum Status {
     Deleted,
 }
 
-impl Status {
+impl GitStatus {
     #[must_use]
     pub fn merge(self, other: Self) -> Self {
         match (self, other) {
@@ -32,7 +32,7 @@ impl Status {
 
 /// Every path under `root` git sees changed, relative to `root` and sorted,
 /// each once. `None` when `root` isn't in a work tree or git can't run.
-pub(crate) fn status(root: &Path) -> Option<Vec<(String, Status)>> {
+pub(crate) fn status(root: &Path) -> Option<Vec<(String, GitStatus)>> {
     let prefix = git(root, &["rev-parse", "--show-prefix"])?;
     let prefix = prefix.trim_end_matches('\n');
     // Without renames, a rename is its old path deleted and its new one added.
@@ -51,7 +51,7 @@ pub(crate) fn status(root: &Path) -> Option<Vec<(String, Status)>> {
             ".",
         ],
     )?;
-    let mut paths: Vec<(String, Status)> = out
+    let mut paths: Vec<(String, GitStatus)> = out
         .split_terminator('\0')
         .filter_map(|record| {
             let (xy, path) = (record.get(..2)?, record.get(3..)?);
@@ -72,20 +72,20 @@ pub(crate) fn status(root: &Path) -> Option<Vec<(String, Status)>> {
 }
 
 /// A path's state in `paths` from [`status`].
-pub(crate) fn find(paths: &[(String, Status)], path: &str) -> Status {
+pub(crate) fn find(paths: &[(String, GitStatus)], path: &str) -> GitStatus {
     paths
         .binary_search_by(|(p, _)| p.as_str().cmp(path))
-        .map_or(Status::Clean, |i| paths[i].1)
+        .map_or(GitStatus::Clean, |i| paths[i].1)
 }
 
 /// A porcelain record's two letters: the index's (staged), then the work tree's.
-fn parse(xy: &str) -> Status {
+fn parse(xy: &str) -> GitStatus {
     match xy {
-        "??" | "A " | "AM" => Status::Added,
+        "??" | "A " | "AM" => GitStatus::Added,
         // Unmerged, both sides touched it.
-        "DD" | "AU" | "UD" | "UA" | "DU" | "AA" | "UU" => Status::Modified,
-        _ if xy.contains('D') => Status::Deleted,
-        _ => Status::Modified,
+        "DD" | "AU" | "UD" | "UA" | "DU" | "AA" | "UU" => GitStatus::Modified,
+        _ if xy.contains('D') => GitStatus::Deleted,
+        _ => GitStatus::Modified,
     }
 }
 

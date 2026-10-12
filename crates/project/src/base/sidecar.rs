@@ -5,7 +5,7 @@
 //! sidecar, a plain member's on its line in the sidecar holding it.
 //! A member that's an archive leaves it to its own sidecar.
 //!
-//! A mod changes it through [`Edit`], keyed by member path.
+//! A mod changes it through [`SidecarEdit`], keyed by member path.
 
 use std::{collections::HashMap, mem};
 
@@ -98,7 +98,7 @@ impl Sidecar {
 /// so setting it here is left for a check to catch.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "edit", rename_all = "snake_case")]
-pub enum Edit {
+pub enum SidecarEdit {
     Root {
         root: String,
     },
@@ -117,7 +117,7 @@ pub enum Edit {
     },
 }
 
-impl Edit {
+impl SidecarEdit {
     /// The member it names, if it names one.
     fn member(&self) -> Option<&str> {
         match self {
@@ -128,14 +128,14 @@ impl Edit {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Item {
+pub enum SidecarItem {
     Root,
     Compression,
     /// By path.
     Member(String),
 }
 
-impl Address for Item {
+impl Address for SidecarItem {
     fn key(&self) -> Vec<Key> {
         match self {
             Self::Root => vec![("field", "root".to_owned())],
@@ -152,62 +152,65 @@ impl Sidecar {
 }
 
 impl formats::Edit for Sidecar {
-    type Edit = Edit;
-    type Item = Item;
+    type Edit = SidecarEdit;
+    type Item = SidecarItem;
 
-    fn apply(&mut self, edit: Edit) -> (Edit, Vec<Item>) {
+    fn apply(&mut self, edit: SidecarEdit) -> (SidecarEdit, Vec<SidecarItem>) {
         match edit {
-            Edit::Root { root } => {
+            SidecarEdit::Root { root } => {
                 let old = mem::replace(&mut self.root, root);
-                (Edit::Root { root: old }, vec![Item::Root])
+                (SidecarEdit::Root { root: old }, vec![SidecarItem::Root])
             }
-            Edit::Compression { compression } => {
+            SidecarEdit::Compression { compression } => {
                 let old = mem::replace(&mut self.compression, compression);
                 (
-                    Edit::Compression { compression: old },
-                    vec![Item::Compression],
+                    SidecarEdit::Compression { compression: old },
+                    vec![SidecarItem::Compression],
                 )
             }
-            Edit::MemberCompression { path, compression } => match self.member_mut(&path) {
+            SidecarEdit::MemberCompression { path, compression } => match self.member_mut(&path) {
                 Some(member) => {
                     let old = mem::replace(&mut member.compression, compression);
-                    let inverse = Edit::MemberCompression {
+                    let inverse = SidecarEdit::MemberCompression {
                         path: path.clone(),
                         compression: old,
                     };
-                    (inverse, vec![Item::Member(path)])
+                    (inverse, vec![SidecarItem::Member(path)])
                 }
-                None => (Edit::MemberCompression { path, compression }, Vec::new()),
+                None => (
+                    SidecarEdit::MemberCompression { path, compression },
+                    Vec::new(),
+                ),
             },
-            Edit::Preload { path, preload } => match self.member_mut(&path) {
+            SidecarEdit::Preload { path, preload } => match self.member_mut(&path) {
                 Some(member) => {
                     let old = mem::replace(&mut member.preload, preload);
-                    let inverse = Edit::Preload {
+                    let inverse = SidecarEdit::Preload {
                         path: path.clone(),
                         preload: old,
                     };
-                    (inverse, vec![Item::Member(path)])
+                    (inverse, vec![SidecarItem::Member(path)])
                 }
-                None => (Edit::Preload { path, preload }, Vec::new()),
+                None => (SidecarEdit::Preload { path, preload }, Vec::new()),
             },
         }
     }
 }
 
 impl formats::Patch for Sidecar {
-    type Change = Edit;
+    type Change = SidecarEdit;
 
     /// Members matched by path. One added or removed is a change to the
     /// archive's files, not to how it packs, so it makes no change here.
-    fn diff(base: &Self, edited: &Self) -> Vec<Edit> {
+    fn diff(base: &Self, edited: &Self) -> Vec<SidecarEdit> {
         let mut changes = Vec::new();
         if base.root != edited.root {
-            changes.push(Edit::Root {
+            changes.push(SidecarEdit::Root {
                 root: edited.root.clone(),
             });
         }
         if base.compression != edited.compression {
-            changes.push(Edit::Compression {
+            changes.push(SidecarEdit::Compression {
                 compression: edited.compression,
             });
         }
@@ -222,13 +225,13 @@ impl formats::Patch for Sidecar {
                 continue;
             };
             if old.compression != member.compression {
-                changes.push(Edit::MemberCompression {
+                changes.push(SidecarEdit::MemberCompression {
                     path: member.path.clone(),
                     compression: member.compression,
                 });
             }
             if old.preload != member.preload {
-                changes.push(Edit::Preload {
+                changes.push(SidecarEdit::Preload {
                     path: member.path.clone(),
                     preload: member.preload,
                 });
@@ -237,7 +240,7 @@ impl formats::Patch for Sidecar {
         changes
     }
 
-    fn patch(&mut self, changes: &[Edit], diag: &mut Diagnostics) {
+    fn patch(&mut self, changes: &[SidecarEdit], diag: &mut Diagnostics) {
         for change in changes {
             let (_, touched) = formats::Edit::apply(self, change.clone());
             if let (Some(path), true) = (change.member(), touched.is_empty()) {
@@ -280,17 +283,17 @@ mod tests {
         }
     }
 
-    fn edits() -> Vec<Edit> {
+    fn edits() -> Vec<SidecarEdit> {
         vec![
-            Edit::Root {
+            SidecarEdit::Root {
                 root: "renamed".to_owned(),
             },
-            Edit::Compression { compression: None },
-            Edit::MemberCompression {
+            SidecarEdit::Compression { compression: None },
+            SidecarEdit::MemberCompression {
                 path: "zel_00.bmg".to_owned(),
                 compression: Some(Compression::Yay0),
             },
-            Edit::Preload {
+            SidecarEdit::Preload {
                 path: "sub/a.bmd".to_owned(),
                 preload: Preload::Aram,
             },
@@ -311,10 +314,10 @@ mod tests {
         assert_eq!(
             touched,
             [
-                Item::Root,
-                Item::Compression,
-                Item::Member("zel_00.bmg".to_owned()),
-                Item::Member("sub/a.bmd".to_owned()),
+                SidecarItem::Root,
+                SidecarItem::Compression,
+                SidecarItem::Member("zel_00.bmg".to_owned()),
+                SidecarItem::Member("sub/a.bmd".to_owned()),
             ]
         );
         assert_ne!(sidecar, base);
@@ -344,7 +347,7 @@ mod tests {
 
     #[test]
     fn a_member_the_base_lacks_is_skipped_and_reported() {
-        let edit = Edit::Preload {
+        let edit = SidecarEdit::Preload {
             path: "gone.bmg".to_owned(),
             preload: Preload::Disc,
         };
@@ -367,7 +370,7 @@ mod tests {
     fn changes_read_back_with_none_omitted() {
         #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
         struct Stored {
-            change: Vec<Edit>,
+            change: Vec<SidecarEdit>,
         }
 
         let stored = Stored { change: edits() };
