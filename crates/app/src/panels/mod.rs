@@ -4,7 +4,6 @@
 mod files;
 mod output;
 mod placeholder;
-mod showcase;
 
 use gui::ui::Ui;
 
@@ -13,14 +12,12 @@ use crate::workspace::Places;
 pub use files::Files;
 pub use output::{Capture, Output};
 pub use placeholder::Placeholder;
-pub use showcase::Showcase;
 
 /// Every panel, by type, so a tab holds one inline.
 pub enum Panel {
     Files(Files),
     Output(Output),
     Placeholder(Placeholder),
-    Showcase(Showcase),
 }
 
 impl Panel {
@@ -29,7 +26,6 @@ impl Panel {
             Self::Files(_) => Files::TITLE,
             Self::Output(_) => Output::TITLE,
             Self::Placeholder(panel) => panel.title(),
-            Self::Showcase(_) => Showcase::TITLE,
         }
     }
 
@@ -39,7 +35,6 @@ impl Panel {
             Self::Files(_) => Files::PLACES,
             Self::Output(_) => Places::BANDS,
             Self::Placeholder(panel) => panel.places(),
-            Self::Showcase(_) => Places::ALL,
         }
     }
 
@@ -49,7 +44,6 @@ impl Panel {
             Self::Files(panel) => panel.ui(ui),
             Self::Output(panel) => panel.ui(ui),
             Self::Placeholder(panel) => panel.ui(ui),
-            Self::Showcase(panel) => panel.ui(ui),
         }
     }
 }

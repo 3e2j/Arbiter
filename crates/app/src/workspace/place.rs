@@ -47,6 +47,7 @@ impl Place {
 pub struct Places(u16);
 
 impl Places {
+    #[cfg(test)]
     pub const ALL: Self = Self::new(&Place::ALL);
     pub const MAIN: Self = Self::new(&[Place::Main]);
     /// The columns either side of the main view.

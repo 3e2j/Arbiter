@@ -19,7 +19,7 @@ use gui::{
     ui::Ui,
 };
 pub use panels::Capture;
-use panels::{Files, Output, Panel, Placeholder, Showcase};
+use panels::{Files, Output, Panel, Placeholder};
 use project::{Log, Project};
 use workspace::{Place, Places, Workspace};
 
@@ -87,7 +87,6 @@ impl App for Editor {
         let mut workspace = Workspace::new(icons);
         let editor = |title| Panel::Placeholder(Placeholder::new(title, Places::MAIN));
         let tool = |title| Panel::Placeholder(Placeholder::new(title, Places::BANDS));
-        workspace.add(Panel::Showcase(Showcase::new(icons)), Place::Main);
         workspace.add(editor("Messages"), Place::Main);
         workspace.add(
             Panel::Files(Files::new(icons, &mut start.keymap)),
