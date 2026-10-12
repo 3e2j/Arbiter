@@ -31,7 +31,7 @@ use std::{
 use game::edition::{self, Edition, Game, Verdict};
 use pack::{
     disc::{self, Disc},
-    unpack::{self, Piece},
+    unpack::{self, Unpacked},
 };
 use serde::{Deserialize, Serialize};
 
@@ -46,7 +46,7 @@ pub const DIR: &str = "base";
 #[derive(Debug, thiserror::Error)]
 pub enum BaseError {
     #[error(transparent)]
-    Disc(#[from] disc::Error),
+    Disc(#[from] disc::DiscError),
     #[error("{path}: {source}")]
     Io {
         path: PathBuf,
@@ -54,7 +54,7 @@ pub enum BaseError {
         source: io::Error,
     },
     #[error(transparent)]
-    Unpack(#[from] unpack::Error),
+    Unpack(#[from] unpack::UnpackError),
     #[error("two files unpack to {0}")]
     Duplicate(String),
     #[error("hashing the disc panicked")]
@@ -288,14 +288,14 @@ struct Out<'a> {
 }
 
 impl Out<'_> {
-    fn store(&mut self, piece: Piece<'_>) -> Result<(), BaseError> {
+    fn store(&mut self, piece: Unpacked<'_>) -> Result<(), BaseError> {
         match piece {
-            Piece::File {
+            Unpacked::File {
                 path,
                 bytes,
                 compression,
             } => self.write(path, bytes, compression.map(Into::into)),
-            Piece::Archive {
+            Unpacked::Archive {
                 path,
                 archive,
                 compression,

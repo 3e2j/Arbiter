@@ -13,12 +13,12 @@ use std::{
 use nod::{
     common::PartitionKind,
     disc::fst::Node,
-    read::{DiscOptions, DiscReader, PartitionMeta, PartitionOptions, PartitionReader},
+    read::{DiscOptions, PartitionMeta, PartitionOptions, PartitionReader},
 };
 use xxhash_rust::xxh3::Xxh3;
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum DiscError {
     #[error(transparent)]
     Nod(#[from] nod::Error),
     #[error("the disc's file system table is invalid: {0}")]
@@ -83,10 +83,10 @@ pub struct Disc {
     pub country: Option<Country>,
     /// Files only, in file system order.
     /// Every path is plain and relative, so joining one to a directory can't escape it.
-    pub files: Vec<File>,
+    pub files: Vec<DiscFile>,
     /// Read whole on open, they're small besides `main.dol`.
     pub sys: Vec<SysFile>,
-    pub reader: Reader,
+    pub reader: DiscReader,
 }
 
 pub struct SysFile {
@@ -95,26 +95,26 @@ pub struct SysFile {
     pub bytes: Arc<[u8]>,
 }
 
-pub struct File {
+pub struct DiscFile {
     /// Relative and `/`-separated, such as `res/Msg/bmgres.arc`.
     pub path: String,
     node: Node,
 }
 
 /// Separate from `Disc::files` so a caller can read while iterating them.
-pub struct Reader(Box<dyn PartitionReader>);
+pub struct DiscReader(Box<dyn PartitionReader>);
 
 impl Disc {
     /// # Errors
     ///
     /// If nod can't read the image or its data partition, the game id or file
     /// system table is malformed, or a file's path isn't plain and relative.
-    pub fn open(path: &Path) -> Result<Self, Error> {
-        let disc = DiscReader::new(path, &DiscOptions::default())?;
+    pub fn open(path: &Path) -> Result<Self, DiscError> {
+        let disc = nod::read::DiscReader::new(path, &DiscOptions::default())?;
         let header = disc.header();
         let raw_id = header.game_id;
         if !raw_id.iter().all(u8::is_ascii_alphanumeric) {
-            return Err(Error::Id(raw_id));
+            return Err(DiscError::Id(raw_id));
         }
         let id = raw_id.iter().copied().map(char::from).collect();
         let revision = header.disc_version;
@@ -128,17 +128,17 @@ impl Disc {
             Platform::GameCube
         };
         let meta = partition.meta()?;
-        let fst = meta.fst().map_err(Error::Fst)?;
-        let files: Vec<File> = fst
+        let fst = meta.fst().map_err(DiscError::Fst)?;
+        let files: Vec<DiscFile> = fst
             .iter()
             .filter(|(_, node, _)| node.is_file())
-            .map(|(_, node, path)| File { path, node })
+            .map(|(_, node, path)| DiscFile { path, node })
             .collect();
         if let Some(file) = files.iter().find(|f| !is_plain(&f.path)) {
-            return Err(Error::Path(file.path.clone()));
+            return Err(DiscError::Path(file.path.clone()));
         }
         if let Some(file) = files.iter().find(|f| is_sys(&f.path)) {
-            return Err(Error::Sys(file.path.clone()));
+            return Err(DiscError::Sys(file.path.clone()));
         }
 
         // Exhaustive, so a field added in a nod update doesn't go unnoticed.
@@ -189,23 +189,23 @@ impl Disc {
             country,
             files,
             sys,
-            reader: Reader(partition),
+            reader: DiscReader(partition),
         })
     }
 }
 
-impl File {
+impl DiscFile {
     #[must_use]
     pub fn size(&self) -> u32 {
         self.node.length()
     }
 }
 
-impl Reader {
+impl DiscReader {
     /// # Errors
     ///
     /// If seeking to the file fails.
-    pub fn open(&mut self, file: &File) -> io::Result<impl BufRead + '_> {
+    pub fn open(&mut self, file: &DiscFile) -> io::Result<impl BufRead + '_> {
         self.0.open_file(file.node)
     }
 
@@ -214,7 +214,7 @@ impl Reader {
     /// # Errors
     ///
     /// If seeking to or reading the file fails.
-    pub fn read(&mut self, file: &File, buf: &mut Vec<u8>) -> io::Result<()> {
+    pub fn read(&mut self, file: &DiscFile, buf: &mut Vec<u8>) -> io::Result<()> {
         buf.clear();
         self.open(file)?.read_to_end(buf)?;
         Ok(())
@@ -228,8 +228,8 @@ impl Reader {
 ///
 /// If nod can't open the image, reading fails, or the disc ends before its size.
 // Read the way Dusklight's `borealis::disc::verify` does, so it matches the hashes in its catalogue.
-pub fn hash(path: &Path) -> Result<u128, Error> {
-    let mut disc = DiscReader::new(path, &DiscOptions::default())?;
+pub fn hash(path: &Path) -> Result<u128, DiscError> {
+    let mut disc = nod::read::DiscReader::new(path, &DiscOptions::default())?;
     let size = disc.disc_size();
     let mut hasher = Xxh3::new();
     let mut read = 0;
@@ -244,7 +244,7 @@ pub fn hash(path: &Path) -> Result<u128, Error> {
         read += len as u64;
     }
     if read != size {
-        return Err(Error::Truncated { read, size });
+        return Err(DiscError::Truncated { read, size });
     }
     Ok(hasher.digest128())
 }

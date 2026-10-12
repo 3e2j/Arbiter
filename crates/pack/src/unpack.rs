@@ -7,12 +7,12 @@
 //! bmgres.arc             Yaz0   peeled
 //! bmgres.arc             RARC   opened
 //! bmgres.arc/zel_00.bmg  Yaz0   peeled
-//! bmgres.arc/zel_00.bmg  BMG    Piece::File
-//! bmgres.arc                    Piece::Archive, after its members
+//! bmgres.arc/zel_00.bmg  BMG    Unpacked::File
+//! bmgres.arc                    Unpacked::Archive, after its members
 //! ```
 //!
 //! Each compression comes out once: a disc file's on its own piece, an
-//! archive's on its own [`Piece::Archive`], and a plain member's in the
+//! archive's on its own [`Unpacked::Archive`], and a plain member's in the
 //! `members` of the archive holding it.
 //!
 //! Only the magic decides what a file is, since some retail names extensions
@@ -34,7 +34,7 @@ pub const MAX_DEPTH: usize = 8;
 
 /// One thing a disc file became.
 #[derive(Clone, Copy)]
-pub enum Piece<'a> {
+pub enum Unpacked<'a> {
     /// Bytes to store at `path`. `compression` came off a disc file, and is
     /// `None` for a member, whose archive carries it instead.
     File {
@@ -57,7 +57,7 @@ pub enum Piece<'a> {
 /// Names the innermost file that failed, not the disc file it came in.
 #[derive(Debug, thiserror::Error)]
 #[error("{path}: {source}")]
-pub struct Error {
+pub struct UnpackError {
     pub path: String,
     #[source]
     pub source: formats::Error,
@@ -77,28 +77,28 @@ pub struct Peeled<'a> {
 ///
 /// If a wrapper or archive is broken, archives nest past [`MAX_DEPTH`], a
 /// member's path isn't plain, or `sink` fails.
-pub fn unpack<E: From<Error>>(
+pub fn unpack<E: From<UnpackError>>(
     path: &str,
     bytes: &[u8],
-    sink: &mut impl FnMut(Piece<'_>) -> Result<(), E>,
+    sink: &mut impl FnMut(Unpacked<'_>) -> Result<(), E>,
 ) -> Result<(), E> {
     unpack_at(path, bytes, 0, sink).map(drop)
 }
 
 /// Returns what came off `bytes` if it stays a file, for its archive to carry.
-fn unpack_at<E: From<Error>>(
+fn unpack_at<E: From<UnpackError>>(
     path: &str,
     bytes: &[u8],
     depth: usize,
-    sink: &mut impl FnMut(Piece<'_>) -> Result<(), E>,
+    sink: &mut impl FnMut(Unpacked<'_>) -> Result<(), E>,
 ) -> Result<Option<Compression>, E> {
-    let at = |source| Error {
+    let at = |source| UnpackError {
         path: path.to_owned(),
         source,
     };
     let Peeled { compression, bytes } = peel(bytes).map_err(at)?;
     if !Rarc::detect(&bytes) {
-        sink(Piece::File {
+        sink(Unpacked::File {
             path,
             bytes: &bytes,
             compression: compression.filter(|_| depth == 0),
@@ -118,7 +118,7 @@ fn unpack_at<E: From<Error>>(
     for file in &archive.files {
         let member = format!("{path}/{}", file.path);
         if !is_plain(&member) {
-            return Err(Error {
+            return Err(UnpackError {
                 path: member,
                 source: formats::Error::Name {
                     name: file.path.clone(),
@@ -128,7 +128,7 @@ fn unpack_at<E: From<Error>>(
         }
         members.push(unpack_at(&member, &file.data, depth + 1, sink)?);
     }
-    sink(Piece::Archive {
+    sink(Unpacked::Archive {
         path,
         archive: &archive,
         compression,
@@ -214,16 +214,16 @@ mod tests {
         ),
     }
 
-    fn unpack_all(path: &str, bytes: &[u8]) -> Result<Vec<Seen>, Error> {
+    fn unpack_all(path: &str, bytes: &[u8]) -> Result<Vec<Seen>, UnpackError> {
         let mut seen = Vec::new();
         unpack(path, bytes, &mut |piece| {
             seen.push(match piece {
-                Piece::File {
+                Unpacked::File {
                     path,
                     bytes,
                     compression,
                 } => Seen::File(path.to_owned(), bytes.to_vec(), compression),
-                Piece::Archive {
+                Unpacked::Archive {
                     path,
                     archive,
                     compression,
@@ -235,7 +235,7 @@ mod tests {
                     members.to_vec(),
                 ),
             });
-            Ok::<_, Error>(())
+            Ok::<_, UnpackError>(())
         })?;
         Ok(seen)
     }
