@@ -1,7 +1,7 @@
 //! A line of a list or menu that can be clicked, lit while selected or under
 //! the pointer.
 
-use crate::input::{Button, Cursor};
+use crate::input::{CursorIcon, PointerButton};
 use crate::ui::{Element, Ui};
 
 /// A clickable box holding whatever `body` declares. Its background shows
@@ -16,7 +16,7 @@ pub fn row<R>(
 ) -> (bool, R) {
     let c = ui.theme().color;
     let element = Element {
-        cursor: Some(Cursor::Pointer),
+        cursor: Some(CursorIcon::Pointer),
         ..element
     };
     ui.element(element, |ui| {
@@ -26,6 +26,6 @@ pub fn row<R>(
             ui.hovered().then_some(c.hover)
         };
         let out = body(ui);
-        (ui.clicked(Button::Left), out)
+        (ui.clicked(PointerButton::Left), out)
     })
 }

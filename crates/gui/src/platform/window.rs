@@ -11,7 +11,7 @@ use crate::{
     canvas::{Canvas, Rect},
     cast::narrow,
     host::{App, Host, Wake},
-    input::{Button, Code, Cursor, Event, Key, Modifiers},
+    input::{CursorIcon, Event, Key, KeyCode, Modifiers, PointerButton},
     render::{self, Gpu},
 };
 use winit::{
@@ -21,8 +21,8 @@ use winit::{
         DeviceEvent, DeviceId, ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent,
     },
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    keyboard::{self, KeyCode, NamedKey, PhysicalKey},
-    window::{CursorGrabMode, CursorIcon, Window, WindowId},
+    keyboard::{self, NamedKey, PhysicalKey},
+    window::{CursorGrabMode, Window, WindowId},
 };
 
 /// Used when the monitor doesn't report its refresh rate.
@@ -31,7 +31,7 @@ const FALLBACK_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
 const SCROLL_LINE: f32 = 40.;
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum RunError {
     #[error(transparent)]
     EventLoop(#[from] winit::error::EventLoopError),
 
@@ -52,7 +52,7 @@ pub enum Error {
 ///
 /// When the app can't start, or the window or its GPU surface can't be opened,
 /// including again after the surface is lost.
-pub fn run<A: App>(args: A::Args) -> Result<(), Error> {
+pub fn run<A: App>(args: A::Args) -> Result<(), RunError> {
     let event_loop = EventLoop::new()?;
     let proxy = event_loop.create_proxy();
     // Fails only once the loop has closed, when there's nothing to wake.
@@ -60,7 +60,7 @@ pub fn run<A: App>(args: A::Args) -> Result<(), Error> {
         let _ = proxy.send_event(());
     });
     let mut runner = Runner {
-        host: Host::<A>::new(args, wake).map_err(Error::App)?,
+        host: Host::<A>::new(args, wake).map_err(RunError::App)?,
         canvas: Canvas::default(),
         open: None,
         error: None,
@@ -75,7 +75,7 @@ struct Runner<A> {
     canvas: Canvas,
     open: Option<Open>,
     // winit's callbacks can't return one, so it waits here for run.
-    error: Option<Error>,
+    error: Option<RunError>,
 }
 
 struct Open {
@@ -83,14 +83,14 @@ struct Open {
     gpu: Gpu,
     pacer: Pacer,
     /// The shape last set, so it's only set again when a pass changes it.
-    cursor: Cursor,
+    cursor: CursorIcon,
     /// Whether the pointer is grabbed, as last set.
     grab: bool,
 }
 
 impl Open {
     /// Opens at `min`, in logical pixels, and never smaller.
-    fn new(event_loop: &ActiveEventLoop, title: &str, min: [f32; 2]) -> Result<Self, Error> {
+    fn new(event_loop: &ActiveEventLoop, title: &str, min: [f32; 2]) -> Result<Self, RunError> {
         let min = LogicalSize::new(min[0], min[1]);
         let attributes = Window::default_attributes()
             .with_title(title)
@@ -103,7 +103,7 @@ impl Open {
             window,
             gpu,
             pacer,
-            cursor: Cursor::Default,
+            cursor: CursorIcon::Default,
             grab: false,
         })
     }
@@ -130,7 +130,7 @@ fn gpu(window: &Arc<Window>) -> Result<Gpu, render::Error> {
 }
 
 impl<A> Runner<A> {
-    fn fail(&mut self, event_loop: &ActiveEventLoop, error: Error) {
+    fn fail(&mut self, event_loop: &ActiveEventLoop, error: RunError) {
         self.error = Some(error);
         event_loop.exit();
     }
@@ -265,11 +265,11 @@ fn translate(event: &WindowEvent, scale: f64, mut push: impl FnMut(Event)) {
         WindowEvent::CursorLeft { .. } => push(Event::Pointer(None)),
         WindowEvent::MouseInput { state, button, .. } => {
             let button = match button {
-                MouseButton::Left => Button::Left,
-                MouseButton::Right => Button::Right,
-                MouseButton::Middle => Button::Middle,
-                MouseButton::Back => Button::Back,
-                MouseButton::Forward => Button::Forward,
+                MouseButton::Left => PointerButton::Left,
+                MouseButton::Right => PointerButton::Right,
+                MouseButton::Middle => PointerButton::Middle,
+                MouseButton::Back => PointerButton::Back,
+                MouseButton::Forward => PointerButton::Forward,
                 MouseButton::Other(_) => return,
             };
             push(match state {
@@ -398,62 +398,62 @@ fn key(key: &keyboard::Key) -> Option<Key> {
 }
 
 /// Where `physical` is, if it's a key with a character.
-const fn code(physical: PhysicalKey) -> Option<Code> {
+const fn code(physical: PhysicalKey) -> Option<KeyCode> {
     let PhysicalKey::Code(code) = physical else {
         return None;
     };
     let c = match code {
-        KeyCode::KeyA => 'a',
-        KeyCode::KeyB => 'b',
-        KeyCode::KeyC => 'c',
-        KeyCode::KeyD => 'd',
-        KeyCode::KeyE => 'e',
-        KeyCode::KeyF => 'f',
-        KeyCode::KeyG => 'g',
-        KeyCode::KeyH => 'h',
-        KeyCode::KeyI => 'i',
-        KeyCode::KeyJ => 'j',
-        KeyCode::KeyK => 'k',
-        KeyCode::KeyL => 'l',
-        KeyCode::KeyM => 'm',
-        KeyCode::KeyN => 'n',
-        KeyCode::KeyO => 'o',
-        KeyCode::KeyP => 'p',
-        KeyCode::KeyQ => 'q',
-        KeyCode::KeyR => 'r',
-        KeyCode::KeyS => 's',
-        KeyCode::KeyT => 't',
-        KeyCode::KeyU => 'u',
-        KeyCode::KeyV => 'v',
-        KeyCode::KeyW => 'w',
-        KeyCode::KeyX => 'x',
-        KeyCode::KeyY => 'y',
-        KeyCode::KeyZ => 'z',
-        KeyCode::Digit0 => '0',
-        KeyCode::Digit1 => '1',
-        KeyCode::Digit2 => '2',
-        KeyCode::Digit3 => '3',
-        KeyCode::Digit4 => '4',
-        KeyCode::Digit5 => '5',
-        KeyCode::Digit6 => '6',
-        KeyCode::Digit7 => '7',
-        KeyCode::Digit8 => '8',
-        KeyCode::Digit9 => '9',
-        KeyCode::Backquote => '`',
-        KeyCode::Minus => '-',
-        KeyCode::Equal => '=',
-        KeyCode::BracketLeft => '[',
-        KeyCode::BracketRight => ']',
-        KeyCode::Backslash => '\\',
-        KeyCode::Semicolon => ';',
-        KeyCode::Quote => '\'',
-        KeyCode::Comma => ',',
-        KeyCode::Period => '.',
-        KeyCode::Slash => '/',
-        KeyCode::Space => ' ',
+        keyboard::KeyCode::KeyA => 'a',
+        keyboard::KeyCode::KeyB => 'b',
+        keyboard::KeyCode::KeyC => 'c',
+        keyboard::KeyCode::KeyD => 'd',
+        keyboard::KeyCode::KeyE => 'e',
+        keyboard::KeyCode::KeyF => 'f',
+        keyboard::KeyCode::KeyG => 'g',
+        keyboard::KeyCode::KeyH => 'h',
+        keyboard::KeyCode::KeyI => 'i',
+        keyboard::KeyCode::KeyJ => 'j',
+        keyboard::KeyCode::KeyK => 'k',
+        keyboard::KeyCode::KeyL => 'l',
+        keyboard::KeyCode::KeyM => 'm',
+        keyboard::KeyCode::KeyN => 'n',
+        keyboard::KeyCode::KeyO => 'o',
+        keyboard::KeyCode::KeyP => 'p',
+        keyboard::KeyCode::KeyQ => 'q',
+        keyboard::KeyCode::KeyR => 'r',
+        keyboard::KeyCode::KeyS => 's',
+        keyboard::KeyCode::KeyT => 't',
+        keyboard::KeyCode::KeyU => 'u',
+        keyboard::KeyCode::KeyV => 'v',
+        keyboard::KeyCode::KeyW => 'w',
+        keyboard::KeyCode::KeyX => 'x',
+        keyboard::KeyCode::KeyY => 'y',
+        keyboard::KeyCode::KeyZ => 'z',
+        keyboard::KeyCode::Digit0 => '0',
+        keyboard::KeyCode::Digit1 => '1',
+        keyboard::KeyCode::Digit2 => '2',
+        keyboard::KeyCode::Digit3 => '3',
+        keyboard::KeyCode::Digit4 => '4',
+        keyboard::KeyCode::Digit5 => '5',
+        keyboard::KeyCode::Digit6 => '6',
+        keyboard::KeyCode::Digit7 => '7',
+        keyboard::KeyCode::Digit8 => '8',
+        keyboard::KeyCode::Digit9 => '9',
+        keyboard::KeyCode::Backquote => '`',
+        keyboard::KeyCode::Minus => '-',
+        keyboard::KeyCode::Equal => '=',
+        keyboard::KeyCode::BracketLeft => '[',
+        keyboard::KeyCode::BracketRight => ']',
+        keyboard::KeyCode::Backslash => '\\',
+        keyboard::KeyCode::Semicolon => ';',
+        keyboard::KeyCode::Quote => '\'',
+        keyboard::KeyCode::Comma => ',',
+        keyboard::KeyCode::Period => '.',
+        keyboard::KeyCode::Slash => '/',
+        keyboard::KeyCode::Space => ' ',
         _ => return None,
     };
-    Some(Code(c))
+    Some(KeyCode(c))
 }
 
 /// Locks the pointer in place where the system can, otherwise keeps it in
@@ -472,16 +472,16 @@ fn grab(window: &Window, grab: bool) {
     window.set_cursor_visible(!grab);
 }
 
-const fn cursor_icon(cursor: Cursor) -> CursorIcon {
+const fn cursor_icon(cursor: CursorIcon) -> winit::window::CursorIcon {
     match cursor {
-        Cursor::Default => CursorIcon::Default,
-        Cursor::Pointer => CursorIcon::Pointer,
-        Cursor::Text => CursorIcon::Text,
-        Cursor::ResizeH => CursorIcon::EwResize,
-        Cursor::ResizeV => CursorIcon::NsResize,
-        Cursor::Grab => CursorIcon::Grab,
-        Cursor::Grabbing => CursorIcon::Grabbing,
-        Cursor::NotAllowed => CursorIcon::NotAllowed,
+        CursorIcon::Default => winit::window::CursorIcon::Default,
+        CursorIcon::Pointer => winit::window::CursorIcon::Pointer,
+        CursorIcon::Text => winit::window::CursorIcon::Text,
+        CursorIcon::ResizeH => winit::window::CursorIcon::EwResize,
+        CursorIcon::ResizeV => winit::window::CursorIcon::NsResize,
+        CursorIcon::Grab => winit::window::CursorIcon::Grab,
+        CursorIcon::Grabbing => winit::window::CursorIcon::Grabbing,
+        CursorIcon::NotAllowed => winit::window::CursorIcon::NotAllowed,
     }
 }
 

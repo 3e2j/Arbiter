@@ -8,9 +8,9 @@ use gui::{
         self, IconState, ListScroll, TextField, icon_button, list, notice, rule, text_field,
         toolbar,
     },
-    input::{self, Button, Cursor, Modifiers},
-    keymap::{Action, Chord, Command, Context, Keymap},
-    ui::{Align, Border, Direction, Element, Size, TextStyle, Ui},
+    input::{CursorIcon, Modifiers, PointerButton},
+    keymap::{AppCommand, Chord, ChordAction, KeyContext, Keymap},
+    ui::{Align, Border, Direction, Element, Length, TextStyle, Ui},
 };
 use project::{
     git,
@@ -30,9 +30,9 @@ const INSIDE: u8 = 0x39;
 const POPOVER: f32 = 220.;
 
 /// While the panel is active, see [`Files::active`].
-const FILES: Context = Context("files");
+const FILES: KeyContext = KeyContext("files");
 /// Focuses the search, Ctrl+F by default.
-const SEARCH: Action = Action::Command(Command("files.search"));
+const SEARCH: ChordAction = ChordAction::Command(AppCommand("files.search"));
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Tab {
@@ -178,7 +178,7 @@ impl Files {
 
     /// Binds Ctrl+F (Command+F on macOS) in `keymap` to focus the search.
     pub fn new(keymap: &mut Keymap) -> Self {
-        let find = Chord::new(input::Key::Char('f'), Modifiers::COMMAND);
+        let find = Chord::new(gui::input::Key::Char('f'), Modifiers::COMMAND);
         keymap.bind(find, FILES, Some(SEARCH));
         Self {
             opened: None,
@@ -265,7 +265,7 @@ impl Files {
     }
 
     pub fn ui(&mut self, ui: &mut Ui) {
-        if ui.input().pressed(Button::Left) {
+        if ui.input().pressed(PointerButton::Left) {
             self.active = ui.hovered();
         }
         self.tabs(ui);
@@ -443,28 +443,28 @@ impl Files {
         let (c, s) = (theme.color, theme.size);
         let strip = Element {
             direction: Direction::LeftToRight,
-            size: [Size::Grow, Size::Fit],
+            size: [Length::Grow, Length::Fit],
             padding: [s.gap, 0., s.gap / 2., 0.],
             align: [Align::Start, Align::Center],
             ..Element::DEFAULT
         };
         let tab = Element {
-            size: [Size::Fit; 2],
-            cursor: Some(Cursor::Pointer),
+            size: [Length::Fit; 2],
+            cursor: Some(CursorIcon::Pointer),
             ..Element::column()
         };
         let label = Element {
-            size: [Size::Fit, Size::Fixed(s.row + s.gap)],
+            size: [Length::Fit, Length::Fixed(s.row + s.gap)],
             padding: [s.gap, 0., s.gap, 0.],
             align: [Align::Center; 2],
             ..Element::DEFAULT
         };
         let underline = Element {
-            size: [Size::Grow, Size::Fixed(2. * s.line)],
+            size: [Length::Grow, Length::Fixed(2. * s.line)],
             ..Element::DEFAULT
         };
         let top = Element {
-            size: [Size::Grow, Size::Fit],
+            size: [Length::Grow, Length::Fit],
             ..Element::column()
         };
         ui.element(top, |ui| {
@@ -479,7 +479,7 @@ impl Files {
                             ..underline
                         };
                         ui.element(underline, |_| ());
-                        ui.clicked(Button::Left)
+                        ui.clicked(PointerButton::Left)
                     });
                     if clicked && each != self.tab {
                         self.tab = each;
@@ -527,7 +527,7 @@ fn row_ui(
     // Under the middle of the parent's icon, kept on a whole pixel.
     let guide = Element {
         direction: Direction::LeftToRight,
-        size: [Size::Fixed(s.indent), Size::Grow],
+        size: [Length::Fixed(s.indent), Length::Grow],
         padding: [((s.icon - s.line) / 2.).floor(), 0., 0., 0.],
         ..Element::DEFAULT
     };
@@ -536,7 +536,7 @@ fn row_ui(
     let inset = (s.row - s.icon) / 2.;
     let content = Element {
         direction: Direction::LeftToRight,
-        size: [Size::Grow; 2],
+        size: [Length::Grow; 2],
         gap: s.icon_gap,
         align: [Align::Start, Align::Center],
         // Cut long names rather than push the regions out of the row.
@@ -593,7 +593,7 @@ fn heading(ui: &mut Ui, text: &str) {
     let theme = ui.theme();
     let s = theme.size;
     let element = Element {
-        size: [Size::Grow, Size::Fixed(s.row)],
+        size: [Length::Grow, Length::Fixed(s.row)],
         padding: [s.icon_gap, 0., s.icon_gap, 0.],
         align: [Align::Start, Align::Center],
         ..Element::DEFAULT
@@ -615,7 +615,7 @@ fn check(ui: &mut Ui, label: &str, on: bool) -> bool {
         ..Element::line(s.row)
     };
     let tick = Element {
-        size: [Size::Fixed(s.icon); 2],
+        size: [Length::Fixed(s.icon); 2],
         ..Element::DEFAULT
     };
     let (clicked, ()) = components::row(ui, element, false, |ui| {
@@ -636,12 +636,12 @@ fn gutter(ui: &mut Ui, status: Status) {
     let (s, color) = (theme.size, theme.color.accent);
     let pad = [(s.gap - BAR) / 2., (s.row - s.icon) / 2.];
     let gutter = Element {
-        size: [Size::Fixed(s.gap), Size::Grow],
+        size: [Length::Fixed(s.gap), Length::Grow],
         padding: [pad[0], pad[1], pad[0], pad[1]],
         ..Element::DEFAULT
     };
     let bar = Element {
-        size: [Size::Grow; 2],
+        size: [Length::Grow; 2],
         radius: [BAR / 2.; 4],
         ..Element::DEFAULT
     };
@@ -694,7 +694,7 @@ fn regions(ui: &mut Ui, tree: &Tree, editions: u32) {
     });
     let element = Element {
         direction: Direction::LeftToRight,
-        size: [Size::Fixed(width), Size::Grow],
+        size: [Length::Fixed(width), Length::Grow],
         padding,
         gap: s.icon_gap,
         align: [Align::Start, Align::Center],

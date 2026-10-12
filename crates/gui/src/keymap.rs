@@ -1,6 +1,6 @@
 //! What keys do, as a table the user can change.
 //!
-//! Each row binds a [`Chord`] in a [`Context`] to an [`Action`],
+//! Each row binds a [`Chord`] in a [`KeyContext`] to a [`ChordAction`],
 //! and [`Keymap::resolve`] finds what a press does, or [`Keymap::held`]
 //! whether one is held.
 //!
@@ -8,7 +8,7 @@
 //! the defaults, and a row without an action unbinds the chord under it.
 
 use crate::edit::{Edit, Motion};
-use crate::input::{Code, Input, Key, KeyPress, Modifiers};
+use crate::input::{Input, Key, KeyCode, KeyPress, Modifiers};
 
 /// A key and the modifiers held with it: exactly those, or any for a key
 /// held down, such as moving while Shift speeds it up.
@@ -18,58 +18,58 @@ use crate::input::{Code, Input, Key, KeyPress, Modifiers};
 /// is one chord either way.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Chord {
-    pub key: Which,
+    pub key: ChordKey,
     /// `None` for any.
     pub modifiers: Option<Modifiers>,
 }
 
 /// Which key a chord means: by what the layout types, or by where it is.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Which {
+pub enum ChordKey {
     Key(Key),
-    Code(Code),
+    Code(KeyCode),
 }
 
 /// Where a binding applies, such as while typing in a field. By name, so a
 /// settings file can say it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Context(pub &'static str);
+pub struct KeyContext(pub &'static str);
 
 /// One of the app's own actions, by name.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Command(pub &'static str);
+pub struct AppCommand(pub &'static str);
 
 /// What a chord does.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Action {
+pub enum ChordAction {
     Edit(Edit<'static>),
     /// Done with a field, keeping what's typed.
     Confirm,
     Cancel,
-    Command(Command),
+    Command(AppCommand),
 }
 
 /// Rows by column, so finding a chord only reads chords.
 pub struct Keymap {
     chords: Vec<Chord>,
-    contexts: Vec<Context>,
-    actions: Vec<Option<Action>>,
+    contexts: Vec<KeyContext>,
+    actions: Vec<Option<ChordAction>>,
 }
 
 impl Chord {
     #[must_use]
     pub const fn new(key: Key, modifiers: Modifiers) -> Self {
         Self {
-            key: Which::Key(key),
+            key: ChordKey::Key(key),
             modifiers: Some(modifiers),
         }
     }
 
     /// By where the key is, whatever the layout types there.
     #[must_use]
-    pub const fn at(code: Code, modifiers: Modifiers) -> Self {
+    pub const fn at(code: KeyCode, modifiers: Modifiers) -> Self {
         Self {
-            key: Which::Code(code),
+            key: ChordKey::Code(code),
             modifiers: Some(modifiers),
         }
     }
@@ -84,7 +84,7 @@ impl Chord {
     }
 
     fn caseless(self) -> bool {
-        matches!(self.key, Which::Key(Key::Char(c)) if !c.is_alphabetic())
+        matches!(self.key, ChordKey::Key(Key::Char(c)) if !c.is_alphabetic())
     }
 
     /// `modifiers` as this chord compares them.
@@ -98,8 +98,8 @@ impl Chord {
 
     fn matches(self, press: KeyPress) -> bool {
         let key = match self.key {
-            Which::Key(key) => key == press.key,
-            Which::Code(code) => Some(code) == press.code,
+            ChordKey::Key(key) => key == press.key,
+            ChordKey::Code(code) => Some(code) == press.code,
         };
         key && self
             .modifiers
@@ -107,7 +107,7 @@ impl Chord {
     }
 }
 
-impl Context {
+impl KeyContext {
     /// Anywhere, so it goes last among the contexts asked.
     pub const GLOBAL: Self = Self("global");
     /// While typing in a field or editor.
@@ -127,7 +127,7 @@ impl Keymap {
 
     /// Binds `chord` in `context` over whatever it did there, or unbinds it
     /// when `action` is `None`.
-    pub fn bind(&mut self, chord: Chord, context: Context, action: Option<Action>) {
+    pub fn bind(&mut self, chord: Chord, context: KeyContext, action: Option<ChordAction>) {
         let modifiers = chord.modifiers.map(|modifiers| chord.held(modifiers));
         self.chords.push(Chord { modifiers, ..chord });
         self.contexts.push(context);
@@ -137,7 +137,7 @@ impl Keymap {
     /// What `press` does in the first of `contexts` that binds it, so the
     /// most specific goes first.
     #[must_use]
-    pub fn resolve(&self, press: KeyPress, contexts: &[Context]) -> Option<Action> {
+    pub fn resolve(&self, press: KeyPress, contexts: &[KeyContext]) -> Option<ChordAction> {
         let rows = || self.chords.iter().zip(&self.contexts);
         contexts
             .iter()
@@ -151,7 +151,7 @@ impl Keymap {
     /// Whether a key down in `input` does `action`, as [`Self::resolve`]
     /// would find it.
     #[must_use]
-    pub fn held(&self, action: Action, input: &Input, contexts: &[Context]) -> bool {
+    pub fn held(&self, action: ChordAction, input: &Input, contexts: &[KeyContext]) -> bool {
         input
             .held_keys()
             .any(|press| self.resolve(press, contexts) == Some(action))
@@ -164,8 +164,8 @@ impl Default for Keymap {
     fn default() -> Self {
         let mut keymap = Self::empty();
         let mut bind = |key, modifiers, edit| {
-            let action = Some(Action::Edit(edit));
-            keymap.bind(Chord::new(key, modifiers), Context::TEXT, action);
+            let action = Some(ChordAction::Edit(edit));
+            keymap.bind(Chord::new(key, modifiers), KeyContext::TEXT, action);
         };
         let mac = cfg!(target_os = "macos");
         let (none, shift) = (Modifiers::default(), Modifiers::SHIFT);
@@ -210,8 +210,11 @@ impl Default for Keymap {
         bind(Key::Insert, shift, Edit::Paste);
         // Over Shift+Delete deleting forward.
         bind(Key::Delete, shift, Edit::Cut);
-        for (key, action) in [(Key::Enter, Action::Confirm), (Key::Escape, Action::Cancel)] {
-            keymap.bind(Chord::new(key, none), Context::TEXT, Some(action));
+        for (key, action) in [
+            (Key::Enter, ChordAction::Confirm),
+            (Key::Escape, ChordAction::Cancel),
+        ] {
+            keymap.bind(Chord::new(key, none), KeyContext::TEXT, Some(action));
         }
         keymap
     }
@@ -231,8 +234,8 @@ mod tests {
     }
 
     fn edit(keymap: &Keymap, key: Key, modifiers: Modifiers) -> Option<Edit<'static>> {
-        match keymap.resolve(press(key, modifiers), &[Context::TEXT]) {
-            Some(Action::Edit(edit)) => Some(edit),
+        match keymap.resolve(press(key, modifiers), &[KeyContext::TEXT]) {
+            Some(ChordAction::Edit(edit)) => Some(edit),
             _ => None,
         }
     }
@@ -273,9 +276,9 @@ mod tests {
         let mut keymap = Keymap::default();
         let command = Modifiers::COMMAND;
         let a = Chord::new(Key::Char('a'), command);
-        keymap.bind(a, Context::TEXT, Some(Action::Edit(Edit::Paste)));
+        keymap.bind(a, KeyContext::TEXT, Some(ChordAction::Edit(Edit::Paste)));
         assert_eq!(edit(&keymap, Key::Char('a'), command), Some(Edit::Paste));
-        keymap.bind(a, Context::TEXT, None);
+        keymap.bind(a, KeyContext::TEXT, None);
         assert_eq!(edit(&keymap, Key::Char('a'), command), None);
     }
 
@@ -283,36 +286,36 @@ mod tests {
     fn the_first_context_that_binds_a_chord_wins() {
         let mut keymap = Keymap::empty();
         let slash = Chord::new(Key::Char('/'), Modifiers::default());
-        let search = Action::Command(Command("search"));
-        keymap.bind(slash, Context::GLOBAL, Some(search));
+        let search = ChordAction::Command(AppCommand("search"));
+        keymap.bind(slash, KeyContext::GLOBAL, Some(search));
         let slash = press(Key::Char('/'), Modifiers::default());
-        let both = [Context::TEXT, Context::GLOBAL];
+        let both = [KeyContext::TEXT, KeyContext::GLOBAL];
         assert_eq!(keymap.resolve(slash, &both), Some(search));
         let chord = Chord::new(Key::Char('/'), Modifiers::default());
-        keymap.bind(chord, Context::TEXT, None);
+        keymap.bind(chord, KeyContext::TEXT, None);
         assert_eq!(keymap.resolve(slash, &both), None);
-        assert_eq!(keymap.resolve(slash, &[Context::GLOBAL]), Some(search));
+        assert_eq!(keymap.resolve(slash, &[KeyContext::GLOBAL]), Some(search));
     }
 
     #[test]
     fn shift_is_left_out_with_a_caseless_character() {
         let mut keymap = Keymap::empty();
         let (ctrl, shift) = (Modifiers::CTRL, Modifiers::SHIFT);
-        let zoom = Action::Command(Command("zoom"));
+        let zoom = ChordAction::Command(AppCommand("zoom"));
         keymap.bind(
             Chord::new(Key::Char('>'), ctrl),
-            Context::GLOBAL,
+            KeyContext::GLOBAL,
             Some(zoom),
         );
-        let global = [Context::GLOBAL];
+        let global = [KeyContext::GLOBAL];
         for held in [ctrl, ctrl.with(shift)] {
             let press = press(Key::Char('>'), held);
             assert_eq!(keymap.resolve(press, &global), Some(zoom), "{held:?}");
         }
-        let undo = Action::Command(Command("undo"));
+        let undo = ChordAction::Command(AppCommand("undo"));
         keymap.bind(
             Chord::new(Key::Char('z'), ctrl),
-            Context::GLOBAL,
+            KeyContext::GLOBAL,
             Some(undo),
         );
         let redo = press(Key::Char('z'), ctrl.with(shift));
@@ -323,10 +326,10 @@ mod tests {
     fn a_key_bound_by_place_is_held_with_any_modifiers() {
         use crate::input::Event;
         let mut keymap = Keymap::empty();
-        let fly = Context("fly");
-        let forward = Action::Command(Command("forward"));
-        let fast = Action::Command(Command("fast"));
-        let w = Chord::at(Code('w'), Modifiers::default()).any_modifiers();
+        let fly = KeyContext("fly");
+        let forward = ChordAction::Command(AppCommand("forward"));
+        let fast = ChordAction::Command(AppCommand("fast"));
+        let w = Chord::at(KeyCode('w'), Modifiers::default()).any_modifiers();
         keymap.bind(w, fly, Some(forward));
         let shift = Chord::new(Key::Shift, Modifiers::default()).any_modifiers();
         keymap.bind(shift, fly, Some(fast));
@@ -341,14 +344,14 @@ mod tests {
         // Where W is on a US layout, which types Z on a French one.
         input.push(Event::Key {
             key: Key::Char('z'),
-            code: Some(Code('w')),
+            code: Some(KeyCode('w')),
             repeat: false,
         });
         assert!(held(&input, forward) && held(&input, fast));
-        assert!(!keymap.held(forward, &input, &[Context::GLOBAL]));
+        assert!(!keymap.held(forward, &input, &[KeyContext::GLOBAL]));
         input.push(Event::KeyReleased {
             key: Key::Char('z'),
-            code: Some(Code('w')),
+            code: Some(KeyCode('w')),
         });
         assert!(!held(&input, forward) && held(&input, fast));
     }

@@ -22,10 +22,10 @@ use crate::cast::narrow;
 #[derive(Default)]
 pub(super) struct Lines {
     /// The lines shaped or drawn this frame, by [`line_hash`].
-    this_frame: HashMap<u64, Line>,
+    this_frame: HashMap<u64, ShapedLine>,
     /// Last frame's lines, which move to `this_frame` when they're drawn
     /// again. Whatever isn't is dropped when the next frame starts.
-    last_frame: HashMap<u64, Line>,
+    last_frame: HashMap<u64, ShapedLine>,
     /// Kept between runs so shaping one allocates nothing new.
     buffer: Option<UnicodeBuffer>,
     /// Counts each [`Self::clear`], so a line held elsewhere can tell it was
@@ -35,7 +35,7 @@ pub(super) struct Lines {
 
 /// A line of text in one font and size, shaped. In physical pixels from a pen
 /// starting at zero on the baseline.
-pub struct Line {
+pub struct ShapedLine {
     text: Box<str>,
     font: FontId,
     pixels: u16,
@@ -74,7 +74,7 @@ struct Run {
     bytes: Range<usize>,
 }
 
-impl Line {
+impl ShapedLine {
     /// The pen position at byte `index`, from the first glyph of the cluster
     /// starting there or after. Past the last glyph, the line's width.
     // TODO: right to left runs, once runs are reordered around each other.
@@ -108,9 +108,10 @@ impl Line {
 impl Lines {
     /// `text` shaped in `font` at `pixels` per em, from this frame, else last
     /// frame, else shaped now. [`Self::keep`] puts it back.
-    pub fn take(&mut self, fonts: &mut Fonts, font: FontId, pixels: u16, text: &str) -> Line {
+    pub fn take(&mut self, fonts: &mut Fonts, font: FontId, pixels: u16, text: &str) -> ShapedLine {
         let hash = line_hash(font, pixels, text);
-        let same = |line: &Line| *line.text == *text && line.font == font && line.pixels == pixels;
+        let same =
+            |line: &ShapedLine| *line.text == *text && line.font == font && line.pixels == pixels;
         match self.this_frame.remove(&hash) {
             Some(line) if same(&line) => line,
             _ => match self.last_frame.remove(&hash) {
@@ -121,13 +122,13 @@ impl Lines {
     }
 
     /// Keeps `line` this frame and the next.
-    pub fn keep(&mut self, line: Line) {
+    pub fn keep(&mut self, line: ShapedLine) {
         self.this_frame.insert(line.hash, line);
     }
 
     /// Whether `line` is `text` in `font` at `pixels`, shaped by the fonts as
     /// they are now.
-    pub fn holds(&self, line: &Line, font: FontId, pixels: u16, text: &str) -> bool {
+    pub fn holds(&self, line: &ShapedLine, font: FontId, pixels: u16, text: &str) -> bool {
         line.version == self.version
             && line.font == font
             && line.pixels == pixels
@@ -147,7 +148,13 @@ impl Lines {
         self.version = self.version.wrapping_add(1);
     }
 
-    pub fn shape(&mut self, fonts: &mut Fonts, font: FontId, pixels: u16, text: &str) -> Line {
+    pub fn shape(
+        &mut self,
+        fonts: &mut Fonts,
+        font: FontId,
+        pixels: u16,
+        text: &str,
+    ) -> ShapedLine {
         let mut glyphs = Vec::new();
         let mut pen = 0.;
         for run in runs(fonts, font, text) {
@@ -157,7 +164,7 @@ impl Lines {
             };
             pen = self.shape_run(fonts, run.font, pixels, (text, start), pen, &mut glyphs);
         }
-        Line {
+        ShapedLine {
             text: text.into(),
             font,
             pixels,
@@ -253,7 +260,7 @@ fn runs(fonts: &mut Fonts, font: FontId, text: &str) -> Vec<Run> {
 }
 
 /// Which line `text` in `font` at `pixels` is. Equal hashes can still be
-/// different text, which [`Line::text`] tells apart.
+/// different text, which [`ShapedLine::text`] tells apart.
 fn line_hash(font: FontId, pixels: u16, text: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     (font, pixels, text).hash(&mut hasher);

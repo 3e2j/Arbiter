@@ -29,7 +29,7 @@ use workspace::{Place, Places, Workspace};
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
-    Window(#[from] window::Error),
+    Window(#[from] window::RunError),
 }
 
 /// Opens the editor in a window, with `project` open if given, and blocks

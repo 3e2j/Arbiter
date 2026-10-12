@@ -1,11 +1,11 @@
 use super::*;
-use crate::input::{Button, Event};
+use crate::input::{Event, PointerButton};
 use crate::ui::tests::Kept;
-use crate::ui::{Element, Size};
+use crate::ui::{Element, Length};
 
 fn fixed(w: f32, h: f32) -> Element {
     Element {
-        size: [Size::Fixed(w), Size::Fixed(h)],
+        size: [Length::Fixed(w), Length::Fixed(h)],
         ..Element::DEFAULT
     }
 }
@@ -75,7 +75,7 @@ fn dragging_the_thumb_scrolls_as_far_as_it_moves() {
     }
     // The thumb is 10 tall in a track of 94, so it travels 84 for 900.
     kept.input.push(Event::Pointer(Some([294., 5.])));
-    kept.input.push(Event::Pressed(Button::Left));
+    kept.input.push(Event::Pressed(PointerButton::Left));
     list_pass(&mut kept, &mut state);
     assert_eq!(state, ListScroll::TOP);
     kept.input.push(Event::Pointer(Some([294., 47.])));
@@ -150,9 +150,9 @@ fn a_button_reports_a_click_over_it() {
     let pass = |kept: &mut Kept| kept.pass(|ui| button(ui, "Open"));
     kept.input.push(Event::Pointer(Some([1., 1.])));
     pass(&mut kept);
-    kept.input.push(Event::Pressed(Button::Left));
+    kept.input.push(Event::Pressed(PointerButton::Left));
     assert!(!pass(&mut kept));
-    kept.input.push(Event::Released(Button::Left));
+    kept.input.push(Event::Released(PointerButton::Left));
     assert!(pass(&mut kept));
     assert!(!pass(&mut kept));
 }
@@ -172,11 +172,11 @@ fn a_popover_closes_on_a_press_outside_it() {
     let mut kept = Kept::default();
     kept.input.push(Event::Pointer(Some([5., 5.])));
     // The pass it opens, the press is the one that opened it.
-    kept.input.push(Event::Pressed(Button::Left));
+    kept.input.push(Event::Pressed(PointerButton::Left));
     assert!(!popover_pass(&mut kept));
-    kept.input.push(Event::Released(Button::Left));
+    kept.input.push(Event::Released(PointerButton::Left));
     popover_pass(&mut kept);
-    kept.input.push(Event::Pressed(Button::Left));
+    kept.input.push(Event::Pressed(PointerButton::Left));
     assert!(popover_pass(&mut kept));
 }
 
@@ -186,6 +186,6 @@ fn a_popover_stays_open_on_a_press_inside_it() {
     popover_pass(&mut kept);
     kept.input.push(Event::Pointer(Some([75., 25.])));
     popover_pass(&mut kept);
-    kept.input.push(Event::Pressed(Button::Left));
+    kept.input.push(Event::Pressed(PointerButton::Left));
     assert!(!popover_pass(&mut kept));
 }

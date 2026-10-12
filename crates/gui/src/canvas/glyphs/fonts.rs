@@ -18,7 +18,7 @@ use super::atlas::Format;
 use super::color;
 use super::ink::Bitmap;
 use super::system::SystemFonts;
-use super::{Error, FontFile, FontId};
+use super::{FontFile, FontId, GlyphError};
 
 /// Glyphs go through the autohinter in light mode, like fontconfig's
 /// `hintslight`, whether or not a font carries its own instructions. It snaps
@@ -70,9 +70,9 @@ pub(super) struct Font {
 
 impl Fonts {
     /// Loads `file` with `weight` set on its weight axis, if it has one.
-    pub fn add(&mut self, file: FontFile, weight: f32) -> Result<FontId, Error> {
-        let font =
-            Font::new(Blob::new(Arc::new(file.data)), 0, weight).ok_or(Error::Font(file.name))?;
+    pub fn add(&mut self, file: FontFile, weight: f32) -> Result<FontId, GlyphError> {
+        let font = Font::new(Blob::new(Arc::new(file.data)), 0, weight)
+            .ok_or(GlyphError::Font(file.name))?;
         self.push(font)
     }
 
@@ -115,8 +115,8 @@ impl Fonts {
         self.get_mut(font)?.rasterize(id, pixels)
     }
 
-    fn push(&mut self, font: Font) -> Result<FontId, Error> {
-        let id = FontId(u16::try_from(self.list.len()).map_err(|_| Error::TooMany)?);
+    fn push(&mut self, font: Font) -> Result<FontId, GlyphError> {
+        let id = FontId(u16::try_from(self.list.len()).map_err(|_| GlyphError::TooMany)?);
         self.list.push(font);
         Ok(id)
     }

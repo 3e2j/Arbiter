@@ -3,8 +3,10 @@
 
 use std::sync::OnceLock;
 
-use gui::canvas::{Error, FontFile, Glyphs, IconId};
-use gui::ui::Fonts;
+use gui::{
+    canvas::{FontFile, GlyphError, Glyphs, IconId},
+    ui::ThemeFonts,
+};
 
 /// Every [`Icon`]'s id, set by [`load_icons`].
 static ICONS: OnceLock<[IconId; Icon::ALL.len()]> = OnceLock::new();
@@ -24,7 +26,7 @@ const WEIGHT: f32 = 400.;
 /// for Japanese file names, and code to Noto Sans then Noto Sans JP, so a
 /// missing character keeps the closest style there is. The system's fonts
 /// take what all of them lack.
-pub fn fonts(glyphs: &mut Glyphs) -> Result<Fonts, Error> {
+pub fn fonts(glyphs: &mut Glyphs) -> Result<ThemeFonts, GlyphError> {
     let ui = glyphs.add_font(
         FontFile {
             name: "Noto Sans",
@@ -48,7 +50,7 @@ pub fn fonts(glyphs: &mut Glyphs) -> Result<Fonts, Error> {
     )?;
     glyphs.set_fallbacks(ui, &[jp]);
     glyphs.set_fallbacks(buffer, &[ui, jp]);
-    Ok(Fonts { ui, buffer })
+    Ok(ThemeFonts { ui, buffer })
 }
 
 /// The icons in `assets/icons`, all drawn on a 24 unit grid.
@@ -147,7 +149,7 @@ impl Icon {
 }
 
 /// Adds every [`Icon`] to `glyphs`, so each converts to its [`IconId`].
-pub fn load_icons(glyphs: &mut Glyphs) -> Result<(), Error> {
+pub fn load_icons(glyphs: &mut Glyphs) -> Result<(), GlyphError> {
     let mut ids = [IconId::default(); Icon::ALL.len()];
     for (id, icon) in ids.iter_mut().zip(Icon::ALL) {
         let (name, svg) = icon.file();

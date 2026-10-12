@@ -26,8 +26,8 @@ use skrifa::instance::Size;
 pub use atlas::{AtlasUpdate, Format, PageWrite};
 use fonts::Fonts;
 use ink::{Ink, Inks, Key};
-pub use shape::Line;
 use shape::Lines;
+pub use shape::ShapedLine;
 
 use super::{Canvas, Color, Quad, Rect};
 use crate::cast::pixel;
@@ -40,7 +40,7 @@ const BOX_HEIGHT: f32 = 0.7;
 const BOX_INSET: f32 = 0.12;
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum GlyphError {
     #[error("the font {0} doesn't parse")]
     Font(&'static str),
 
@@ -59,7 +59,7 @@ pub struct FontId(u16);
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
 pub struct IconId(u16);
 
-/// A font's file, and the name an [`Error::Font`] reports it by.
+/// A font's file, and the name a [`GlyphError::Font`] reports it by.
 #[derive(Clone, Copy, Debug)]
 pub struct FontFile {
     pub name: &'static str,
@@ -106,7 +106,7 @@ impl Glyphs {
     /// # Errors
     ///
     /// If the font doesn't parse.
-    pub fn add_font(&mut self, file: FontFile, weight: f32) -> Result<FontId, Error> {
+    pub fn add_font(&mut self, file: FontFile, weight: f32) -> Result<FontId, GlyphError> {
         self.fonts.add(file, weight)
     }
 
@@ -133,15 +133,15 @@ impl Glyphs {
         }
     }
 
-    /// Loads an SVG icon. `name` is what an [`Error::Icon`] reports it by.
+    /// Loads an SVG icon. `name` is what a [`GlyphError::Icon`] reports it by.
     ///
     /// # Errors
     ///
     /// If the SVG doesn't parse.
-    pub fn add_icon(&mut self, name: &'static str, svg: &[u8]) -> Result<IconId, Error> {
-        let id = IconId(u16::try_from(self.icons.len()).map_err(|_| Error::TooMany)?);
+    pub fn add_icon(&mut self, name: &'static str, svg: &[u8]) -> Result<IconId, GlyphError> {
+        let id = IconId(u16::try_from(self.icons.len()).map_err(|_| GlyphError::TooMany)?);
         let tree = usvg::Tree::from_data(svg, &usvg::Options::default())
-            .map_err(|error| Error::Icon(name, error))?;
+            .map_err(|error| GlyphError::Icon(name, error))?;
         self.icons.push(tree);
         Ok(id)
     }
@@ -215,7 +215,7 @@ impl Glyphs {
     /// keeps it instead of this frame's lines. Reused while
     /// [`Self::holds_line`].
     #[must_use]
-    pub fn shape_line(&mut self, font: FontId, size: f32, text: &str) -> Line {
+    pub fn shape_line(&mut self, font: FontId, size: f32, text: &str) -> ShapedLine {
         let pixels = self.pixels(size);
         self.lines.shape(&mut self.fonts, font, pixels, text)
     }
@@ -223,13 +223,13 @@ impl Glyphs {
     /// Whether `line` is still `text` in `font` at `size`, as it would be
     /// shaped now.
     #[must_use]
-    pub fn holds_line(&self, line: &Line, font: FontId, size: f32, text: &str) -> bool {
+    pub fn holds_line(&self, line: &ShapedLine, font: FontId, size: f32, text: &str) -> bool {
         self.lines.holds(line, font, self.pixels(size), text)
     }
 
     /// How far `line` moves the pen, in logical pixels.
     #[must_use]
-    pub fn line_width(&self, line: &Line) -> f32 {
+    pub fn line_width(&self, line: &ShapedLine) -> f32 {
         line.width / self.scale
     }
 
@@ -237,7 +237,7 @@ impl Glyphs {
     pub fn draw_line(
         &mut self,
         canvas: &mut Canvas,
-        line: &mut Line,
+        line: &mut ShapedLine,
         [x, y]: [f32; 2],
         color: Color,
     ) -> f32 {
@@ -269,9 +269,9 @@ impl Glyphs {
     }
 
     /// Where [`Self::draw_line`] puts byte `index` of `line` when it starts
-    /// at `x`, as [`Line`]'s cluster boundaries place it, in logical pixels.
+    /// at `x`, as [`ShapedLine`]'s cluster boundaries place it, in logical pixels.
     #[must_use]
-    pub fn line_x(&self, line: &Line, x: f32, index: usize) -> f32 {
+    pub fn line_x(&self, line: &ShapedLine, x: f32, index: usize) -> f32 {
         (self.to_physical(x) + line.x_for_index(index)) / self.scale
     }
 

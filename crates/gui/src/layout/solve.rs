@@ -2,7 +2,7 @@
 //! from the leaves up, then grow sizes from the window down. Text doesn't
 //! wrap yet, so a box's height never depends on its width.
 
-use super::{Align, Anchor, Content, Direction, Layout, Node, Size};
+use super::{Align, Anchor, Content, Direction, Layout, Length, Node};
 use crate::canvas::Rect;
 
 impl Layout {
@@ -19,7 +19,7 @@ impl Layout {
             return false;
         };
         window.end = len;
-        window.element.size = [Size::Fixed(root.w), Size::Fixed(root.h)];
+        window.element.size = [Length::Fixed(root.w), Length::Fixed(root.h)];
         for axis in [0, 1] {
             self.fit(axis);
             self.grow(axis);
@@ -56,11 +56,11 @@ impl Layout {
             });
             let node = &mut self.nodes[index];
             let size = match node.element.size[axis] {
-                Size::Fixed(size) => size,
+                Length::Fixed(size) => size,
                 // Cut off at its edge anyway, so it takes only what it's
                 // given and what's past that can scroll.
-                Size::Grow if node.element.clip => padding(node, axis),
-                Size::Fit | Size::Grow => used + padding(node, axis),
+                Length::Grow if node.element.clip => padding(node, axis),
+                Length::Fit | Length::Grow => used + padding(node, axis),
             };
             node.size[axis] = size.max(node.element.min[axis]);
         }
@@ -79,7 +79,7 @@ impl Layout {
                     let child = &self.nodes[child];
                     used += child.size[axis];
                     count += 1;
-                    growing += u16::from(child.element.size[axis] == Size::Grow);
+                    growing += u16::from(child.element.size[axis] == Length::Grow);
                 }
                 used += node.element.gap * f32::from(count.saturating_sub(1));
                 let free = inner - used;
@@ -88,13 +88,13 @@ impl Layout {
                 }
                 let share = free / f32::from(growing);
                 self.each_child(index, |child| {
-                    if child.element.float.is_none() && child.element.size[axis] == Size::Grow {
+                    if child.element.float.is_none() && child.element.size[axis] == Length::Grow {
                         child.size[axis] += share;
                     }
                 });
             } else {
                 self.each_child(index, |child| {
-                    if child.element.float.is_none() && child.element.size[axis] == Size::Grow {
+                    if child.element.float.is_none() && child.element.size[axis] == Length::Grow {
                         child.size[axis] = child.size[axis].max(inner);
                     }
                 });

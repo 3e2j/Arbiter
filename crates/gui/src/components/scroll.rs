@@ -2,8 +2,8 @@
 //! pointer is over them, with a thumb along the right edge showing where.
 
 use crate::cast::count;
-use crate::input::Button;
-use crate::ui::{Align, Anchor, Element, Size, Ui};
+use crate::input::PointerButton;
+use crate::ui::{Align, Anchor, Element, Length, Ui};
 
 /// How far a [`scroll`] box is scrolled down, in logical pixels.
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
@@ -24,7 +24,7 @@ pub struct ListScroll {
 }
 
 /// A box clipped to `element`'s size, its children moved up by `state`.
-/// `element` should be [`Size::Grow`] or [`Size::Fixed`] down, since a box
+/// `element` should be [`Length::Grow`] or [`Length::Fixed`] down, since a box
 /// that fits its children has nothing to scroll.
 #[track_caller]
 pub fn scroll<R>(
@@ -69,7 +69,7 @@ pub fn list<T>(
         ..Element::column()
     };
     let slot = Element {
-        size: [Size::Grow, Size::Fixed(height)],
+        size: [Length::Grow, Length::Fixed(height)],
         ..Element::DEFAULT
     };
     ui.element(element, |ui| {
@@ -116,7 +116,7 @@ fn thumb(ui: &mut Ui, offset: f32, content: f32, view: f32) -> f32 {
     let travel = track - length;
     let at = |offset: f32| [-inset, inset + travel * offset / scrolls];
     let element = Element {
-        size: [Size::Fixed(width), Size::Fixed(length)],
+        size: [Length::Fixed(width), Length::Fixed(length)],
         background: Some(theme.color.thumb),
         radius: [width / 2.; 4],
         float: Some(Anchor::Parent {
@@ -128,7 +128,7 @@ fn thumb(ui: &mut Ui, offset: f32, content: f32, view: f32) -> f32 {
         ..Element::DEFAULT
     };
     ui.element(element, |ui| {
-        let dragged = ui.dragged(Button::Left);
+        let dragged = ui.dragged(PointerButton::Left);
         if dragged.is_some() || ui.hovered() {
             ui.style().background = Some(theme.color.thumb_hover);
         }

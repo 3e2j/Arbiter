@@ -3,8 +3,8 @@
 
 use gui::{
     canvas::Rect,
-    input::{Button, Cursor},
-    ui::{Element, Size, Ui},
+    input::{CursorIcon, PointerButton},
+    ui::{Element, Length, Ui},
 };
 
 use super::place::Band;
@@ -57,19 +57,19 @@ impl Workspace {
     /// it's under the pointer or dragged.
     pub(super) fn divider(&mut self, ui: &mut Ui, pass: &Pass, divider: Divider) {
         let theme = ui.theme();
-        let mut size = [Size::Grow; 2];
-        size[divider.axis] = Size::Fixed(theme.size.gap);
+        let mut size = [Length::Grow; 2];
+        size[divider.axis] = Length::Fixed(theme.size.gap);
         let element = Element {
             size,
             cursor: Some(if divider.axis == 0 {
-                Cursor::ResizeH
+                CursorIcon::ResizeH
             } else {
-                Cursor::ResizeV
+                CursorIcon::ResizeV
             }),
             ..Element::DEFAULT
         };
         ui.element(element, |ui| {
-            let dragged = ui.dragged(Button::Left);
+            let dragged = ui.dragged(PointerButton::Left);
             let Some(moved) = dragged.map(|moved| moved[divider.axis]) else {
                 return;
             };

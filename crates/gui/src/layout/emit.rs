@@ -1,6 +1,6 @@
 //! Turns solved boxes into shapes, in draw order.
 
-use super::{Anchor, Content, Highlight, Layer, Layout, Node, Paint, Text, layer};
+use super::{Anchor, Content, Layer, Layout, Node, Paint, Text, TextHighlight, layer};
 use crate::canvas::{Canvas, Color, Glyphs, Quad, Rect, Vertex};
 
 impl Layout {
@@ -119,7 +119,7 @@ const HIGHLIGHT_RADIUS: f32 = 0.15;
 
 /// What texts and custom boxes paint besides themselves.
 struct Drawn<'a> {
-    highlights: &'a [Highlight],
+    highlights: &'a [TextHighlight],
     paints: &'a [Paint],
     vertices: &'a [Vertex],
     indices: &'a [u32],

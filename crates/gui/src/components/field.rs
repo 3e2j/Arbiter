@@ -3,9 +3,9 @@
 use crate::canvas::IconId;
 use crate::clipboard::Clipboard;
 use crate::edit::{self, Edit, Lines, Selection};
-use crate::input::{Button, Cursor, Input, Modifiers, Typed};
-use crate::keymap::{Action, Context, Keymap};
-use crate::ui::{Align, Caret, Direction, Element, Highlight, Size, TextStyle, Ui};
+use crate::input::{CursorIcon, Input, Modifiers, PointerButton, TypedInput};
+use crate::keymap::{ChordAction, KeyContext, Keymap};
+use crate::ui::{Align, Direction, Element, Length, TextCaret, TextHighlight, TextStyle, Ui};
 
 /// What a [`text_field`] holds, owned by the caller.
 #[derive(Clone, PartialEq, Debug, Default)]
@@ -56,14 +56,14 @@ impl TextField {
         let mut typing = Typing::default();
         for typed in input.typed() {
             let edit = match typed {
-                Typed::Text(text) => Edit::Insert(text),
-                Typed::Key(press) => match keymap.resolve(press, &[Context::TEXT]) {
-                    Some(Action::Edit(edit)) => edit,
-                    Some(Action::Confirm | Action::Cancel) => {
+                TypedInput::Text(text) => Edit::Insert(text),
+                TypedInput::Key(press) => match keymap.resolve(press, &[KeyContext::TEXT]) {
+                    Some(ChordAction::Edit(edit)) => edit,
+                    Some(ChordAction::Confirm | ChordAction::Cancel) => {
                         typing.done = true;
                         continue;
                     }
-                    Some(Action::Command(_)) | None => continue,
+                    Some(ChordAction::Command(_)) | None => continue,
                 },
             };
             let (text, selection) = (&mut self.text, &mut self.selection);
@@ -115,7 +115,7 @@ pub fn text_field(
     let (c, s) = (theme.color, theme.size);
     let element = Element {
         direction: Direction::LeftToRight,
-        size: [Size::Grow, Size::Fixed(s.row)],
+        size: [Length::Grow, Length::Fixed(s.row)],
         padding: [s.gap / 2., 0., s.gap / 2., 0.],
         gap: s.icon_gap,
         align: [Align::Start, Align::Center],
@@ -123,16 +123,16 @@ pub fn text_field(
         border: Some(theme.border()),
         radius: [s.radius; 4],
         clip: true,
-        cursor: Some(Cursor::Text),
+        cursor: Some(CursorIcon::Text),
         ..Element::DEFAULT
     };
     ui.element(element, |ui| {
         let before = field.selection;
         // Asked every pass, as the press pass is where the box claims it.
-        let dragged = ui.held(Button::Left);
-        let pointing = if ui.pressed(Button::Middle) && ui.clipboard().pastes_primary() {
+        let dragged = ui.held(PointerButton::Left);
+        let pointing = if ui.pressed(PointerButton::Middle) && ui.clipboard().pastes_primary() {
             Pointing::Middle
-        } else if ui.pressed(Button::Left) {
+        } else if ui.pressed(PointerButton::Left) {
             let extend = ui.input().modifiers().contains(Modifiers::SHIFT);
             Pointing::Click { extend }
         } else if dragged {
@@ -140,7 +140,7 @@ pub fn text_field(
         } else {
             Pointing::Nothing
         };
-        if ui.pressed(Button::Left) || ui.pressed(Button::Middle) || field.focus {
+        if ui.pressed(PointerButton::Left) || ui.pressed(PointerButton::Middle) || field.focus {
             ui.focus();
             field.focus = false;
         }
@@ -162,7 +162,7 @@ pub fn text_field(
         }
         let text = Element {
             direction: Direction::LeftToRight,
-            size: [Size::Grow, Size::Fit],
+            size: [Length::Grow, Length::Fit],
             clip: true,
             ..Element::DEFAULT
         };
@@ -181,7 +181,7 @@ pub fn text_field(
                 field.scroll = 0.;
             }
             ui.style().offset[0] = -field.scroll;
-            let caret = shown.then_some(Caret {
+            let caret = shown.then_some(TextCaret {
                 index: field.selection.caret,
                 width: CARET_WIDTH,
                 color: c.text,
@@ -189,7 +189,7 @@ pub fn text_field(
             if field.text.is_empty() {
                 ui.text_layered(theme.ui_text(c.dim), placeholder, &[], caret);
             } else {
-                let selection = Highlight {
+                let selection = TextHighlight {
                     range: field.selection.range(),
                     color: c.selection,
                 };

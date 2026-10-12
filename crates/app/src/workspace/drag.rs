@@ -2,8 +2,8 @@
 
 use gui::{
     canvas::Rect,
-    input::{Button, Cursor},
-    ui::{Align, Anchor, Border, Element, Size, Ui},
+    input::{CursorIcon, PointerButton},
+    ui::{Align, Anchor, Border, Element, Length, Ui},
 };
 
 use super::dock::{Dock, TAB_GAP, TAB_PADDING, dock_radius, tab_height};
@@ -68,7 +68,7 @@ impl Workspace {
     /// tab in its new dock and anything in it gets a size before it's drawn.
     pub(super) fn drop_tab(&mut self, ui: &Ui) {
         let input = ui.input();
-        if !input.released(Button::Left) {
+        if !input.released(PointerButton::Left) {
             return;
         }
         // Let go outside the window, it stays where it was.
@@ -120,7 +120,7 @@ impl Workspace {
         let [x, y] = drag.start;
         drag.moving |= (pointer[0] - x).hypot(pointer[1] - y) >= DRAG_THRESHOLD;
         // Let go, it was dropped before the docks were declared.
-        let released = input.released(Button::Left);
+        let released = input.released(PointerButton::Left);
         self.tab_drag = (!released).then_some(drag);
         if released || !drag.moving {
             return;
@@ -159,7 +159,7 @@ fn drag_marks(
     let theme = ui.theme();
     let (color, size) = (theme.color, theme.size);
     let float = |rect: Rect| Element {
-        size: [Size::Fixed(rect.w), Size::Fixed(rect.h)],
+        size: [Length::Fixed(rect.w), Length::Fixed(rect.h)],
         float: Some(Anchor::At([rect.x, rect.y])),
         ..Element::DEFAULT
     };
@@ -209,9 +209,9 @@ fn drag_marks(
     if let Some(window) = window {
         let cover = Element {
             cursor: Some(if landing.is_some() {
-                Cursor::Grabbing
+                CursorIcon::Grabbing
             } else {
-                Cursor::NotAllowed
+                CursorIcon::NotAllowed
             }),
             ..float(window)
         };

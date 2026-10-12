@@ -4,7 +4,7 @@
 
 use super::{Layer, Layout, Node, layer};
 use crate::canvas::Rect;
-use crate::input::Cursor;
+use crate::input::CursorIcon;
 
 impl Layout {
     /// Finds the box last pass drew on top at `pointer`, for [`Self::under`].
@@ -23,7 +23,7 @@ impl Layout {
 
     /// The cursor of the top box at `pointer` this pass, or of the nearest box
     /// holding it that has one.
-    pub fn cursor(&mut self, pointer: Option<[f32; 2]>) -> Option<Cursor> {
+    pub fn cursor(&mut self, pointer: Option<[f32; 2]>) -> Option<CursorIcon> {
         let mut index = top(&self.nodes, &mut self.reach, pointer?)?;
         loop {
             let node = &self.nodes[index];

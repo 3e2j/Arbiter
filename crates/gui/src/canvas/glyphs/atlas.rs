@@ -62,7 +62,7 @@ pub(super) struct Spot {
     pub y: u16,
 }
 
-/// What changed in the atlas, for [`Gpu`](crate::render::Gpu) to upload.
+/// What changed in the atlas, for the renderer to upload.
 pub struct AtlasUpdate<'a> {
     pub format: Format,
     /// Each page's width and height in texels.

@@ -11,7 +11,7 @@ use std::{
 use gui::{
     canvas::Color,
     components::{self, ListScroll, button, list, spacer, toolbar},
-    ui::{Align, Element, Size, TextStyle, Ui},
+    ui::{Align, Element, Length, TextStyle, Ui},
 };
 use tracing::{
     Event, Subscriber,
@@ -327,7 +327,7 @@ fn toggle(ui: &mut Ui, level: Level, count: u32, on: bool) -> bool {
         radius: [s.radius; 4],
         ..Element::line(s.row)
     };
-    element.size[0] = Size::Fit;
+    element.size[0] = Length::Fit;
     let (clicked, ()) = components::row(ui, element, on, |ui| {
         let (icon_color, text_color) = if on {
             (level.color(c.dim, c.text), c.text)
@@ -364,7 +364,7 @@ fn entry_ui(ui: &mut Ui, lines: &Lines, entry: &Entry, time: &mut String) {
         ui.text(buffer(c.dim), time);
         if entry.repeats > 1 {
             let badge = Element {
-                size: [Size::Fit, Size::Fixed(s.text + s.gap / 2.)],
+                size: [Length::Fit, Length::Fixed(s.text + s.gap / 2.)],
                 padding: [s.gap / 2., 0., s.gap / 2., 0.],
                 align: [Align::Center; 2],
                 background: Some(c.selected),

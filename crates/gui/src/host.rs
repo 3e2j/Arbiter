@@ -6,7 +6,7 @@ use std::{error::Error, sync::Arc};
 
 use crate::canvas::{AtlasUpdate, Canvas, Glyphs, Rect};
 use crate::clipboard::Clipboard;
-use crate::input::{Event, Input, Out};
+use crate::input::{Event, Input, WindowRequest};
 use crate::keymap::Keymap;
 use crate::layout::Layout;
 use crate::ui::{Memory, Slots, Theme, Ui};
@@ -14,7 +14,7 @@ use crate::ui::{Memory, Slots, Theme, Ui};
 /// The app's side of the host.
 pub trait App: Sized {
     /// The window's title.
-    // TODO: an `Out` field too, so the app can change it after startup.
+    // TODO: a `WindowRequest` field too, so the app can change it after startup.
     const TITLE: &'static str;
     /// The smallest the window can be, in logical pixels. It opens at this
     /// size.
@@ -30,8 +30,8 @@ pub trait App: Sized {
     /// aren't asked of a box go, such as Escape closing a menu.
     fn input(&mut self, _input: &Input) {}
     /// Declares one pass's boxes through `ui`, which starts in the window's
-    /// box. Can run twice in a frame, as [`Host::draw`] says, and only the
-    /// second is drawn.
+    /// box. Can run twice in a frame, when the first pass's answers went
+    /// stale, and only the second is drawn.
     ///
     /// Act on input before declaring the boxes it changes. A change made after
     /// shows a frame late unless [`Ui::stale`] asks for the pass again.
@@ -118,13 +118,13 @@ impl<A: App> Host<A> {
     /// the pointer without its hover (which is incorrect), so the pass runs again
     /// with no new input and that one is drawn instead. So a frame never runs
     /// more than two passes, a button that changes twice since the last waits
-    /// for the next frame, which [`Out::again`] asks for.
+    /// for the next frame, which [`WindowRequest::again`] asks for.
     ///
     /// A frame with input also asks for the next, so whatever it changed after
     /// the boxes it affects were declared, or a box new in the second pass
     /// with no size yet, is drawn a frame late rather than left until the
     /// next input.
-    pub fn draw(&mut self, rect: Rect, scale: f32, canvas: &mut Canvas) -> Out {
+    pub fn draw(&mut self, rect: Rect, scale: f32, canvas: &mut Canvas) -> WindowRequest {
         self.glyphs.set_scale(scale);
         self.glyphs.next_frame();
 
@@ -153,8 +153,8 @@ impl<A: App> Host<A> {
         out
     }
 
-    fn pass(&mut self) -> Out {
-        let mut out = Out::default();
+    fn pass(&mut self) -> WindowRequest {
+        let mut out = WindowRequest::default();
         self.layout.clear();
         let mut ui = Ui::root(
             &self.theme,

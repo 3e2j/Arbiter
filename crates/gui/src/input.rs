@@ -1,6 +1,6 @@
 //! What the keyboard and pointer did, as plain values. The window turns its
 //! events into [`Event`]s, the host collects them into [`Input`] for a pass,
-//! and the pass answers with [`Out`].
+//! and the pass answers with [`WindowRequest`].
 //!
 //! Positions and distances are in logical pixels from the window's top left,
 //! except [`Input::motion`].
@@ -10,7 +10,7 @@ use std::ops::Range;
 /// A pointer button.
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Button {
+pub enum PointerButton {
     Left = 1,
     Right = 1 << 1,
     Middle = 1 << 2,
@@ -19,7 +19,7 @@ pub enum Button {
     Forward = 1 << 4,
 }
 
-impl Button {
+impl PointerButton {
     pub const ALL: [Self; 5] = [
         Self::Left,
         Self::Right,
@@ -75,14 +75,14 @@ pub enum Key {
 /// types there, named by what a US layout types, such as `w` for the key
 /// above `s`. For keys bound by place, as WASD are.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Code(pub char);
+pub struct KeyCode(pub char);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct KeyPress {
     pub key: Key,
     /// `None` for a key without a character, which is in the same place on
     /// any layout.
-    pub code: Option<Code>,
+    pub code: Option<KeyCode>,
     /// Sent again because the key is held.
     pub repeat: bool,
     /// Held as it went down, which can differ from [`Input::modifiers`] when
@@ -92,7 +92,7 @@ pub struct KeyPress {
 
 /// A key or typed text, as [`Input::typed`] gives them in order.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Typed<'a> {
+pub enum TypedInput<'a> {
     Key(KeyPress),
     Text(&'a str),
 }
@@ -103,7 +103,7 @@ pub struct Modifiers(u8);
 
 /// The pointer's shape over the window.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum Cursor {
+pub enum CursorIcon {
     #[default]
     Default,
     /// Over something clickable.
@@ -127,19 +127,19 @@ pub enum Cursor {
 pub enum Event<'a> {
     /// The pointer moved to here, or `None` when it left the window.
     Pointer(Option<[f32; 2]>),
-    Pressed(Button),
-    Released(Button),
+    Pressed(PointerButton),
+    Released(PointerButton),
     /// How far to scroll. Positive `y` scrolls toward the top, as a wheel
     /// turned away from the user does.
     Scroll([f32; 2]),
     Key {
         key: Key,
-        code: Option<Code>,
+        code: Option<KeyCode>,
         repeat: bool,
     },
     KeyReleased {
         key: Key,
-        code: Option<Code>,
+        code: Option<KeyCode>,
     },
     /// How far the mouse moved, in its own unaccelerated counts rather than
     /// pixels, which keep coming while the pointer is grabbed.
@@ -165,16 +165,16 @@ pub enum Event<'a> {
 #[derive(Default)]
 pub struct Input {
     pointer: Option<[f32; 2]>,
-    /// [`Button`] bits.
+    /// [`PointerButton`] bits.
     held: u8,
     pressed: u8,
     released: u8,
     scroll: [f32; 2],
     motion: [f32; 2],
     modifiers: Modifiers,
-    /// What's down, by [`Code`] where there is one, since a key's character
+    /// What's down, by [`KeyCode`] where there is one, since a key's character
     /// can change while it's held, such as `1` to `!` with Shift.
-    held_keys: Vec<(Key, Option<Code>)>,
+    held_keys: Vec<(Key, Option<KeyCode>)>,
     keys: Vec<KeyPress>,
     /// How much of `text` came before each of `keys`.
     keys_at: Vec<usize>,
@@ -196,8 +196,8 @@ enum Later {
 
 /// What a pass asks of the window.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub struct Out {
-    pub cursor: Cursor,
+pub struct WindowRequest {
+    pub cursor: CursorIcon,
     /// Whether the pointer is grabbed: hidden and kept in the window, with
     /// only [`Input::motion`] saying how it moves, such as to look around.
     pub grab: bool,
@@ -346,7 +346,7 @@ impl Input {
                 }
             }
             Event::KeyReleased { key, code } => {
-                let same = |&(k, c): &(Key, Option<Code>)| match code {
+                let same = |&(k, c): &(Key, Option<KeyCode>)| match code {
                     Some(_) => c == code,
                     None => k == key,
                 };
@@ -394,29 +394,31 @@ impl Input {
     }
 
     #[must_use]
-    pub const fn held(&self, button: Button) -> bool {
+    pub const fn held(&self, button: PointerButton) -> bool {
         self.held & button as u8 != 0
     }
 
     /// Went down since the last pass, even if it's back up.
     #[must_use]
-    pub const fn pressed(&self, button: Button) -> bool {
+    pub const fn pressed(&self, button: PointerButton) -> bool {
         self.pressed & button as u8 != 0
     }
 
     /// Went up since the last pass.
     #[must_use]
-    pub const fn released(&self, button: Button) -> bool {
+    pub const fn released(&self, button: PointerButton) -> bool {
         self.released & button as u8 != 0
     }
 
-    /// As [`Event::Scroll`], summed since the last pass.
+    /// How far to scroll, summed since the last pass. Positive `y` scrolls
+    /// toward the top.
     #[must_use]
     pub const fn scroll(&self) -> [f32; 2] {
         self.scroll
     }
 
-    /// As [`Event::Motion`], summed since the last pass.
+    /// How far the mouse moved, summed since the last pass, in unaccelerated
+    /// counts rather than pixels. Keeps coming while the pointer is grabbed.
     #[must_use]
     pub const fn motion(&self) -> [f32; 2] {
         self.motion
@@ -460,15 +462,15 @@ impl Input {
 
     /// The keys and typed text in the order they came, for an editor where
     /// typing then moving differs from moving then typing.
-    pub fn typed(&self) -> impl Iterator<Item = Typed<'_>> {
+    pub fn typed(&self) -> impl Iterator<Item = TypedInput<'_>> {
         let mut from = 0;
         let ends = self.keys_at.iter().copied().chain([self.text.len()]);
         let keys = self.keys.iter().copied().map(Some).chain([None]);
         ends.zip(keys).flat_map(move |(at, key)| {
             let text = self.text.get(from..at).unwrap_or_default();
             from = at;
-            let text = (!text.is_empty()).then_some(Typed::Text(text));
-            text.into_iter().chain(key.map(Typed::Key))
+            let text = (!text.is_empty()).then_some(TypedInput::Text(text));
+            text.into_iter().chain(key.map(TypedInput::Key))
         })
     }
 }
@@ -480,16 +482,16 @@ mod tests {
     #[test]
     fn a_click_inside_one_pass_waits_to_come_up() {
         let mut input = Input::default();
-        input.push(Event::Pressed(Button::Left));
-        input.push(Event::Pressed(Button::Right));
-        input.push(Event::Released(Button::Left));
+        input.push(Event::Pressed(PointerButton::Left));
+        input.push(Event::Pressed(PointerButton::Right));
+        input.push(Event::Released(PointerButton::Left));
         // After the release, so it waits too.
         input.push(Event::Text("a"));
-        assert!(input.pressed(Button::Left) && input.held(Button::Left));
-        assert!(input.held(Button::Right) && input.text().is_empty());
+        assert!(input.pressed(PointerButton::Left) && input.held(PointerButton::Left));
+        assert!(input.held(PointerButton::Right) && input.text().is_empty());
         input.clear();
         assert!(input.trickle());
-        assert!(input.released(Button::Left) && !input.held(Button::Left));
+        assert!(input.released(PointerButton::Left) && !input.held(PointerButton::Left));
         assert_eq!(input.text(), "a");
         input.clear();
         assert!(!input.trickle() && !input.fresh());
@@ -509,8 +511,8 @@ mod tests {
     fn each_trickle_takes_one_change_of_a_button() {
         let mut input = Input::default();
         for _ in 0..2 {
-            input.push(Event::Pressed(Button::Left));
-            input.push(Event::Released(Button::Left));
+            input.push(Event::Pressed(PointerButton::Left));
+            input.push(Event::Released(PointerButton::Left));
         }
         let mut changes = 1;
         while {
@@ -520,14 +522,14 @@ mod tests {
             changes += 1;
         }
         assert_eq!(changes, 4);
-        assert!(!input.held(Button::Left));
+        assert!(!input.held(PointerButton::Left));
     }
 
     #[test]
     fn clearing_keeps_what_is_held() {
         let mut input = Input::default();
         input.push(Event::Pointer(Some([4., 5.])));
-        input.push(Event::Pressed(Button::Middle));
+        input.push(Event::Pressed(PointerButton::Middle));
         input.push(Event::Scroll([0., 3.]));
         input.push(Event::Scroll([0., 2.]));
         key(&mut input, Key::Enter);
@@ -535,7 +537,7 @@ mod tests {
         assert_eq!(input.scroll(), [0., 5.]);
         input.clear();
         assert_eq!(input.pointer(), Some([4., 5.]));
-        assert!(input.held(Button::Middle) && !input.pressed(Button::Middle));
+        assert!(input.held(PointerButton::Middle) && !input.pressed(PointerButton::Middle));
         assert_eq!(input.scroll(), [0.; 2]);
         assert!(input.keys().is_empty() && input.text().is_empty());
     }
@@ -543,11 +545,11 @@ mod tests {
     #[test]
     fn losing_focus_lets_go() {
         let mut input = Input::default();
-        input.push(Event::Pressed(Button::Left));
+        input.push(Event::Pressed(PointerButton::Left));
         input.push(Event::Modifiers(Modifiers::CTRL.with(Modifiers::SHIFT)));
         assert!(input.modifiers().contains(Modifiers::CTRL));
         input.push(Event::Unfocused);
-        assert!(!input.held(Button::Left));
+        assert!(!input.held(PointerButton::Left));
         assert_eq!(input.modifiers(), Modifiers::default());
     }
 
@@ -562,7 +564,7 @@ mod tests {
     #[test]
     fn a_key_is_let_go_by_where_it_is() {
         let mut input = Input::default();
-        let one = Some(Code('1'));
+        let one = Some(KeyCode('1'));
         input.push(Event::Key {
             key: Key::Char('1'),
             code: one,
@@ -602,11 +604,12 @@ mod tests {
         key(&mut input, Key::Left);
         input.push(Event::Text("c"));
         let typed: Vec<_> = input.typed().collect();
-        let left = |typed: &Typed| matches!(typed, Typed::Key(press) if press.key == Key::Left);
+        let left =
+            |typed: &TypedInput| matches!(typed, TypedInput::Key(press) if press.key == Key::Left);
         assert_eq!(typed.len(), 4);
-        assert_eq!(typed[0], Typed::Text("ab"));
+        assert_eq!(typed[0], TypedInput::Text("ab"));
         assert!(left(&typed[1]) && left(&typed[2]));
-        assert_eq!(typed[3], Typed::Text("c"));
+        assert_eq!(typed[3], TypedInput::Text("c"));
     }
 
     #[test]

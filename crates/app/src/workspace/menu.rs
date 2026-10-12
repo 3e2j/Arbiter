@@ -5,8 +5,8 @@
 use gui::{
     canvas::Rect,
     components,
-    input::{Button, Cursor},
-    ui::{Align, Anchor, Border, Element, Size, Ui},
+    input::{CursorIcon, PointerButton},
+    ui::{Align, Anchor, Border, Element, Length, Ui},
 };
 
 use crate::assets::Icon;
@@ -157,16 +157,16 @@ fn menu_ui(ui: &mut Ui, menu: Menu, docks: &[Dock; Place::COUNT], window: Rect) 
     let at = hang(menu.from, menu.align, [WIDTH, height], window);
 
     let cover = Element {
-        size: [Size::Fixed(window.w), Size::Fixed(window.h)],
+        size: [Length::Fixed(window.w), Length::Fixed(window.h)],
         float: Some(Anchor::At([window.x, window.y])),
         ..Element::DEFAULT
     };
     let dismissed = ui.element(cover, |ui| {
-        ui.pressed(Button::Left) || ui.pressed(Button::Right)
+        ui.pressed(PointerButton::Left) || ui.pressed(PointerButton::Right)
     });
     // Declared after the cover, so it's on top of it.
     let element = Element {
-        size: [Size::Fixed(WIDTH), Size::Fixed(height)],
+        size: [Length::Fixed(WIDTH), Length::Fixed(height)],
         padding: [TAB_PADDING; 4],
         gap: TAB_PADDING,
         background: Some(color.surface),
@@ -177,7 +177,7 @@ fn menu_ui(ui: &mut Ui, menu: Menu, docks: &[Dock; Place::COUNT], window: Rect) 
     };
     let chosen = ui.element(element, |ui| {
         let across = Element {
-            size: [Size::Grow, Size::Fit],
+            size: [Length::Grow, Length::Fit],
             ..Element::DEFAULT
         };
         let mut chosen = None;
@@ -193,7 +193,7 @@ fn menu_ui(ui: &mut Ui, menu: Menu, docks: &[Dock; Place::COUNT], window: Rect) 
             }
         });
         let map_element = Element {
-            size: [Size::Fixed(map[0]), Size::Fixed(map[1])],
+            size: [Length::Fixed(map[0]), Length::Fixed(map[1])],
             ..Element::DEFAULT
         };
         ui.element(map_element, |ui| {
@@ -238,7 +238,7 @@ fn tab_row(ui: &mut Ui, title: &str, selected: bool) -> Option<RowClick> {
     let (clicked, closed) = components::row(ui, element, selected, |ui| {
         let hovered = ui.hovered();
         let label = Element {
-            size: [Size::Grow; 2],
+            size: [Length::Grow; 2],
             padding: [size.icon_gap, 0., size.icon_gap, 0.],
             align: [Align::Start, Align::Center],
             clip: true,
@@ -249,7 +249,7 @@ fn tab_row(ui: &mut Ui, title: &str, selected: bool) -> Option<RowClick> {
             ui.text(theme.ui_text(text), title);
         });
         let close = Element {
-            size: [Size::Fixed(row); 2],
+            size: [Length::Fixed(row); 2],
             align: [Align::Center; 2],
             ..Element::DEFAULT
         };
@@ -258,7 +258,7 @@ fn tab_row(ui: &mut Ui, title: &str, selected: bool) -> Option<RowClick> {
                 let lit = if ui.hovered() { color.text } else { color.dim };
                 ui.icon(Icon::Close, size.icon, lit);
             }
-            ui.clicked(Button::Left)
+            ui.clicked(PointerButton::Left)
         })
     });
     if closed {
@@ -286,7 +286,7 @@ fn map_cell(ui: &mut Ui, rect: Rect, state: CellState) -> bool {
     let (color, size) = (theme.color, theme.size);
     let enabled = matches!(state, CellState::Occupied | CellState::Empty);
     let element = Element {
-        size: [Size::Fixed(rect.w), Size::Fixed(rect.h)],
+        size: [Length::Fixed(rect.w), Length::Fixed(rect.h)],
         radius: [size.radius / 2.; 4],
         float: Some(Anchor::Parent {
             parent: [Align::Start; 2],
@@ -295,9 +295,9 @@ fn map_cell(ui: &mut Ui, rect: Rect, state: CellState) -> bool {
             clipped: false,
         }),
         cursor: Some(match state {
-            CellState::Own => Cursor::Default,
-            CellState::Blocked => Cursor::NotAllowed,
-            CellState::Occupied | CellState::Empty => Cursor::Pointer,
+            CellState::Own => CursorIcon::Default,
+            CellState::Blocked => CursorIcon::NotAllowed,
+            CellState::Occupied | CellState::Empty => CursorIcon::Pointer,
         }),
         ..Element::DEFAULT
     };
@@ -318,7 +318,7 @@ fn map_cell(ui: &mut Ui, rect: Rect, state: CellState) -> bool {
         let style = ui.style();
         style.background = Some(fill);
         style.border = line;
-        enabled && ui.clicked(Button::Left)
+        enabled && ui.clicked(PointerButton::Left)
     })
 }
 

@@ -9,13 +9,13 @@ use crate::layout::{Border, TextStyle};
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub struct Theme {
-    pub color: Colors,
-    pub size: Sizes,
-    pub font: Fonts,
+    pub color: ThemeColors,
+    pub size: ThemeSizes,
+    pub font: ThemeFonts,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub struct Colors {
+pub struct ThemeColors {
     /// Behind everything, the window's clear colour.
     pub page: Color,
     /// Anything raised off the page.
@@ -45,7 +45,7 @@ pub struct Colors {
 
 /// In logical pixels.
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
-pub struct Sizes {
+pub struct ThemeSizes {
     pub text: f32,
     /// Icons are square.
     pub icon: f32,
@@ -65,7 +65,7 @@ pub struct Sizes {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub struct Fonts {
+pub struct ThemeFonts {
     /// Labels, tabs and lists.
     pub ui: FontId,
     /// Code and logs, where text lines up in columns.

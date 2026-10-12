@@ -2,20 +2,20 @@ use std::panic::Location;
 
 use super::*;
 use crate::canvas::{Canvas, FontFile, Kind, Quad};
-use crate::input::Cursor;
+use crate::input::CursorIcon;
 
 const WINDOW: Rect = Rect::new(0., 0., 300., 100.);
 
 fn fixed(w: f32, h: f32) -> Element {
     Element {
-        size: [Size::Fixed(w), Size::Fixed(h)],
+        size: [Length::Fixed(w), Length::Fixed(h)],
         ..Element::DEFAULT
     }
 }
 
 fn grow() -> Element {
     Element {
-        size: [Size::Grow; 2],
+        size: [Length::Grow; 2],
         ..Element::DEFAULT
     }
 }
@@ -259,7 +259,7 @@ fn a_clipped_float_stays_inside_its_parents_clip() {
             clipped: true,
         }),
         background: Some(Color::hex(0xff_ff_ff)),
-        cursor: Some(Cursor::Text),
+        cursor: Some(CursorIcon::Text),
         ..fixed(60., 60.)
     };
     leaf(&mut layout, 1, thumb);
@@ -270,7 +270,7 @@ fn a_clipped_float_stays_inside_its_parents_clip() {
     layout.emit(&mut canvas, &mut Glyphs::default());
     let clips: Vec<_> = canvas.batches().map(|(clip, _, _)| clip).collect();
     assert_eq!(clips, [Rect::new(0., 0., 40., 20.)]);
-    assert_eq!(layout.cursor(Some([30., 15.])), Some(Cursor::Text));
+    assert_eq!(layout.cursor(Some([30., 15.])), Some(CursorIcon::Text));
     // Past the clip, the float isn't drawn there.
     assert_eq!(layout.cursor(Some([50., 15.])), None);
 }
@@ -283,7 +283,7 @@ fn a_float_escaping_its_clips_draws_over_one_kept_in_them_declared_after() {
     let menu = Element {
         float: Some(Anchor::BELOW),
         background: Some(Color::hex(0xff_ff_ff)),
-        cursor: Some(Cursor::Pointer),
+        cursor: Some(CursorIcon::Pointer),
         ..fixed(60., 60.)
     };
     leaf(&mut layout, 1, menu);
@@ -301,7 +301,7 @@ fn a_float_escaping_its_clips_draws_over_one_kept_in_them_declared_after() {
             clipped: true,
         }),
         background: Some(Color::hex(0x10_20_30)),
-        cursor: Some(Cursor::Text),
+        cursor: Some(CursorIcon::Text),
         ..fixed(10., 40.)
     };
     leaf(&mut layout, 3, thumb);
@@ -314,7 +314,7 @@ fn a_float_escaping_its_clips_draws_over_one_kept_in_them_declared_after() {
     let menu = Quad::new(Rect::new(0., 20., 60., 60.), Color::hex(0xff_ff_ff));
     assert_eq!(canvas.quads(), [thumb, menu]);
     // Where the thumb sits under the menu.
-    assert_eq!(layout.cursor(Some([35., 30.])), Some(Cursor::Pointer));
+    assert_eq!(layout.cursor(Some([35., 30.])), Some(CursorIcon::Pointer));
 }
 
 #[test]
@@ -464,24 +464,24 @@ fn the_cursor_comes_from_the_last_box_drawn_under_the_pointer() {
     };
     layout.open(slot(0), clipped);
     let link = Element {
-        cursor: Some(Cursor::Pointer),
+        cursor: Some(CursorIcon::Pointer),
         ..fixed(80., 20.)
     };
     leaf(&mut layout, 1, link);
     let field = Element {
         float: Some(Anchor::At([0., 0.])),
-        cursor: Some(Cursor::Text),
+        cursor: Some(CursorIcon::Text),
         ..fixed(10., 10.)
     };
     leaf(&mut layout, 2, field);
     layout.close();
     layout.solve(WINDOW, 1.);
     let mut cursor_at = |at| layout.cursor(Some(at));
-    assert_eq!(cursor_at([20., 15.]), Some(Cursor::Pointer));
+    assert_eq!(cursor_at([20., 15.]), Some(CursorIcon::Pointer));
     // Past the clip, the link isn't drawn there.
     assert_eq!(cursor_at([60., 15.]), None);
     // The floating box draws over the link.
-    assert_eq!(cursor_at([5., 5.]), Some(Cursor::Text));
+    assert_eq!(cursor_at([5., 5.]), Some(CursorIcon::Text));
 }
 
 #[test]
@@ -566,11 +566,11 @@ fn a_texts_highlights_paint_under_it_and_its_caret_over() {
         color: Color::hex(0xff_ff_ff),
     };
     let text = "zel_03";
-    let highlight = Highlight {
+    let highlight = TextHighlight {
         range: 1..4,
         color: Color::hex(0x44_d4_d8),
     };
-    let caret = Caret {
+    let caret = TextCaret {
         index: 4,
         width: 2.,
         color: Color::hex(0xff_ff_ff),

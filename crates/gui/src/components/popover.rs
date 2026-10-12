@@ -3,8 +3,8 @@
 //!
 //! If picking something should close it, use a menu instead.
 
-use crate::input::Button;
-use crate::ui::{Align, Anchor, Element, Size, Ui};
+use crate::input::PointerButton;
+use crate::ui::{Align, Anchor, Element, Length, Ui};
 
 /// A raised box `width` wide under the right end of the open box. Returns
 /// what `body` returned, and whether a press landed outside it.
@@ -18,7 +18,7 @@ pub fn popover<R>(ui: &mut Ui, width: f32, body: impl FnOnce(&mut Ui) -> R) -> (
     // Its anchor ignores the parent's padding, so it's offset by it.
     let right = ui.style().padding[2];
     let element = Element {
-        size: [Size::Fixed(width), Size::Fit],
+        size: [Length::Fixed(width), Length::Fit],
         padding: [s.gap / 2.; 4],
         background: Some(c.surface),
         border: Some(theme.border()),
@@ -34,7 +34,8 @@ pub fn popover<R>(ui: &mut Ui, width: f32, body: impl FnOnce(&mut Ui) -> R) -> (
     ui.element(element, |ui| {
         let out = body(ui);
         // The pass it opens, the press is the one that opened it.
-        let outside = ui.rect().is_some() && ui.input().pressed(Button::Left) && !ui.hovered();
+        let outside =
+            ui.rect().is_some() && ui.input().pressed(PointerButton::Left) && !ui.hovered();
         (out, outside)
     })
 }

@@ -19,12 +19,12 @@ use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::panic::Location;
 
-use crate::canvas::{Color, FontId, Glyphs, IconId, Line, Quad, Rect, Vertex};
-use crate::input::Cursor;
+use crate::canvas::{Color, FontId, Glyphs, IconId, Quad, Rect, ShapedLine, Vertex};
+use crate::input::CursorIcon;
 
 /// How big a box is along one axis.
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum Size {
+pub enum Length {
     Fixed(f32),
     /// Just big enough for its children and padding.
     Fit,
@@ -79,7 +79,7 @@ pub struct Element {
     /// Which way its children are stacked.
     pub direction: Direction,
     /// Width, then height.
-    pub size: [Size; 2],
+    pub size: [Length; 2],
     pub min: [f32; 2],
     /// Left, top, right, bottom.
     pub padding: [f32; 4],
@@ -91,7 +91,7 @@ pub struct Element {
     pub border: Option<Border>,
     /// Top left, top right, bottom right, bottom left.
     pub radius: [f32; 4],
-    /// Cuts its children off at its edge. A [`Size::Grow`] box that clips
+    /// Cuts its children off at its edge. A [`Length::Grow`] box that clips
     /// doesn't fit them.
     pub clip: bool,
     /// Shifts its children, for scrolling.
@@ -101,7 +101,7 @@ pub struct Element {
     pub float: Option<Anchor>,
     /// The pointer's shape over it and over its children, unless the box on
     /// top there, or one between them, sets its own.
-    pub cursor: Option<Cursor>,
+    pub cursor: Option<CursorIcon>,
 }
 
 /// Which of its parent's children a box is. A box is the one last pass
@@ -128,14 +128,14 @@ pub struct TextStyle {
 /// A stretch of a text's bytes painted under its glyphs, such as a selection
 /// or a search match. Later ones paint over earlier ones.
 #[derive(Clone, PartialEq, Debug)]
-pub struct Highlight {
+pub struct TextHighlight {
     pub range: Range<usize>,
     pub color: Color,
 }
 
 /// A bar painted over a text's glyphs, at the start of the cluster at a byte.
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub struct Caret {
+pub struct TextCaret {
     pub index: usize,
     /// In logical pixels.
     pub width: f32,
@@ -163,7 +163,7 @@ pub(crate) struct Layout {
     /// pass.
     open: Vec<(usize, Option<usize>)>,
     /// Indexed by [`Text::highlights`].
-    highlights: Vec<Highlight>,
+    highlights: Vec<TextHighlight>,
     /// What custom boxes drew, indexed by [`Content::Custom`].
     paints: Vec<Paint>,
     vertices: Vec<Vertex>,
@@ -205,12 +205,12 @@ enum Content {
 }
 
 struct Text {
-    line: Line,
+    line: ShapedLine,
     style: TextStyle,
     /// A range of [`Layout::highlights`], painted under the line.
     highlights: Range<usize>,
     /// Painted over the line.
-    caret: Option<Caret>,
+    caret: Option<TextCaret>,
     /// From its top down to the baseline.
     ascent: f32,
     size: [f32; 2],
@@ -266,7 +266,7 @@ impl Element {
     /// Fits its children, stacked down.
     pub const DEFAULT: Self = Self {
         direction: Direction::TopToBottom,
-        size: [Size::Fit; 2],
+        size: [Length::Fit; 2],
         min: [0.; 2],
         padding: [0.; 4],
         gap: 0.,
@@ -285,7 +285,7 @@ impl Element {
     pub const fn row() -> Self {
         Self {
             direction: Direction::LeftToRight,
-            size: [Size::Grow; 2],
+            size: [Length::Grow; 2],
             ..Self::DEFAULT
         }
     }
@@ -296,7 +296,7 @@ impl Element {
     pub const fn line(height: f32) -> Self {
         Self {
             direction: Direction::LeftToRight,
-            size: [Size::Grow, Size::Fixed(height)],
+            size: [Length::Grow, Length::Fixed(height)],
             align: [Align::Start, Align::Center],
             ..Self::DEFAULT
         }
@@ -306,7 +306,7 @@ impl Element {
     #[must_use]
     pub const fn column() -> Self {
         Self {
-            size: [Size::Grow; 2],
+            size: [Length::Grow; 2],
             ..Self::DEFAULT
         }
     }
@@ -409,7 +409,7 @@ impl Layout {
         slot: Slot,
         style: TextStyle,
         text: &str,
-        (highlights, caret): (&[Highlight], Option<Caret>),
+        (highlights, caret): (&[TextHighlight], Option<TextCaret>),
     ) -> Option<Rect> {
         let start = self.highlights.len();
         self.highlights.extend_from_slice(highlights);
@@ -453,7 +453,7 @@ impl Layout {
     /// `icon` in a square `size` logical pixels wide.
     pub fn icon(&mut self, slot: Slot, icon: IconId, size: f32, color: Color) -> Option<Rect> {
         let element = Element {
-            size: [Size::Fixed(size); 2],
+            size: [Length::Fixed(size); 2],
             ..Element::DEFAULT
         };
         let (_, last) = self.push(slot, element, Content::Icon(icon, size, color));

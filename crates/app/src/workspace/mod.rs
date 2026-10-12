@@ -22,7 +22,7 @@ mod place;
 
 use gui::{
     input::{Input, Key},
-    ui::{Direction, Element, Size, Ui},
+    ui::{Direction, Element, Length, Ui},
 };
 
 use crate::panels::Panel;
@@ -109,7 +109,7 @@ impl Workspace {
                 self.band(ui, &pass, Band::LeftOuter);
                 self.band(ui, &pass, Band::LeftInner);
                 ui.element(Element::column(), |ui| {
-                    self.dock(ui, Place::Main, [Size::Grow; 2]);
+                    self.dock(ui, Place::Main, [Length::Grow; 2]);
                     self.band(ui, &pass, Band::BelowMain);
                 });
                 self.band(ui, &pass, Band::RightInner);
@@ -152,8 +152,8 @@ impl Workspace {
         }
         let axis = band.axis();
         let divider = Divider::size(band, pass.sizes[band.index()], pass.spare[axis]);
-        let mut size = [Size::Grow; 2];
-        size[axis] = Size::Fixed(divider.value);
+        let mut size = [Length::Grow; 2];
+        size[axis] = Length::Fixed(divider.value);
         let element = Element {
             direction: if axis == 0 {
                 Direction::TopToBottom
@@ -182,25 +182,25 @@ impl Workspace {
                 let extent = ui.rect().map(|rect| [rect.w, rect.h][across] - gap);
                 let divider = Divider::ratio(band, self.ratios[band.index()], extent.unwrap_or(0.));
                 // Shared evenly until the band has a size to split.
-                let mut size = [Size::Grow; 2];
+                let mut size = [Length::Grow; 2];
                 if let Some(extent) = extent {
-                    size[across] = Size::Fixed((divider.value * extent).round());
+                    size[across] = Length::Fixed((divider.value * extent).round());
                 }
                 self.dock(ui, first, size);
                 self.divider(ui, pass, divider);
-                self.dock(ui, second, [Size::Grow; 2]);
+                self.dock(ui, second, [Length::Grow; 2]);
             }
             _ => {
                 for &place in band.docks() {
                     if self.has_tabs(place) {
-                        self.dock(ui, place, [Size::Grow; 2]);
+                        self.dock(ui, place, [Length::Grow; 2]);
                     }
                 }
             }
         }
     }
 
-    fn dock(&mut self, ui: &mut Ui, place: Place, size: [Size; 2]) {
+    fn dock(&mut self, ui: &mut Ui, place: Place, size: [Length; 2]) {
         let theme = ui.theme();
         // Its border is the padding, so the tab bar meets it.
         let element = Element {

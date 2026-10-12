@@ -1,8 +1,8 @@
 //! Things to press.
 
 use crate::canvas::IconId;
-use crate::input::{Button, Cursor};
-use crate::ui::{Align, Element, Size, Ui};
+use crate::input::{CursorIcon, PointerButton};
+use crate::ui::{Align, Element, Length, Ui};
 
 /// A line of text on a raised box. Returns whether it was clicked this pass.
 #[track_caller]
@@ -10,18 +10,18 @@ pub fn button(ui: &mut Ui, label: &str) -> bool {
     let theme = ui.theme();
     let (c, s) = (theme.color, theme.size);
     let element = Element {
-        size: [Size::Fit, Size::Fixed(s.row)],
+        size: [Length::Fit, Length::Fixed(s.row)],
         padding: [s.gap, 0., s.gap, 0.],
         align: [Align::Center; 2],
         border: Some(theme.border()),
         radius: [s.radius; 4],
-        cursor: Some(Cursor::Pointer),
+        cursor: Some(CursorIcon::Pointer),
         ..Element::DEFAULT
     };
     ui.element(element, |ui| {
         ui.style().background = Some(if ui.hovered() { c.selected } else { c.hover });
         ui.text(theme.ui_text(c.text), label);
-        ui.clicked(Button::Left)
+        ui.clicked(PointerButton::Left)
     })
 }
 
@@ -52,10 +52,10 @@ pub fn icon_button(ui: &mut Ui, icon: impl Into<IconId>, state: IconState) -> Cl
     let (c, s) = (theme.color, theme.size);
     let enabled = state != IconState::Disabled;
     let element = Element {
-        size: [Size::Fixed(s.row); 2],
+        size: [Length::Fixed(s.row); 2],
         align: [Align::Center; 2],
         radius: [s.radius; 4],
-        cursor: enabled.then_some(Cursor::Pointer),
+        cursor: enabled.then_some(CursorIcon::Pointer),
         ..Element::DEFAULT
     };
     ui.element(element, |ui| {
@@ -69,8 +69,8 @@ pub fn icon_button(ui: &mut Ui, icon: impl Into<IconId>, state: IconState) -> Cl
         };
         ui.icon(icon, s.icon, color);
         Clicks {
-            pressed: enabled && ui.pressed(Button::Left),
-            clicked: enabled && ui.clicked(Button::Left),
+            pressed: enabled && ui.pressed(PointerButton::Left),
+            clicked: enabled && ui.clicked(PointerButton::Left),
         }
     })
 }

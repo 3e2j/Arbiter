@@ -3,8 +3,8 @@
 use gui::{
     canvas::Rect,
     components::{IconState, icon_button, rule},
-    input::{Button, Cursor},
-    ui::{Align, Direction, Element, Size, Sizes, Ui},
+    input::{CursorIcon, PointerButton},
+    ui::{Align, Direction, Element, Length, ThemeSizes, Ui},
 };
 
 use std::ops::Range;
@@ -32,12 +32,12 @@ pub(super) struct Dock {
 }
 
 /// Rounder than what sits inside it.
-pub(super) const fn dock_radius(size: Sizes) -> f32 {
+pub(super) const fn dock_radius(size: ThemeSizes) -> f32 {
     size.radius * 2.
 }
 
 /// A tab holds a row, with a little room above and below it.
-pub(super) const fn tab_height(size: Sizes) -> f32 {
+pub(super) const fn tab_height(size: ThemeSizes) -> f32 {
     size.row + 2.
 }
 
@@ -66,7 +66,7 @@ impl Dock {
         let top = dock_radius(size) - size.line;
         let bar = Element {
             direction: Direction::LeftToRight,
-            size: [Size::Grow, Size::Fixed(tab_height + 4. - size.line)],
+            size: [Length::Grow, Length::Fixed(tab_height + 4. - size.line)],
             align: [Align::Start, Align::End],
             background: Some(color.page),
             radius: [top, top, 0., 0.],
@@ -93,7 +93,7 @@ impl Dock {
             let range = visible(&self.widths, TAB_GAP, room, crowded, active);
             let all = range.len() == self.tabs.len();
             let room = if all { room } else { crowded };
-            on_line(ui, Size::Fixed(TAB_PADDING), |_| {});
+            on_line(ui, Length::Fixed(TAB_PADDING), |_| {});
             let tabs = (0..).zip(self.tabs.iter().zip(&self.widths).enumerate());
             for (key, (i, (tab, &width))) in tabs.skip(range.start).take(range.len()) {
                 let fits = (room - TAB_GAP).max(0.);
@@ -110,14 +110,14 @@ impl Dock {
                         out.menu = Some((i, rect, Align::Start));
                     }
                 }
-                on_line(ui, Size::Fixed(TAB_GAP), |_| {});
+                on_line(ui, Length::Fixed(TAB_GAP), |_| {});
             }
-            on_line(ui, Size::Grow, |_| {});
+            on_line(ui, Length::Grow, |_| {});
             let buttons = Element {
                 direction: Direction::LeftToRight,
                 ..Element::DEFAULT
             };
-            on_line(ui, Size::Fit, |ui| {
+            on_line(ui, Length::Fit, |ui| {
                 ui.element(buttons, |ui| {
                     if !all {
                         let last = self.tabs.len() - 1;
@@ -146,7 +146,7 @@ impl Dock {
                     }
                 });
             });
-            on_line(ui, Size::Fixed(TAB_PADDING), |_| {});
+            on_line(ui, Length::Fixed(TAB_PADDING), |_| {});
         });
         self.active = active;
         if let Some(tab) = self.tabs.get_mut(self.active) {
@@ -176,22 +176,22 @@ impl Dock {
         let (color, size) = (theme.color, theme.size);
         let radius = [size.radius, size.radius, 0., 0.];
         let element = Element {
-            size: [Size::Fixed(width), Size::Fixed(tab_height(size))],
+            size: [Length::Fixed(width), Length::Fixed(tab_height(size))],
             clip: true,
-            cursor: Some(Cursor::Pointer),
+            cursor: Some(CursorIcon::Pointer),
             ..Element::DEFAULT
         };
         ui.keyed(key, element, |ui| {
             let state = TabState {
                 rect: ui.rect(),
-                pressed: ui.pressed(Button::Left),
-                held: ui.dragged(Button::Left).is_some(),
-                menu: ui.pressed(Button::Right),
+                pressed: ui.pressed(PointerButton::Left),
+                held: ui.dragged(PointerButton::Left).is_some(),
+                menu: ui.pressed(PointerButton::Right),
             };
             let hovered = ui.hovered();
             let squeezed = ui.measure(theme.ui_text(color.text), title)[0] > width;
             let mut label = Element {
-                size: [Size::Grow; 2],
+                size: [Length::Grow; 2],
                 align: [Align::Center; 2],
                 radius,
                 ..Element::DEFAULT
@@ -201,7 +201,7 @@ impl Dock {
                 label.padding[0] = size.icon_gap;
             }
             let strip = |fill| Element {
-                size: [Size::Grow, Size::Fixed(size.line)],
+                size: [Length::Grow, Length::Fixed(size.line)],
                 background: Some(fill),
                 ..Element::DEFAULT
             };
@@ -252,15 +252,15 @@ pub(super) struct DockOut {
 /// A piece of the tab bar `width` wide, with the bar's line along its bottom
 /// under what `body` declares.
 #[track_caller]
-fn on_line(ui: &mut Ui, width: Size, body: impl FnOnce(&mut Ui)) {
+fn on_line(ui: &mut Ui, width: Length, body: impl FnOnce(&mut Ui)) {
     let theme = ui.theme();
     let size = theme.size;
     let cell = Element {
-        size: [width, Size::Fixed(tab_height(size))],
+        size: [width, Length::Fixed(tab_height(size))],
         ..Element::DEFAULT
     };
     let above = Element {
-        size: [Size::Grow; 2],
+        size: [Length::Grow; 2],
         align: [Align::Center; 2],
         ..Element::DEFAULT
     };

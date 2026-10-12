@@ -1,5 +1,5 @@
 //! What gets drawn. A pass writes quads and triangles into a [`Canvas`], and
-//! [`render`](crate::render) draws it.
+//! the renderer draws it.
 //!
 //! Most shapes are one [`Quad`], 48 bytes. The shader rounds its corners and
 //! draws its border per pixel, and text and icons are quads that sample an atlas. Anything
@@ -11,7 +11,8 @@ mod glyphs;
 use std::ops::Range;
 
 pub use glyphs::{
-    AtlasUpdate, Error, FontFile, FontId, Format, Glyphs, IconId, Line, LineMetrics, PageWrite,
+    AtlasUpdate, FontFile, FontId, Format, GlyphError, Glyphs, IconId, LineMetrics, PageWrite,
+    ShapedLine,
 };
 
 use crate::cast::sixteenths;

@@ -1,11 +1,13 @@
 //! The editor's look, handed to gui at startup. Panels read it back from
 //! [`Ui::theme`](gui::ui::Ui::theme).
 
-use gui::canvas::Color;
-use gui::ui::{Colors, Fonts, Sizes, Theme};
+use gui::{
+    canvas::Color,
+    ui::{Theme, ThemeColors, ThemeFonts, ThemeSizes},
+};
 
 // TODO: from the user's Settings, once the editor reads them.
-const COLORS: Colors = Colors {
+const COLORS: ThemeColors = ThemeColors {
     page: Color::hex(0x0e_0f_11),
     surface: Color::hex(0x17_18_1b),
     sunken: Color::hex(0x0e_0f_11),
@@ -30,7 +32,7 @@ pub const GIT_ADDED: Color = Color::hex(0x42_be_65);
 pub const GIT_MODIFIED: Color = Color::hex(0xe0_b3_41);
 pub const GIT_DELETED: Color = Color::hex(0xff_83_89);
 
-const SIZES: Sizes = Sizes {
+const SIZES: ThemeSizes = ThemeSizes {
     text: 13.,
     icon: 16.,
     icon_gap: 4.,
@@ -43,7 +45,7 @@ const SIZES: Sizes = Sizes {
 };
 
 /// With the fonts from [`assets::fonts`](crate::assets::fonts).
-pub const fn theme(font: Fonts) -> Theme {
+pub const fn theme(font: ThemeFonts) -> Theme {
     Theme {
         color: COLORS,
         size: SIZES,
