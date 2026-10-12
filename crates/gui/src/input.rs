@@ -152,6 +152,8 @@ pub enum Event<'a> {
     /// The window lost focus, so whatever was held is let go of without an
     /// event for it.
     Unfocused,
+    /// The window gained focus, maybe after the user changed things elsewhere.
+    Focused,
 }
 
 /// Everything since the last pass. Kept between passes, so a pass allocates
@@ -183,6 +185,7 @@ pub struct Input {
     later_text: String,
     /// Whether anything came in since the last pass.
     fresh: bool,
+    focused: bool,
 }
 
 /// An [`Event`] waiting for the next pass, its text kept apart.
@@ -269,6 +272,7 @@ impl Input {
             }
             Event::Modifiers(modifiers) => Event::Modifiers(modifiers),
             Event::Unfocused => Event::Unfocused,
+            Event::Focused => Event::Focused,
         };
         self.later.push(Later::Event(later));
     }
@@ -358,6 +362,7 @@ impl Input {
                 self.held_keys.clear();
                 self.modifiers = Modifiers::default();
             }
+            Event::Focused => self.focused = true,
         }
     }
 
@@ -366,6 +371,7 @@ impl Input {
     /// [`Self::trickle`].
     pub fn clear(&mut self) {
         self.fresh = false;
+        self.focused = false;
         self.pressed = 0;
         self.released = 0;
         self.scroll = [0.; 2];
@@ -431,6 +437,12 @@ impl Input {
             repeat: false,
             modifiers,
         })
+    }
+
+    /// Whether the window gained focus since the last pass.
+    #[must_use]
+    pub const fn focused(&self) -> bool {
+        self.focused
     }
 
     /// In the order they were pressed.

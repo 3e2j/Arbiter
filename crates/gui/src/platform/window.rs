@@ -204,6 +204,10 @@ impl<A: App> ApplicationHandler for Runner<A> {
                 self.host.push(Event::Unfocused);
                 open.pacer.request();
             }
+            WindowEvent::Focused(true) => {
+                self.host.push(Event::Focused);
+                open.pacer.request();
+            }
             event => {
                 let scale = open.window.scale_factor();
                 let mut pushed = false;

@@ -193,7 +193,7 @@ impl Files {
     }
 
     /// Shows `trees` in place of what was shown, every folder closed.
-    pub fn set(&mut self, mut trees: Trees) {
+    fn set(&mut self, mut trees: Trees) {
         if self.order != Order::default() {
             trees.game.sort(self.order);
             trees.project.sort(self.order);
@@ -201,6 +201,11 @@ impl Files {
         let views = [View::new(), View::new()];
         self.opened = Some(Box::new(Opened { trees, views }));
         self.filter.editions = 0;
+    }
+
+    /// Shows no project, until the next [`Self::refresh`].
+    pub fn close(&mut self) {
+        self.opened = None;
     }
 
     /// Shows `trees`, read again, in place of what was shown. Each tab keeps

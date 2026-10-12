@@ -6,6 +6,7 @@
 
 mod assets;
 mod panels;
+mod reader;
 mod theme;
 mod watch;
 mod workspace;
@@ -21,7 +22,8 @@ use gui::{
 };
 pub use panels::Capture;
 use panels::{Files, Output, Panel, Placeholder};
-use project::{Log, Project, tree::Trees};
+use project::{Log, Project};
+use reader::Reader;
 use watch::Watch;
 use workspace::{Place, Places, Workspace};
 
@@ -46,9 +48,11 @@ pub fn run(log: Arc<Log>, project: Option<Project>) -> Result<(), Error> {
 struct Editor {
     workspace: Workspace,
     log: Arc<Log>,
-    project: Option<Project>,
+    project: Option<Arc<Project>>,
     /// The open project's, unless it couldn't be watched.
     watch: Option<Watch>,
+    /// The open project's, unless its thread couldn't start.
+    reader: Option<Reader>,
     wake: Wake,
 }
 
@@ -59,35 +63,41 @@ impl Editor {
             tracing::warn!("can't write a log in {}: {err}", project.root.display());
         }
         tracing::info!("opened {}", project.root.display());
-        // Before the trees are read, so nothing changed in between is missed.
-        self.watch = match Watch::new(&project.root, self.wake.clone()) {
-            Ok(watch) => Some(watch),
+        let root = project.root.clone();
+        let project = Arc::new(project);
+        self.reader = match Reader::new(project.clone(), self.wake.clone()) {
+            Ok(reader) => Some(reader),
             Err(err) => {
-                tracing::warn!("can't watch the project, so its files won't refresh: {err}");
+                tracing::warn!("can't start reading the project's files: {err}");
                 None
             }
         };
         self.project = Some(project);
-        self.read_trees(Files::set);
+        if let Some(files) = self.files() {
+            files.close();
+        }
+        // Its first batch asks for the first read, once watching.
+        self.watch = match Watch::new(root, self.wake.clone()) {
+            Ok(watch) => Some(watch),
+            Err(err) => {
+                tracing::warn!("can't start the watch, so the files won't refresh: {err}");
+                self.read_trees();
+                None
+            }
+        };
     }
 
-    /// Reads the open project's trees into the Files panel through `show`.
-    fn read_trees(&mut self, show: fn(&mut Files, Trees)) {
-        let Some(project) = &self.project else {
-            return;
-        };
-        match project.trees() {
-            Ok(trees) => {
-                let files = self.workspace.panels_mut().find_map(|panel| match panel {
-                    Panel::Files(files) => Some(files),
-                    _ => None,
-                });
-                if let Some(files) = files {
-                    show(files, trees);
-                }
-            }
-            Err(err) => tracing::warn!("can't read the project's files: {err}"),
+    fn read_trees(&self) {
+        if let Some(reader) = &self.reader {
+            reader.ask();
         }
+    }
+
+    fn files(&mut self) -> Option<&mut Files> {
+        self.workspace.panels_mut().find_map(|panel| match panel {
+            Panel::Files(files) => Some(files),
+            _ => None,
+        })
     }
 }
 
@@ -121,6 +131,7 @@ impl App for Editor {
             log,
             project: None,
             watch: None,
+            reader: None,
             wake: start.wake.clone(),
         };
         if let Some(project) = project {
@@ -134,7 +145,20 @@ impl App for Editor {
         if let (Some(batch), Some(project)) = (batch, &self.project)
             && (batch.rescan || batch.paths.iter().any(|path| project.trees_read(path)))
         {
-            self.read_trees(Files::refresh);
+            self.read_trees();
+        }
+        // Catches what the watch can't see, such as a repo above the root.
+        if input.focused() {
+            self.read_trees();
+        }
+        match self.reader.as_ref().and_then(Reader::take) {
+            Some(Ok(trees)) => {
+                if let Some(files) = self.files() {
+                    files.refresh(trees);
+                }
+            }
+            Some(Err(err)) => tracing::warn!("can't read the project's files: {err}"),
+            None => {}
         }
         self.workspace.input(input);
     }

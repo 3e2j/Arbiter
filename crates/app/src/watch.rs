@@ -6,10 +6,14 @@
 //! that never goes quiet, such as a big copy, still sends one every
 //! [`LONGEST`]. Noise is dropped there, see [`project::is_noise`], and what's
 //! left is for each reader to judge.
+//!
+//! The thread sets up the watch too, since that walks every folder. Its first
+//! batch is a rescan, once watching or failing to, so a read started for it
+//! misses nothing.
 
 use std::{
     io,
-    path::{Component, Path},
+    path::{Component, Path, PathBuf},
     sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
     thread,
     time::{Duration, Instant},
@@ -25,14 +29,20 @@ const LONGEST: Duration = Duration::from_secs(1);
 pub enum Error {
     #[error(transparent)]
     Notify(#[from] notify::Error),
-    #[error("couldn't start the watch thread: {0}")]
-    Thread(#[from] io::Error),
+    #[error(transparent)]
+    Io(#[from] io::Error),
 }
 
 pub struct Watch {
-    // Dropping it ends the batching thread too.
-    _watcher: RecommendedWatcher,
+    /// The thread's own channel, to stop it with.
+    stop: Sender<Got>,
     batches: Receiver<Batch>,
+}
+
+/// What the thread waits on.
+enum Got {
+    Event(notify::Result<Event>),
+    Stop,
 }
 
 #[derive(Default)]
@@ -48,21 +58,15 @@ impl Watch {
     ///
     /// # Errors
     ///
-    /// When `root` can't be watched, or the thread can't start.
-    pub fn new(root: &Path, wake: Wake) -> Result<Self, Error> {
-        // notify reports resolved paths on some systems.
-        let root = root.canonicalize()?;
-        let (events, raw) = mpsc::channel();
-        let mut watcher = notify::recommended_watcher(events)?;
-        watcher.watch(&root, RecursiveMode::Recursive)?;
+    /// When the thread can't start.
+    pub fn new(root: PathBuf, wake: Wake) -> io::Result<Self> {
+        let (stop, got) = mpsc::channel();
         let (out, batches) = mpsc::channel();
+        let events = stop.clone();
         thread::Builder::new()
             .name("watch".to_owned())
-            .spawn(move || batch(&root, &raw, &out, &wake))?;
-        Ok(Self {
-            _watcher: watcher,
-            batches,
-        })
+            .spawn(move || run(&root, events, &got, &out, &wake))?;
+        Ok(Self { stop, batches })
     }
 
     /// Every batch since the last call, as one.
@@ -77,18 +81,54 @@ impl Watch {
     }
 }
 
-/// Until the watcher is dropped.
-fn batch(root: &Path, raw: &Receiver<notify::Result<Event>>, out: &Sender<Batch>, wake: &Wake) {
-    while let Ok(event) = raw.recv() {
+impl Drop for Watch {
+    fn drop(&mut self) {
+        // Fails only when the thread already ended.
+        let _ = self.stop.send(Got::Stop);
+    }
+}
+
+/// Until the watch is dropped.
+fn run(root: &Path, events: Sender<Got>, got: &Receiver<Got>, out: &Sender<Batch>, wake: &Wake) {
+    let watching = start(root, events);
+    let first = Batch {
+        paths: Vec::new(),
+        rescan: true,
+    };
+    if out.send(first).is_err() {
+        return;
+    }
+    wake.wake();
+    match watching {
+        // Held until the thread ends.
+        Ok((root, _watcher)) => batch(&root, got, out, wake),
+        Err(err) => tracing::warn!("can't watch the project, so its files won't refresh: {err}"),
+    }
+}
+
+/// Watches `root`, giving back its resolved path with the watcher.
+fn start(root: &Path, events: Sender<Got>) -> Result<(PathBuf, RecommendedWatcher), Error> {
+    // notify reports resolved paths on some systems.
+    let root = root.canonicalize()?;
+    let mut watcher = notify::recommended_watcher(move |event| {
+        // Fails only once the thread has ended.
+        let _ = events.send(Got::Event(event));
+    })?;
+    watcher.watch(&root, RecursiveMode::Recursive)?;
+    Ok((root, watcher))
+}
+
+fn batch(root: &Path, got: &Receiver<Got>, out: &Sender<Batch>, wake: &Wake) {
+    while let Ok(Got::Event(event)) = got.recv() {
         let due = Instant::now() + LONGEST;
         let mut batch = Batch::default();
         batch.add(root, event);
         loop {
             let wait = QUIET.min(due.saturating_duration_since(Instant::now()));
-            match raw.recv_timeout(wait) {
-                Ok(event) => batch.add(root, event),
+            match got.recv_timeout(wait) {
+                Ok(Got::Event(event)) => batch.add(root, event),
+                Ok(Got::Stop) | Err(RecvTimeoutError::Disconnected) => return,
                 Err(RecvTimeoutError::Timeout) => break,
-                Err(RecvTimeoutError::Disconnected) => return,
             }
         }
         if batch.paths.is_empty() && !batch.rescan {
@@ -159,7 +199,10 @@ mod tests {
         fs::create_dir_all(root.join("code")).unwrap();
         let (send, woken) = mpsc::channel();
         let wake = Wake::new(move || send.send(()).unwrap());
-        let watch = Watch::new(root, wake).unwrap();
+        let watch = Watch::new(root.to_owned(), wake).unwrap();
+        woken.recv_timeout(Duration::from_secs(5)).unwrap();
+        let first = watch.take().unwrap();
+        assert!(first.rescan && first.paths.is_empty());
 
         fs::write(root.join(".arbiter/logs/arbiter.log"), "line").unwrap();
         fs::write(root.join(".git/objects/ab/cdef"), "blob").unwrap();
