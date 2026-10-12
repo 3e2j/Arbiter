@@ -4,7 +4,7 @@
 //! Includes Search, Filter, and View options.
 
 use gui::{
-    components::{ListScroll, TextField, list, text_field},
+    components::{self, ListScroll, TextField, list, text_field},
     input::{self, Button, Cursor, Modifiers},
     keymap::{Action, Chord, Command, Context, Keymap},
     ui::{Align, Anchor, Border, Direction, Element, Size, TextStyle, Ui},
@@ -559,12 +559,9 @@ fn row_ui(
     // The gutter stands in for the left padding when there's one.
     let left = if columns.gutter { 0. } else { s.gap / 2. };
     let element = Element {
-        direction: Direction::LeftToRight,
-        size: [Size::Grow, Size::Fixed(s.row)],
         padding: [left, 0., s.gap / 2., 0.],
         clip: true,
-        cursor: Some(Cursor::Pointer),
-        ..Element::DEFAULT
+        ..Element::line(s.row)
     };
     // Under the middle of the parent's icon, kept on a whole pixel.
     let guide = Element {
@@ -590,12 +587,7 @@ fn row_ui(
         ..Element::DEFAULT
     };
     let node = tree[row.last];
-    ui.element(element, |ui| {
-        ui.style().background = if selected {
-            Some(c.selected)
-        } else {
-            ui.hovered().then_some(c.hover)
-        };
+    let (clicked, ()) = components::row(ui, element, selected, |ui| {
         if columns.gutter {
             gutter(ui, node.status);
         }
@@ -635,8 +627,8 @@ fn row_ui(
         if columns.letters {
             regions(ui, tree, node.editions);
         }
-        ui.clicked(Button::Left)
-    })
+    });
+    clicked
 }
 
 /// A square button showing `icon`, in the accent while `lit`. Returns
@@ -681,29 +673,24 @@ fn check(ui: &mut Ui, label: &str, on: bool) -> bool {
     let theme = ui.theme();
     let (c, s) = (theme.color, theme.size);
     let element = Element {
-        direction: Direction::LeftToRight,
-        size: [Size::Grow, Size::Fixed(s.row)],
         padding: [s.icon_gap, 0., s.icon_gap, 0.],
         gap: s.icon_gap,
-        align: [Align::Start, Align::Center],
         radius: [s.radius; 4],
-        cursor: Some(Cursor::Pointer),
-        ..Element::DEFAULT
+        ..Element::line(s.row)
     };
     let tick = Element {
         size: [Size::Fixed(s.icon); 2],
         ..Element::DEFAULT
     };
-    ui.element(element, |ui| {
-        ui.style().background = ui.hovered().then_some(c.hover);
+    let (clicked, ()) = components::row(ui, element, false, |ui| {
         ui.element(tick, |ui| {
             if on {
                 ui.icon(Icon::Check, s.icon, c.accent);
             }
         });
         ui.text(theme.ui_text(c.text), label);
-        ui.clicked(Button::Left)
-    })
+    });
+    clicked
 }
 
 /// A bar for what the mod does to a node: solid where it changes a file,

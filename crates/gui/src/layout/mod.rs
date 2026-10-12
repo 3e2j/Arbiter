@@ -290,6 +290,18 @@ impl Element {
         }
     }
 
+    /// A line of a list: fills its parent across, `height` tall, and stacks
+    /// its children left to right, centred down.
+    #[must_use]
+    pub const fn line(height: f32) -> Self {
+        Self {
+            direction: Direction::LeftToRight,
+            size: [Size::Grow, Size::Fixed(height)],
+            align: [Align::Start, Align::Center],
+            ..Self::DEFAULT
+        }
+    }
+
     /// Fills its parent and stacks its children down.
     #[must_use]
     pub const fn column() -> Self {

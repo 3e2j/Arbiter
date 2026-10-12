@@ -16,7 +16,7 @@ mod scroll;
 
 pub use button::{button, icon_button};
 pub use field::{TextField, text_field};
-pub use row::{Row, row};
+pub use row::row;
 pub use scroll::{ListScroll, Scroll, list, scroll};
 
 #[cfg(test)]

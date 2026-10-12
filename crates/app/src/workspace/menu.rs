@@ -4,8 +4,9 @@
 
 use gui::{
     canvas::Rect,
+    components,
     input::{Button, Cursor},
-    ui::{Align, Anchor, Border, Direction, Element, Size, Ui},
+    ui::{Align, Anchor, Border, Element, Size, Ui},
 };
 
 use crate::assets::Icon;
@@ -234,20 +235,11 @@ fn tab_row(ui: &mut Ui, title: &str, selected: bool) -> Option<RowClick> {
     let (color, size) = (theme.color, theme.size);
     let row = tab_height(size);
     let element = Element {
-        direction: Direction::LeftToRight,
-        size: [Size::Grow, Size::Fixed(row)],
-        align: [Align::Start, Align::Center],
         radius: [size.radius; 4],
-        cursor: Some(Cursor::Pointer),
-        ..Element::DEFAULT
+        ..Element::line(row)
     };
-    ui.element(element, |ui| {
+    let (clicked, closed) = components::row(ui, element, selected, |ui| {
         let hovered = ui.hovered();
-        ui.style().background = if selected {
-            Some(color.selected)
-        } else {
-            hovered.then_some(color.hover)
-        };
         let label = Element {
             size: [Size::Grow; 2],
             padding: [size.icon_gap, 0., size.icon_gap, 0.],
@@ -264,19 +256,19 @@ fn tab_row(ui: &mut Ui, title: &str, selected: bool) -> Option<RowClick> {
             align: [Align::Center; 2],
             ..Element::DEFAULT
         };
-        let closed = ui.element(close, |ui| {
+        ui.element(close, |ui| {
             if hovered {
                 let lit = if ui.hovered() { color.text } else { color.dim };
                 ui.icon(Icon::Close, size.icon, lit);
             }
             ui.clicked(Button::Left)
-        });
-        if closed {
-            Some(RowClick::Close)
-        } else {
-            ui.clicked(Button::Left).then_some(RowClick::Show)
-        }
-    })
+        })
+    });
+    if closed {
+        Some(RowClick::Close)
+    } else {
+        clicked.then_some(RowClick::Show)
+    }
 }
 
 /// How a place looks on the map.

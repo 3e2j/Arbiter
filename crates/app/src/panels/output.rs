@@ -10,8 +10,7 @@ use std::{
 
 use gui::{
     canvas::Color,
-    components::{ListScroll, button, list},
-    input::{Button, Cursor},
+    components::{self, ListScroll, button, list},
     ui::{Align, Direction, Element, Size, TextStyle, Ui},
 };
 use tracing::{
@@ -337,22 +336,14 @@ impl Output {
 fn toggle(ui: &mut Ui, level: Level, count: u32, on: bool) -> bool {
     let theme = ui.theme();
     let (c, s) = (theme.color, theme.size);
-    let element = Element {
-        direction: Direction::LeftToRight,
-        size: [Size::Fit, Size::Fixed(s.row)],
+    let mut element = Element {
         padding: [s.gap / 2., 0., s.gap / 2., 0.],
         gap: s.icon_gap,
-        align: [Align::Start, Align::Center],
         radius: [s.radius; 4],
-        cursor: Some(Cursor::Pointer),
-        ..Element::DEFAULT
+        ..Element::line(s.row)
     };
-    ui.element(element, |ui| {
-        ui.style().background = if on {
-            Some(c.selected)
-        } else {
-            ui.hovered().then_some(c.hover)
-        };
+    element.size[0] = Size::Fit;
+    let (clicked, ()) = components::row(ui, element, on, |ui| {
         let (icon_color, text_color) = if on {
             (level.color(c.dim, c.text), c.text)
         } else {
@@ -360,8 +351,8 @@ fn toggle(ui: &mut Ui, level: Level, count: u32, on: bool) -> bool {
         };
         ui.icon(level.icon(), s.icon, icon_color);
         ui.text(theme.ui_text(text_color), &count.to_string());
-        ui.clicked(Button::Left)
-    })
+    });
+    clicked
 }
 
 /// Its level's icon, how many times it repeated, when, where from, and the
@@ -370,13 +361,10 @@ fn entry_ui(ui: &mut Ui, lines: &Lines, entry: &Entry, time: &mut String) {
     let theme = ui.theme();
     let (c, s) = (theme.color, theme.size);
     let element = Element {
-        direction: Direction::LeftToRight,
-        size: [Size::Grow, Size::Fixed(s.row)],
         padding: [s.gap / 2., 0., s.gap / 2., 0.],
         gap: s.gap,
-        align: [Align::Start, Align::Center],
         clip: true,
-        ..Element::DEFAULT
+        ..Element::line(s.row)
     };
     let buffer = |color| TextStyle {
         font: theme.font.buffer,
