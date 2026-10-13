@@ -120,12 +120,10 @@ pub(super) fn compress(input: &[u8], strategy: Strategy, out: &mut ByteWriter) -
         }
     }
 
-    // On an exact multiple of 8 this writes a trailing zero flag byte the
-    // decoder never reads, kept for Nintendo parity.
-    if !input.is_empty() {
-        out.u8(flags);
-        out.bytes(&group);
-    }
+    // On an exact multiple of 8, empty included, this writes a trailing zero
+    // flag byte the decoder never reads, kept for Nintendo parity.
+    out.u8(flags);
+    out.bytes(&group);
 
     Ok(())
 }
