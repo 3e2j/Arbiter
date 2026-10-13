@@ -20,6 +20,7 @@ pub mod config;
 pub mod git;
 pub mod hash;
 mod log;
+mod session;
 pub mod tree;
 
 use std::{
