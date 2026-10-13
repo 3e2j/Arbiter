@@ -30,7 +30,7 @@ use watch::Watch;
 use workspace::{Place, Session, Workspace};
 
 /// How far in from the window's edges a drag resizes it, in logical pixels.
-const RESIZE_EDGE: f32 = 8.;
+const RESIZE_EDGE: f32 = 4.;
 
 /// Each panel's kind and place in a project without a session, in tab order.
 const LAYOUT: [(&str, Place); 7] = [
