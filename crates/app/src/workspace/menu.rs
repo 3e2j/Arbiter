@@ -13,7 +13,7 @@ use crate::assets::Icon;
 
 use super::Workspace;
 use super::dock::{Dock, TAB_GAP, TAB_PADDING, dock_radius, tab_height};
-use super::place::{Place, Places};
+use super::place::{Band, Place, Places};
 
 /// The open menu.
 #[derive(Clone, Copy, Debug)]
@@ -126,6 +126,9 @@ impl Workspace {
                     let target = &mut self.docks[place.index()];
                     target.tabs.push(tab);
                     target.active = target.tabs.len() - 1;
+                    if let Some(band) = Band::of(place) {
+                        self.hidden[band.index()] = false;
+                    }
                 }
                 self.menu = None;
                 return;

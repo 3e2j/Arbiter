@@ -92,6 +92,7 @@ impl Workspace {
             docks: Default::default(),
             sizes: Band::ALL.map(Band::default_size),
             ratios: [0.5; Band::COUNT],
+            hidden: [false; Band::COUNT],
             drag: None,
             grip: None,
             tab_drag: None,

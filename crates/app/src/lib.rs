@@ -7,6 +7,7 @@
 mod assets;
 mod panels;
 mod reader;
+mod status_bar;
 mod theme;
 mod title_bar;
 mod watch;
@@ -186,6 +187,7 @@ impl App for Editor {
         ui.element(Element::column(), |ui| {
             title_bar::ui(ui, Self::TITLE);
             self.workspace.ui(ui);
+            status_bar::ui(ui, &mut self.workspace);
             window_edges(ui, RESIZE_EDGE);
         });
     }

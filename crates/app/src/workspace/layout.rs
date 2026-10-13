@@ -8,7 +8,7 @@ use gui::{
 };
 
 use super::place::Band;
-use super::{MIN_DOCK, MIN_MAIN, Workspace};
+use super::{GUTTER, MIN_DOCK, MIN_MAIN, Workspace};
 
 /// A value one [`Divider`] sets.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -53,12 +53,11 @@ pub(super) struct Pass {
 }
 
 impl Workspace {
-    /// As thick as the gap it stands in, and drawn in the line colour while
+    /// As thick as the gutter it stands in, and drawn in the line colour while
     /// it's under the pointer or dragged.
     pub(super) fn divider(&mut self, ui: &mut Ui, pass: &Pass, divider: Divider) {
-        let theme = ui.theme();
         let mut size = [Length::Grow; 2];
-        size[divider.axis] = Length::Fixed(theme.size.gap);
+        size[divider.axis] = Length::Fixed(GUTTER);
         let element = Element {
             size,
             cursor: Some(if divider.axis == 0 {

@@ -14,6 +14,9 @@
 //! Each dock's [`Menu`] shows, closes or moves its tabs, opened from the
 //! button on its tab bar or by right clicking a tab.
 //!
+//! Each [`Side`] of the main view hides or shows its bands at once. A hidden
+//! band keeps its tabs and size, and gives its space to the main view.
+//!
 //! A [`Session`] saves every tab's panel, where it sits, and the bands'
 //! sizes, for the next launch to lay out again.
 
@@ -36,9 +39,12 @@ use drag::{Grip, TabDrag};
 use layout::{Divider, Drag, Pass, fit};
 use menu::Menu;
 use place::Band;
-pub use place::{Place, Places};
+pub use place::{Place, Places, Side};
 pub use session::Session;
 
+/// The space between docks, and either side of the workspace, in logical
+/// pixels.
+const GUTTER: f32 = 6.;
 /// The smallest a dock gets, as `[width, height]` in logical pixels.
 const MIN_DOCK: [f32; 2] = [144., 150.];
 /// The smallest the main view gets, as `[width, height]` in logical pixels.
@@ -56,6 +62,9 @@ pub struct Workspace {
     sizes: [f32; Band::COUNT],
     /// Indexed by [`Band`].
     ratios: [f32; Band::COUNT],
+    /// Indexed by [`Band`]. Only a band with tabs is hidden, so one can't
+    /// open hidden.
+    hidden: [bool; Band::COUNT],
     drag: Option<Drag>,
     /// The tab holding the left button this pass.
     grip: Option<Grip>,
@@ -82,16 +91,20 @@ impl Workspace {
     /// what's left.
     pub fn ui(&mut self, ui: &mut Ui) {
         self.drop_tab(ui);
-        let gap = ui.theme().size.gap;
         for dock in &mut self.docks {
             dock.rect = None;
             dock.bar = None;
             dock.shown.clear();
         }
         self.grip = None;
-        ui.element(Element::column().padded(gap), |ui| {
+        // The bars above and below sit flush against it.
+        let element = Element {
+            padding: [GUTTER, 0., GUTTER, 0.],
+            ..Element::column()
+        };
+        ui.element(element, |ui| {
             let window = ui.rect();
-            let pass = self.pass(window.map(|rect| [rect.w, rect.h]), gap);
+            let pass = self.pass(window.map(|rect| [rect.w, rect.h]));
             ui.element(Element::row(), |ui| {
                 self.band(ui, &pass, Band::LeftOuter);
                 self.band(ui, &pass, Band::LeftInner);
@@ -109,8 +122,9 @@ impl Workspace {
     }
 
     /// Fits the bands into a workspace last laid out `size` big, padded by
-    /// `gap`. The drag carries over only if its divider asks for it again.
-    fn pass(&mut self, size: Option<[f32; 2]>, gap: f32) -> Pass {
+    /// [`GUTTER`] either side. The drag carries over only if its divider asks
+    /// for it again.
+    fn pass(&mut self, size: Option<[f32; 2]>) -> Pass {
         let drag = self.drag.take();
         let Some(size) = size else {
             return Pass {
@@ -120,7 +134,8 @@ impl Workspace {
             };
         };
         let used = Band::ALL.map(|band| self.in_use(band));
-        let (sizes, spare) = fit(self.sizes, used, size.map(|extent| extent - 2. * gap), gap);
+        let inner = [size[0] - 2. * GUTTER, size[1]];
+        let (sizes, spare) = fit(self.sizes, used, inner, GUTTER);
         Pass { sizes, spare, drag }
     }
 
@@ -128,8 +143,30 @@ impl Workspace {
         !self.docks[place.index()].tabs.is_empty()
     }
 
-    fn in_use(&self, band: Band) -> bool {
+    fn band_has_tabs(&self, band: Band) -> bool {
         band.docks().iter().any(|&place| self.has_tabs(place))
+    }
+
+    fn in_use(&self, band: Band) -> bool {
+        !self.hidden[band.index()] && self.band_has_tabs(band)
+    }
+
+    /// Whether any band on `side` has tabs, so there's anything to show.
+    pub fn side_has_tabs(&self, side: Side) -> bool {
+        side.bands().iter().any(|&band| self.band_has_tabs(band))
+    }
+
+    /// Whether any band on `side` is laid out.
+    pub fn side_shown(&self, side: Side) -> bool {
+        side.bands().iter().any(|&band| self.in_use(band))
+    }
+
+    /// Hides `side`'s bands while any is shown, or else shows them all.
+    pub fn toggle_side(&mut self, side: Side) {
+        let hide = self.side_shown(side);
+        for &band in side.bands() {
+            self.hidden[band.index()] = hide && self.band_has_tabs(band);
+        }
     }
 
     /// The band, with its divider on the side facing the main view.
@@ -165,8 +202,7 @@ impl Workspace {
         match *band.docks() {
             [first, second] if self.has_tabs(first) && self.has_tabs(second) => {
                 let across = 1 - band.axis();
-                let gap = ui.theme().size.gap;
-                let extent = ui.rect().map(|rect| [rect.w, rect.h][across] - gap);
+                let extent = ui.rect().map(|rect| [rect.w, rect.h][across] - GUTTER);
                 let divider = Divider::ratio(band, self.ratios[band.index()], extent.unwrap_or(0.));
                 // Shared evenly until the band has a size to split.
                 let mut size = [Length::Grow; 2];
@@ -214,5 +250,26 @@ impl Workspace {
                 align,
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_side_hides_only_bands_with_tabs_and_shows_them_again() {
+        let session = Session::of(&[("files", Place::LeftInnerTop)]);
+        let mut workspace = Workspace::new(&session);
+        assert!(workspace.side_shown(Side::Left));
+        assert!(!workspace.side_has_tabs(Side::Right));
+
+        workspace.toggle_side(Side::Left);
+        assert!(!workspace.side_shown(Side::Left));
+        assert!(workspace.side_has_tabs(Side::Left));
+        assert!(!workspace.hidden[Band::LeftOuter.index()]);
+
+        workspace.toggle_side(Side::Left);
+        assert!(workspace.in_use(Band::LeftInner));
     }
 }

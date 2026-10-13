@@ -71,6 +71,9 @@ pub enum Icon {
     Folder,
     FolderOpen,
     Hammer,
+    LayoutBottom,
+    LayoutLeft,
+    LayoutRight,
     Menu,
     Message,
     More,
@@ -84,7 +87,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Self; 25] = [
+    pub const ALL: [Self; 28] = [
         Self::Alert,
         Self::Check,
         Self::ChevronDown,
@@ -100,6 +103,9 @@ impl Icon {
         Self::Folder,
         Self::FolderOpen,
         Self::Hammer,
+        Self::LayoutBottom,
+        Self::LayoutLeft,
+        Self::LayoutRight,
         Self::Menu,
         Self::Message,
         Self::More,
@@ -143,6 +149,9 @@ impl Icon {
             Self::Folder => tabler!("folder"),
             Self::FolderOpen => tabler!("folder-open"),
             Self::Hammer => tabler!("hammer"),
+            Self::LayoutBottom => tabler!("layout-bottombar"),
+            Self::LayoutLeft => tabler!("layout-sidebar"),
+            Self::LayoutRight => tabler!("layout-sidebar-right"),
             Self::Menu => tabler!("menu-2"),
             Self::Message => tabler!("message"),
             Self::More => tabler!("dots"),

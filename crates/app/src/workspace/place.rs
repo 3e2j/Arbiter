@@ -177,3 +177,23 @@ impl Band {
         self as usize
     }
 }
+
+/// An edge of the main view, hidden or shown with all its [`Band`]s at once.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Side {
+    Left,
+    Bottom,
+    Right,
+}
+
+impl Side {
+    pub const ALL: [Self; 3] = [Self::Left, Self::Bottom, Self::Right];
+
+    pub(super) const fn bands(self) -> &'static [Band] {
+        match self {
+            Self::Left => &[Band::LeftOuter, Band::LeftInner],
+            Self::Bottom => &[Band::BottomRow, Band::BelowMain],
+            Self::Right => &[Band::RightInner, Band::RightOuter],
+        }
+    }
+}

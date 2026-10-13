@@ -9,7 +9,7 @@ use gui::{
 use super::dock::{Dock, TAB_GAP, TAB_PADDING, dock_radius, tab_height};
 use super::layout::{Divider, cut, extent};
 use super::place::{Band, Place, Places};
-use super::{MIN_DOCK, MIN_MAIN, Workspace};
+use super::{GUTTER, MIN_DOCK, MIN_MAIN, Workspace};
 
 /// How far a held tab has to move, in logical pixels, before it's dragged
 /// rather than clicked.
@@ -90,7 +90,7 @@ impl Workspace {
             docks: &self.docks,
             sizes: &self.sizes,
             ratios: &self.ratios,
-            gap: size.gap,
+            gap: GUTTER,
             tab_height: tab_height(size),
         };
         if let Some(landing) = drops.at(drag.grip, pointer, tab.panel.places()) {
@@ -133,7 +133,7 @@ impl Workspace {
             docks: &self.docks,
             sizes: &self.sizes,
             ratios: &self.ratios,
-            gap: size.gap,
+            gap: GUTTER,
             tab_height: tab_height(size),
         };
         let landing = drops.at(grip, pointer, tab.panel.places());
