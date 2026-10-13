@@ -176,13 +176,18 @@ impl View {
 }
 
 impl Files {
+    pub const KIND: &str = "files";
     pub const TITLE: &str = "Files";
     pub const PLACES: Places = Places::BANDS;
 
-    /// Binds Ctrl+F (Command+F on macOS) in `keymap` to focus the search.
-    pub fn new(keymap: &mut Keymap) -> Self {
+    /// Binds Ctrl+F (Command+F on macOS) in `keymap` to focus the search,
+    /// once for every file tree.
+    pub fn bind(keymap: &mut Keymap) {
         let find = Chord::new(Key::Char('f'), Modifiers::COMMAND);
         keymap.bind(find, FILES, Some(SEARCH));
+    }
+
+    pub fn new() -> Self {
         Self {
             opened: None,
             tab: Tab::Project,

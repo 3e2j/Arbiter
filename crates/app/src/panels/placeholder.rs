@@ -4,6 +4,15 @@ use gui::{components::notice, ui::Ui};
 
 use crate::workspace::Places;
 
+/// The panels not written yet, by title, and where each may sit.
+const STANDINS: [(&str, Places); 5] = [
+    ("Messages", Places::MAIN),
+    ("Search", Places::BANDS),
+    ("Outline", Places::BANDS),
+    ("Inspector", Places::BANDS),
+    ("Diagnostics", Places::BANDS),
+];
+
 pub struct Placeholder {
     title: &'static str,
     places: Places,
@@ -16,7 +25,15 @@ impl Placeholder {
         Self { title, places }
     }
 
-    pub const fn title(&self) -> &str {
+    /// The stand-in titled `title`, as its kind.
+    pub fn open(title: &str) -> Option<Self> {
+        let (title, places) = STANDINS
+            .into_iter()
+            .find(|&(standin, _)| standin == title)?;
+        Some(Self::new(title, places))
+    }
+
+    pub const fn title(&self) -> &'static str {
         self.title
     }
 

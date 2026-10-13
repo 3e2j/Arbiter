@@ -13,12 +13,16 @@
 //!
 //! Each dock's [`Menu`] shows, closes or moves its tabs, opened from the
 //! button on its tab bar or by right clicking a tab.
+//!
+//! A [`Session`] saves every tab's panel, where it sits, and the bands'
+//! sizes, for the next launch to lay out again.
 
 mod dock;
 mod drag;
 mod layout;
 mod menu;
 mod place;
+mod session;
 
 use gui::{
     input::{Input, Key},
@@ -27,12 +31,13 @@ use gui::{
 
 use crate::panels::Panel;
 
-use dock::{Dock, Tab, dock_radius};
+use dock::{Dock, dock_radius};
 use drag::{Grip, TabDrag};
 use layout::{Divider, Drag, Pass, fit};
 use menu::Menu;
 use place::Band;
 pub use place::{Place, Places};
+pub use session::Session;
 
 /// The smallest a dock gets, as `[width, height]` in logical pixels.
 const MIN_DOCK: [f32; 2] = [144., 150.];
@@ -60,24 +65,6 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// With no tabs, each band at its default size.
-    pub fn new() -> Self {
-        Self {
-            docks: Default::default(),
-            sizes: Band::ALL.map(Band::default_size),
-            ratios: [0.5; Band::COUNT],
-            drag: None,
-            grip: None,
-            tab_drag: None,
-            menu: None,
-        }
-    }
-
-    /// Adds `panel` as the last tab in `place`.
-    pub fn add(&mut self, panel: Panel, place: Place) {
-        self.docks[place.index()].tabs.push(Tab { panel });
-    }
-
     /// Every panel, in any dock.
     pub fn panels_mut(&mut self) -> impl Iterator<Item = &mut Panel> {
         let tabs = self.docks.iter_mut().flat_map(|dock| &mut dock.tabs);

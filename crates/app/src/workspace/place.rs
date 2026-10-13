@@ -1,7 +1,10 @@
 //! Where tabs sit: [`Place`]s, sets of them, and the [`Band`]s that hold them.
 
+use serde::{Deserialize, Serialize};
+
 /// A fixed place in the window that holds tabs.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Place {
     /// What the bands leave in the middle of the window. It's in no band, and
     /// takes its space with or without tabs.
@@ -95,7 +98,8 @@ impl Places {
 /// Listed in the order they're cut. The bottom row goes first so it spans the
 /// window. Outer columns go before inner ones so they sit against the window
 /// edge. `BelowMain` goes last so it spans only the main view.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub(super) enum Band {
     BottomRow,
     LeftOuter,

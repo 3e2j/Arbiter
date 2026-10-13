@@ -21,6 +21,25 @@ pub enum Panel {
 }
 
 impl Panel {
+    /// A new panel of `kind`, or `None` when no panel is.
+    pub fn open(kind: &str) -> Option<Self> {
+        match kind {
+            Files::KIND => Some(Self::Files(Files::new())),
+            Output::KIND => Some(Self::Output(Output::new())),
+            _ => Placeholder::open(kind).map(Self::Placeholder),
+        }
+    }
+
+    /// What [`Self::open`] makes it from, which stays put when its title
+    /// changes.
+    pub const fn kind(&self) -> &'static str {
+        match self {
+            Self::Files(_) => Files::KIND,
+            Self::Output(_) => Output::KIND,
+            Self::Placeholder(panel) => panel.title(),
+        }
+    }
+
     pub fn title(&self) -> &str {
         match self {
             Self::Files(_) => Files::TITLE,

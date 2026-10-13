@@ -22,14 +22,25 @@ use gui::{
     ui::{Element, Ui},
 };
 pub use panels::Capture;
-use panels::{Files, Output, Panel, Placeholder};
+use panels::{Files, Output, Panel};
 use project::{Log, Project};
 use reader::TreeReader;
 use watch::Watch;
-use workspace::{Place, Places, Workspace};
+use workspace::{Place, Session, Workspace};
 
 /// How far in from the window's edges a drag resizes it, in logical pixels.
 const RESIZE_EDGE: f32 = 8.;
+
+/// Each panel's kind and place in a project without a session, in tab order.
+const LAYOUT: [(&str, Place); 7] = [
+    ("Messages", Place::Main),
+    (Files::KIND, Place::LeftInnerTop),
+    ("Search", Place::LeftInnerTop),
+    ("Outline", Place::LeftInnerBottom),
+    ("Inspector", Place::RightInnerTop),
+    (Output::KIND, Place::BelowMain),
+    ("Diagnostics", Place::BelowMain),
+];
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
@@ -52,6 +63,8 @@ pub fn run(log: Arc<Log>, project: Option<Project>) -> Result<(), AppError> {
 struct Editor {
     workspace: Workspace,
     log: Arc<Log>,
+    /// The open one, whose session the workspace is saved to on close.
+    project: Option<Arc<Project>>,
     /// The open project's, unless it couldn't be watched.
     watch: Option<Watch>,
     /// The open project's, unless its thread couldn't start.
@@ -68,6 +81,7 @@ impl Editor {
         tracing::info!("opened {}", project.root.display());
         let root = project.root.clone();
         let project = Arc::new(project);
+        self.project = Some(project.clone());
         self.reader = match TreeReader::new(project.clone(), self.wake.clone()) {
             Ok(reader) => Some(reader),
             Err(err) => {
@@ -116,23 +130,15 @@ impl App for Editor {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         start.theme = theme::theme(assets::fonts(start.glyphs)?);
         assets::load_icons(start.glyphs)?;
-        // TODO: from the session, once the workspace is saved.
-        let mut workspace = Workspace::new();
-        let editor = |title| Panel::Placeholder(Placeholder::new(title, Places::MAIN));
-        let tool = |title| Panel::Placeholder(Placeholder::new(title, Places::BANDS));
-        workspace.add(editor("Messages"), Place::Main);
-        workspace.add(
-            Panel::Files(Files::new(&mut start.keymap)),
-            Place::LeftInnerTop,
-        );
-        workspace.add(tool("Search"), Place::LeftInnerTop);
-        workspace.add(tool("Outline"), Place::LeftInnerBottom);
-        workspace.add(tool("Inspector"), Place::RightInnerTop);
-        workspace.add(Panel::Output(Output::new()), Place::BelowMain);
-        workspace.add(tool("Diagnostics"), Place::BelowMain);
+        Files::bind(&mut start.keymap);
+        let session = project
+            .as_ref()
+            .and_then(session)
+            .unwrap_or_else(|| Session::of(&LAYOUT));
         let mut app = Self {
-            workspace,
+            workspace: Workspace::new(&session),
             log,
+            project: None,
             watch: None,
             reader: None,
             wake: start.wake.clone(),
@@ -163,6 +169,19 @@ impl App for Editor {
         self.workspace.input(input);
     }
 
+    fn on_close(&mut self) {
+        let Some(project) = &self.project else {
+            return;
+        };
+        let saved = match self.workspace.session().to_text() {
+            Ok(text) => project.write_session(&text).map_err(|err| err.to_string()),
+            Err(err) => Err(err.to_string()),
+        };
+        if let Err(err) = saved {
+            tracing::warn!("can't save the session: {err}");
+        }
+    }
+
     fn ui(&mut self, ui: &mut Ui) {
         ui.element(Element::column(), |ui| {
             title_bar::ui(ui, Self::TITLE);
@@ -170,4 +189,19 @@ impl App for Editor {
             window_edges(ui, RESIZE_EDGE);
         });
     }
+}
+
+/// `project`'s session, or `None` when it has none or it can't be read.
+fn session(project: &Project) -> Option<Session> {
+    let text = project
+        .read_session()
+        .inspect_err(|err| {
+            tracing::warn!("can't read the session, so the workspace starts fresh: {err}");
+        })
+        .ok()??;
+    Session::parse(&text)
+        .inspect_err(|err| {
+            tracing::warn!("the session isn't readable, so the workspace starts fresh: {err}");
+        })
+        .ok()
 }

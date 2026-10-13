@@ -158,8 +158,10 @@ dependencies = [
  "arbiter-gui",
  "arbiter-project",
  "notify",
+ "serde",
  "tempfile",
  "thiserror 2.0.21",
+ "toml",
  "tracing",
  "tracing-subscriber",
 ]
