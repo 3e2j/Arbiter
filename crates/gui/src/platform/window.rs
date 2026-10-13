@@ -11,7 +11,7 @@ use crate::{
     canvas::{Canvas, Rect},
     cast::narrow,
     host::{App, Host, Wake},
-    input::{CursorIcon, Event, Key, KeyCode, Modifiers, PointerButton},
+    input::{CursorIcon, Event, Key, KeyCode, Modifiers, PointerButton, WindowAction, WindowEdge},
     render::{self, Gpu},
 };
 use winit::{
@@ -22,13 +22,18 @@ use winit::{
     },
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{self, NamedKey, PhysicalKey},
-    window::{CursorGrabMode, Window, WindowId},
+    window::{CursorGrabMode, ResizeDirection, Window, WindowId},
 };
 
 /// Used when the monitor doesn't report its refresh rate.
 const FALLBACK_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
 /// How far a wheel's line of scrolling goes, in logical pixels.
 const SCROLL_LINE: f32 = 40.;
+/// How soon and how near, in logical pixels, a press follows the last of the
+/// same button to make a double click. Windows' defaults, as winit doesn't
+/// read the system's.
+const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(500);
+const DOUBLE_CLICK_DISTANCE: f32 = 4.;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RunError {
@@ -86,18 +91,28 @@ struct Open {
     cursor: CursorIcon,
     /// Whether the pointer is grabbed, as last set.
     grab: bool,
+    /// As last told to the host.
+    maximized: bool,
+    /// Where the pointer is, as last told to the host.
+    pointer: Option<[f32; 2]>,
+    /// The last press that could start a double click, and when and where
+    /// it went down.
+    press: Option<(PointerButton, Instant, [f32; 2])>,
 }
 
 impl Open {
     /// Opens at `min`, in logical pixels, and never smaller.
-    fn new(event_loop: &ActiveEventLoop, title: &str, min: [f32; 2]) -> Result<Self, RunError> {
-        let min = LogicalSize::new(min[0], min[1]);
+    fn new<A: App>(event_loop: &ActiveEventLoop) -> Result<Self, RunError> {
+        let min = LogicalSize::new(A::MIN_SIZE[0], A::MIN_SIZE[1]);
         let attributes = Window::default_attributes()
-            .with_title(title)
+            .with_title(A::TITLE)
             .with_inner_size(min)
-            .with_min_inner_size(min);
+            .with_min_inner_size(min)
+            .with_decorations(A::DECORATED)
+            // So the app can round the corners of the frame it draws.
+            .with_transparent(!A::DECORATED);
         let window = Arc::new(event_loop.create_window(attributes)?);
-        let gpu = gpu(&window)?;
+        let gpu = gpu(&window, !A::DECORATED)?;
         let pacer = Pacer::new((!compositor_paced(event_loop)).then(|| interval(&window)));
         Ok(Self {
             window,
@@ -105,7 +120,32 @@ impl Open {
             pacer,
             cursor: CursorIcon::Default,
             grab: false,
+            maximized: false,
+            pointer: None,
+            press: None,
         })
+    }
+
+    /// `event`, as [`Event::PressedAgain`] when it's the second press of a
+    /// double click. A third starts over.
+    fn double_click<'a>(&mut self, event: Event<'a>, now: Instant) -> Event<'a> {
+        match event {
+            Event::Pointer(at) => self.pointer = at,
+            Event::Pressed(button) => {
+                let Some(at) = self.pointer else { return event };
+                let again = self.press.take().is_some_and(|(last, then, [x, y])| {
+                    last == button
+                        && now.saturating_duration_since(then) <= DOUBLE_CLICK_TIME
+                        && (at[0] - x).hypot(at[1] - y) <= DOUBLE_CLICK_DISTANCE
+                });
+                if again {
+                    return Event::PressedAgain(button);
+                }
+                self.press = Some((button, now, at));
+            }
+            _ => {}
+        }
+        event
     }
 
     /// The window's contents in logical pixels.
@@ -118,14 +158,16 @@ impl Open {
     }
 }
 
-/// A new surface on `window`, at its current size and scale.
-fn gpu(window: &Arc<Window>) -> Result<Gpu, render::Error> {
+/// A new surface on `window`, at its current size and scale, `transparent`
+/// as [`Gpu::new`] says.
+fn gpu(window: &Arc<Window>, transparent: bool) -> Result<Gpu, render::Error> {
     let size = window.inner_size();
     Gpu::new(
         // The surface holds a clone, so the window can't close before the surface is dropped.
         Arc::clone(window),
         [size.width, size.height],
         window.scale_factor(),
+        transparent,
     )
 }
 
@@ -142,8 +184,12 @@ impl<A: App> ApplicationHandler for Runner<A> {
         if self.open.is_some() {
             return;
         }
-        match Open::new(event_loop, A::TITLE, A::MIN_SIZE) {
-            Ok(open) => self.open = Some(open),
+        match Open::new::<A>(event_loop) {
+            Ok(mut open) => {
+                open.maximized = open.window.is_maximized();
+                self.host.push(Event::Maximized(open.maximized));
+                self.open = Some(open);
+            }
             Err(error) => self.fail(event_loop, error),
         }
     }
@@ -154,7 +200,14 @@ impl<A: App> ApplicationHandler for Runner<A> {
             WindowEvent::CloseRequested => event_loop.exit(),
             // A drag sends many of these per refresh. The pacer turns them into one
             // redraw, which resizes the surface to the latest size.
-            WindowEvent::Resized(_) => open.pacer.request(),
+            WindowEvent::Resized(_) => {
+                let maximized = open.window.is_maximized();
+                if maximized != open.maximized {
+                    open.maximized = maximized;
+                    self.host.push(Event::Maximized(maximized));
+                }
+                open.pacer.request();
+            }
             WindowEvent::ScaleFactorChanged { .. } => {
                 open.pacer.set_interval(interval(&open.window));
                 open.pacer.request();
@@ -166,7 +219,10 @@ impl<A: App> ApplicationHandler for Runner<A> {
                 open.gpu
                     .resize([size.width, size.height], open.window.scale_factor());
                 let scale = narrow(open.window.scale_factor());
-                let out = self.host.draw(open.rect(), scale, &mut self.canvas);
+                let rounded = !A::DECORATED && !open.maximized && open.gpu.transparent();
+                let out = self
+                    .host
+                    .draw(open.rect(), scale, rounded, &mut self.canvas);
                 if out.again {
                     open.pacer.request();
                 }
@@ -178,6 +234,12 @@ impl<A: App> ApplicationHandler for Runner<A> {
                     open.grab = out.grab;
                     grab(&open.window, out.grab);
                 }
+                if let Some(action) = out.action
+                    && act(event_loop, &open.window, action)
+                {
+                    self.host.push(Event::Released(PointerButton::Left));
+                    open.pacer.request();
+                }
                 let atlas = self.host.take_atlas_updates();
                 // Without this, Wayland gets a frame per event and shows them all in turn.
                 let window = &open.window;
@@ -186,7 +248,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
                     .draw(&self.canvas, atlas, || window.pre_present_notify())
                 {
                     Ok(()) => {}
-                    Err(render::Error::Lost) => match gpu(&open.window) {
+                    Err(render::Error::Lost) => match gpu(&open.window, !A::DECORATED) {
                         Ok(gpu) => {
                             open.gpu = gpu;
                             self.host.reupload_atlas();
@@ -210,9 +272,10 @@ impl<A: App> ApplicationHandler for Runner<A> {
             }
             event => {
                 let scale = open.window.scale_factor();
+                let now = Instant::now();
                 let mut pushed = false;
                 translate(&event, scale, |event| {
-                    self.host.push(event);
+                    self.host.push(open.double_click(event, now));
                     pushed = true;
                 });
                 if pushed {
@@ -472,6 +535,40 @@ fn grab(window: &Window, grab: bool) {
     window.set_cursor_visible(!grab);
 }
 
+/// Does `action` to `window`. Returns whether the system took the pointer
+/// for it, which lets go of the left button without telling the window.
+fn act(event_loop: &ActiveEventLoop, window: &Window, action: WindowAction) -> bool {
+    match action {
+        WindowAction::Move => window.drag_window().is_ok(),
+        WindowAction::Resize(edge) => window.drag_resize_window(direction(edge)).is_ok(),
+        WindowAction::Minimize => {
+            window.set_minimized(true);
+            false
+        }
+        WindowAction::ToggleMaximize => {
+            window.set_maximized(!window.is_maximized());
+            false
+        }
+        WindowAction::Close => {
+            event_loop.exit();
+            false
+        }
+    }
+}
+
+const fn direction(edge: WindowEdge) -> ResizeDirection {
+    match edge {
+        WindowEdge::North => ResizeDirection::North,
+        WindowEdge::NorthEast => ResizeDirection::NorthEast,
+        WindowEdge::East => ResizeDirection::East,
+        WindowEdge::SouthEast => ResizeDirection::SouthEast,
+        WindowEdge::South => ResizeDirection::South,
+        WindowEdge::SouthWest => ResizeDirection::SouthWest,
+        WindowEdge::West => ResizeDirection::West,
+        WindowEdge::NorthWest => ResizeDirection::NorthWest,
+    }
+}
+
 const fn cursor_icon(cursor: CursorIcon) -> winit::window::CursorIcon {
     match cursor {
         CursorIcon::Default => winit::window::CursorIcon::Default,
@@ -482,6 +579,8 @@ const fn cursor_icon(cursor: CursorIcon) -> winit::window::CursorIcon {
         CursorIcon::Grab => winit::window::CursorIcon::Grab,
         CursorIcon::Grabbing => winit::window::CursorIcon::Grabbing,
         CursorIcon::NotAllowed => winit::window::CursorIcon::NotAllowed,
+        CursorIcon::ResizeNwSe => winit::window::CursorIcon::NwseResize,
+        CursorIcon::ResizeNeSw => winit::window::CursorIcon::NeswResize,
     }
 }
 

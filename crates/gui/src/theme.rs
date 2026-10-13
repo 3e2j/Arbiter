@@ -62,6 +62,9 @@ pub struct ThemeSizes {
     pub line: f32,
     /// Width of a scroll thumb.
     pub scroll_bar: f32,
+    /// The window's corners, while the app draws its own frame and the
+    /// window isn't maximized.
+    pub window_radius: f32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]

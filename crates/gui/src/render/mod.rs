@@ -65,16 +65,25 @@ struct Atlas {
 }
 
 impl Gpu {
+    /// Whether what isn't drawn over shows what's behind the window.
+    #[must_use]
+    pub fn transparent(&self) -> bool {
+        self.config.alpha_mode == wgpu::CompositeAlphaMode::PreMultiplied
+    }
+
     /// Blocks until the device is ready. `scale` is physical pixels per
     /// logical one.
     ///
     /// # Errors
     ///
     /// When there's no adapter or device that can present to `target`.
+    /// With `transparent`, what isn't drawn over shows what's behind the
+    /// window, where the system allows it, as [`Self::transparent`] says.
     pub fn new(
         target: impl Into<SurfaceTarget<'static>>,
         size: [u32; 2],
         scale: f64,
+        transparent: bool,
     ) -> Result<Self, Error> {
         let instance =
             wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
@@ -89,12 +98,27 @@ impl Gpu {
         let [width, height] = size.map(|n| n.max(1));
         // The default takes the driver's first present mode, which can be Mailbox or
         // Immediate, so vsync is set here. Every backend must support Fifo.
+        let default = surface
+            .get_default_config(&adapter, width, height)
+            .ok_or(Error::Unsupported)?;
+        // What's drawn is premultiplied, so that's the only other mode that
+        // composites it right.
+        let premultiplied = wgpu::CompositeAlphaMode::PreMultiplied;
+        let alpha_mode = if transparent
+            && surface
+                .get_capabilities(&adapter)
+                .alpha_modes
+                .contains(&premultiplied)
+        {
+            premultiplied
+        } else {
+            default.alpha_mode
+        };
         let config = wgpu::SurfaceConfiguration {
             present_mode: wgpu::PresentMode::Fifo,
             desired_maximum_frame_latency: 1,
-            ..surface
-                .get_default_config(&adapter, width, height)
-                .ok_or(Error::Unsupported)?
+            alpha_mode,
+            ..default
         };
         surface.configure(&device, &config);
 

@@ -42,6 +42,7 @@ const SIZES: ThemeSizes = ThemeSizes {
     radius: 4.,
     line: 1.,
     scroll_bar: 6.,
+    window_radius: 10.,
 };
 
 /// With the fonts from [`assets::fonts`](crate::assets::fonts).

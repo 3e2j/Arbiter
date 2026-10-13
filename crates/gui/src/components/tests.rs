@@ -1,5 +1,6 @@
 use super::*;
-use crate::input::{Event, PointerButton};
+use crate::canvas::IconId;
+use crate::input::{Event, PointerButton, WindowAction};
 use crate::ui::tests::Kept;
 use crate::ui::{Element, Length};
 
@@ -188,4 +189,62 @@ fn a_popover_stays_open_on_a_press_inside_it() {
     popover_pass(&mut kept);
     kept.input.push(Event::Pressed(PointerButton::Left));
     assert!(!popover_pass(&mut kept));
+}
+
+/// A title bar 300 across holding a button, which it moves the window
+/// around. Returns what the pass asked of the window.
+fn title_bar_pass(kept: &mut Kept) -> Option<WindowAction> {
+    kept.pass(|ui| {
+        title_bar(ui, |ui| {
+            icon_button(ui, IconId::default(), IconState::Normal)
+        })
+    });
+    kept.out.action
+}
+
+#[test]
+fn dragging_a_title_bar_moves_the_window_but_not_from_its_buttons() {
+    let mut kept = Kept::default();
+    kept.theme.size.row = 20.;
+    kept.input.push(Event::Pointer(Some([5., 5.])));
+    title_bar_pass(&mut kept);
+    kept.input.push(Event::Pressed(PointerButton::Left));
+    title_bar_pass(&mut kept);
+    kept.input.push(Event::Pointer(Some([10., 5.])));
+    assert_eq!(title_bar_pass(&mut kept), None);
+    kept.input.push(Event::Released(PointerButton::Left));
+    title_bar_pass(&mut kept);
+    kept.input.push(Event::Pointer(Some([200., 5.])));
+    title_bar_pass(&mut kept);
+    kept.input.push(Event::Pressed(PointerButton::Left));
+    title_bar_pass(&mut kept);
+    // Held but not moved, so a double click can still come.
+    assert_eq!(title_bar_pass(&mut kept), None);
+    kept.input.push(Event::Pointer(Some([210., 5.])));
+    assert_eq!(title_bar_pass(&mut kept), Some(WindowAction::Move));
+}
+
+/// Clicks the title bar with `press`. Returns what the release asked of
+/// the window.
+fn click_title_bar(kept: &mut Kept, press: Event<'static>) -> Option<WindowAction> {
+    kept.input.push(press);
+    title_bar_pass(kept);
+    title_bar_pass(kept);
+    kept.input.push(Event::Released(PointerButton::Left));
+    title_bar_pass(kept)
+}
+
+#[test]
+fn double_clicking_a_title_bar_toggles_maximized() {
+    let mut kept = Kept::default();
+    kept.theme.size.row = 20.;
+    kept.input.push(Event::Pointer(Some([200., 5.])));
+    title_bar_pass(&mut kept);
+    let first = Event::Pressed(PointerButton::Left);
+    assert_eq!(click_title_bar(&mut kept, first), None);
+    let second = Event::PressedAgain(PointerButton::Left);
+    assert_eq!(
+        click_title_bar(&mut kept, second),
+        Some(WindowAction::ToggleMaximize)
+    );
 }

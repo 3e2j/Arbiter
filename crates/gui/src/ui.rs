@@ -19,7 +19,7 @@ use std::panic::Location;
 
 use crate::canvas::{Color, Glyphs, IconId, Quad, Rect, Vertex};
 use crate::clipboard::Clipboard;
-use crate::input::{CursorIcon, Input, PointerButton, WindowRequest};
+use crate::input::{CursorIcon, Input, PointerButton, WindowAction, WindowRequest};
 use crate::keymap::Keymap;
 use crate::layout::{Layout, Slot};
 
@@ -185,6 +185,12 @@ impl<'a> Ui<'a> {
     /// has to be asked again each pass to keep it.
     pub const fn grab(&mut self) {
         self.out.grab = true;
+    }
+
+    /// Asks the window to do `action` after this pass, in place of the
+    /// system's frame.
+    pub const fn window(&mut self, action: WindowAction) {
+        self.out.action = Some(action);
     }
 
     /// The open box's rect last pass. `None` the first pass it's declared.
@@ -553,6 +559,8 @@ pub(crate) mod tests {
         pub input: Input,
         slots: Slots,
         memory: Memory,
+        /// What the last pass asked of the window.
+        pub out: WindowRequest,
     }
 
     impl Kept {
@@ -560,13 +568,13 @@ pub(crate) mod tests {
         /// is used up and what waited comes in, as between the host's frames.
         pub fn pass<R>(&mut self, body: impl FnOnce(&mut Ui) -> R) -> R {
             self.layout.clear();
-            let mut out = WindowRequest::default();
+            self.out = WindowRequest::default();
             let mut ui = Ui::root(
                 &self.theme,
                 &mut self.layout,
                 &mut self.glyphs,
                 &self.input,
-                &mut out,
+                &mut self.out,
                 &mut self.slots,
                 &mut self.memory,
             );

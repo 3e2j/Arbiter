@@ -120,6 +120,10 @@ pub enum CursorIcon {
     Grabbing,
     /// While something dragged can't be dropped here.
     NotAllowed,
+    /// Over the window's top left or bottom right corner.
+    ResizeNwSe,
+    /// Over the window's top right or bottom left corner.
+    ResizeNeSw,
 }
 
 /// One thing the user did.
@@ -128,6 +132,9 @@ pub enum Event<'a> {
     /// The pointer moved to here, or `None` when it left the window.
     Pointer(Option<[f32; 2]>),
     Pressed(PointerButton),
+    /// Pressed again soon after and near where it last went down, as the
+    /// second of a double click.
+    PressedAgain(PointerButton),
     Released(PointerButton),
     /// How far to scroll. Positive `y` scrolls toward the top, as a wheel
     /// turned away from the user does.
@@ -154,6 +161,8 @@ pub enum Event<'a> {
     Unfocused,
     /// The window gained focus, maybe after the user changed things elsewhere.
     Focused,
+    /// The window was maximized, or let go of being.
+    Maximized(bool),
 }
 
 /// Everything since the last pass. Kept between passes, so a pass allocates
@@ -168,6 +177,8 @@ pub struct Input {
     /// [`PointerButton`] bits.
     held: u8,
     pressed: u8,
+    /// Whose last press was a [`Event::PressedAgain`].
+    again: u8,
     released: u8,
     scroll: [f32; 2],
     motion: [f32; 2],
@@ -186,6 +197,7 @@ pub struct Input {
     /// Whether anything came in since the last pass.
     fresh: bool,
     focused: bool,
+    maximized: bool,
 }
 
 /// An [`Event`] waiting for the next pass, its text kept apart.
@@ -204,6 +216,35 @@ pub struct WindowRequest {
     /// The frame had input, or some waited for the next, so it should draw
     /// again straight away.
     pub again: bool,
+    pub action: Option<WindowAction>,
+}
+
+/// What a window drawn without the system's frame asks the system to do in
+/// its place.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum WindowAction {
+    /// Moves the window with the pointer while the left button is held. The
+    /// system takes the pointer for it, which lets go of the button.
+    Move,
+    /// Resizes the window from an edge, as [`Self::Move`] moves it.
+    Resize(WindowEdge),
+    Minimize,
+    /// Maximizes it, or puts it back if it already is.
+    ToggleMaximize,
+    Close,
+}
+
+/// An edge or corner of the window.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum WindowEdge {
+    North,
+    NorthEast,
+    East,
+    SouthEast,
+    South,
+    SouthWest,
+    West,
+    NorthWest,
 }
 
 impl Modifiers {
@@ -259,6 +300,7 @@ impl Input {
         let later = match event {
             Event::Pointer(at) => Event::Pointer(at),
             Event::Pressed(button) => Event::Pressed(button),
+            Event::PressedAgain(button) => Event::PressedAgain(button),
             Event::Released(button) => Event::Released(button),
             Event::Scroll(by) => Event::Scroll(by),
             Event::Key { key, code, repeat } => Event::Key { key, code, repeat },
@@ -273,6 +315,7 @@ impl Input {
             Event::Modifiers(modifiers) => Event::Modifiers(modifiers),
             Event::Unfocused => Event::Unfocused,
             Event::Focused => Event::Focused,
+            Event::Maximized(maximized) => Event::Maximized(maximized),
         };
         self.later.push(Later::Event(later));
     }
@@ -308,7 +351,7 @@ impl Input {
     /// or up this pass.
     fn changes_twice(&self, event: Event) -> bool {
         let changed = self.pressed | self.released;
-        matches!(event, Event::Pressed(button) | Event::Released(button)
+        matches!(event, Event::Pressed(button) | Event::PressedAgain(button) | Event::Released(button)
             if changed & button as u8 != 0)
     }
 
@@ -319,6 +362,12 @@ impl Input {
             Event::Pressed(button) => {
                 self.held |= button as u8;
                 self.pressed |= button as u8;
+                self.again &= !(button as u8);
+            }
+            Event::PressedAgain(button) => {
+                self.held |= button as u8;
+                self.pressed |= button as u8;
+                self.again |= button as u8;
             }
             Event::Released(button) => {
                 self.held &= !(button as u8);
@@ -363,6 +412,7 @@ impl Input {
                 self.modifiers = Modifiers::default();
             }
             Event::Focused => self.focused = true,
+            Event::Maximized(maximized) => self.maximized = maximized,
         }
     }
 
@@ -402,6 +452,13 @@ impl Input {
     #[must_use]
     pub const fn pressed(&self, button: PointerButton) -> bool {
         self.pressed & button as u8 != 0
+    }
+
+    /// Whether its last press was the second of a double click, until it
+    /// goes down again.
+    #[must_use]
+    pub const fn pressed_again(&self, button: PointerButton) -> bool {
+        self.again & button as u8 != 0
     }
 
     /// Went up since the last pass.
@@ -445,6 +502,12 @@ impl Input {
     #[must_use]
     pub const fn focused(&self) -> bool {
         self.focused
+    }
+
+    /// Whether the window is maximized.
+    #[must_use]
+    pub const fn maximized(&self) -> bool {
+        self.maximized
     }
 
     /// In the order they were pressed.

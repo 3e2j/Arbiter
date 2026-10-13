@@ -8,16 +8,18 @@ mod assets;
 mod panels;
 mod reader;
 mod theme;
+mod title_bar;
 mod watch;
 mod workspace;
 
 use std::sync::Arc;
 
 use gui::{
+    components::window_edges,
     host::{App, Startup, Wake},
     input::Input,
     platform::window,
-    ui::Ui,
+    ui::{Element, Ui},
 };
 pub use panels::Capture;
 use panels::{Files, Output, Panel, Placeholder};
@@ -25,6 +27,9 @@ use project::{Log, Project};
 use reader::TreeReader;
 use watch::Watch;
 use workspace::{Place, Places, Workspace};
+
+/// How far in from the window's edges a drag resizes it, in logical pixels.
+const RESIZE_EDGE: f32 = 8.;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
@@ -102,6 +107,7 @@ impl Editor {
 impl App for Editor {
     const TITLE: &str = "Arbiter";
     const MIN_SIZE: [f32; 2] = [1024., 600.];
+    const DECORATED: bool = false;
     type Args = (Arc<Log>, Option<Project>);
 
     fn new(
@@ -158,6 +164,10 @@ impl App for Editor {
     }
 
     fn ui(&mut self, ui: &mut Ui) {
-        self.workspace.ui(ui);
+        ui.element(Element::column(), |ui| {
+            title_bar::ui(ui, Self::TITLE);
+            self.workspace.ui(ui);
+            window_edges(ui, RESIZE_EDGE);
+        });
     }
 }

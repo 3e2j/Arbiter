@@ -4,7 +4,7 @@
 
 use std::{error::Error, sync::Arc};
 
-use crate::canvas::{AtlasUpdate, Canvas, Glyphs, Rect};
+use crate::canvas::{AtlasUpdate, Canvas, Color, Glyphs, Rect};
 use crate::clipboard::Clipboard;
 use crate::input::{Event, Input, WindowRequest};
 use crate::keymap::Keymap;
@@ -19,6 +19,12 @@ pub trait App: Sized {
     /// The smallest the window can be, in logical pixels. It opens at this
     /// size.
     const MIN_SIZE: [f32; 2];
+    /// Whether the system draws the window's frame and title bar. Without
+    /// it, the app draws its own and asks for what the system's would do
+    /// through [`Ui::window`], such as with
+    /// [`title_bar`](crate::components::title_bar) and
+    /// [`window_edges`](crate::components::window_edges).
+    const DECORATED: bool = true;
     /// What [`run`](crate::platform::window::run) hands to [`App::new`].
     type Args;
     /// # Errors
@@ -111,7 +117,9 @@ impl<A: App> Host<A> {
 
     /// Runs one pass over `rect`, the window in logical pixels, with `scale`
     /// physical pixels per logical one, using up the events pushed since the
-    /// last.
+    /// last. With `rounded`, the page is drawn with the theme's
+    /// [`window_radius`](crate::ui::ThemeSizes::window_radius) and a border,
+    /// and what's past its corners left clear.
     ///
     /// A pass answers from last frame's rects. If a box moved or a button
     /// changed hands, those answers are stale, such as a row that landed under
@@ -124,7 +132,13 @@ impl<A: App> Host<A> {
     /// the boxes it affects were declared, or a box new in the second pass
     /// with no size yet, is drawn a frame late rather than left until the
     /// next input.
-    pub fn draw(&mut self, rect: Rect, scale: f32, canvas: &mut Canvas) -> WindowRequest {
+    pub fn draw(
+        &mut self,
+        rect: Rect,
+        scale: f32,
+        rounded: bool,
+        canvas: &mut Canvas,
+    ) -> WindowRequest {
         self.glyphs.set_scale(scale);
         self.glyphs.next_frame();
 
@@ -132,19 +146,26 @@ impl<A: App> Host<A> {
         self.app.input(&self.input);
 
         // 1st pass
-        let mut out = self.pass();
+        let mut out = self.pass(rounded);
 
         let fresh = self.input.fresh();
         self.input.clear();
         let shifted = self.layout.solve(rect, scale);
         if shifted || self.memory.changed() {
             // 2nd pass, corrects any UI that would otherwise appear incorrectly
-            out = self.pass();
+            let first = out;
+            out = self.pass(rounded);
+            // It has no input to act on, so it can't ask again.
+            out.action = out.action.or(first.action);
             self.layout.solve(rect, scale);
         }
 
         canvas.clear(rect);
-        canvas.background = self.theme.color.page;
+        canvas.background = if rounded {
+            Color::TRANSPARENT
+        } else {
+            self.theme.color.page
+        };
         self.layout.emit(canvas, &mut self.glyphs);
         if let Some(cursor) = self.layout.cursor(self.input.pointer()) {
             out.cursor = cursor;
@@ -153,7 +174,7 @@ impl<A: App> Host<A> {
         out
     }
 
-    fn pass(&mut self) -> WindowRequest {
+    fn pass(&mut self, rounded: bool) -> WindowRequest {
         let mut out = WindowRequest::default();
         self.layout.clear();
         let mut ui = Ui::root(
@@ -165,6 +186,12 @@ impl<A: App> Host<A> {
             &mut self.slots,
             &mut self.memory,
         );
+        if rounded {
+            let window = ui.style();
+            window.background = Some(self.theme.color.page);
+            window.border = Some(self.theme.border());
+            window.radius = [self.theme.size.window_radius; 4];
+        }
         self.app.ui(&mut ui);
         self.memory.end(&self.input);
         out

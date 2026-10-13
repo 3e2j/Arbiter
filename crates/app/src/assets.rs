@@ -78,10 +78,13 @@ pub enum Icon {
     Search,
     Settings,
     View,
+    WindowMaximize,
+    WindowMinimize,
+    WindowRestore,
 }
 
 impl Icon {
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 25] = [
         Self::Alert,
         Self::Check,
         Self::ChevronDown,
@@ -104,6 +107,9 @@ impl Icon {
         Self::Search,
         Self::Settings,
         Self::View,
+        Self::WindowMaximize,
+        Self::WindowMinimize,
+        Self::WindowRestore,
     ];
 
     /// Its name, for errors, and its SVG.
@@ -144,6 +150,9 @@ impl Icon {
             Self::Search => tabler!("search"),
             Self::Settings => tabler!("settings"),
             Self::View => tabler!("adjustments-horizontal"),
+            Self::WindowMaximize => tabler_edited!("window-maximize"),
+            Self::WindowMinimize => tabler_edited!("window-minimize"),
+            Self::WindowRestore => tabler_edited!("window-restore"),
         }
     }
 }

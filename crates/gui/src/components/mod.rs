@@ -17,6 +17,7 @@ mod row;
 mod rule;
 mod scroll;
 mod toolbar;
+mod window;
 
 pub use button::{Clicks, IconState, button, icon_button};
 pub use field::{TextField, text_field};
@@ -26,6 +27,7 @@ pub use row::row;
 pub use rule::rule;
 pub use scroll::{ListScroll, Scroll, list, scroll};
 pub use toolbar::{spacer, toolbar};
+pub use window::{title_bar, window_edges};
 
 #[cfg(test)]
 mod tests;
