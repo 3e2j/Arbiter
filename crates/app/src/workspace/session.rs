@@ -1,5 +1,5 @@
 //! The workspace as the project's session keeps it: each dock's tabs, one
-//! panel each by kind, and each band's size and split.
+//! panel each by kind, and each band's size, split and whether it's hidden.
 
 use serde::{Deserialize, Serialize};
 
@@ -43,6 +43,9 @@ struct SavedBand {
     band: Band,
     size: f32,
     ratio: f32,
+    /// Ignored once the band has no tabs, so an empty band can't open hidden.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    hidden: bool,
 }
 
 impl Session {
@@ -123,6 +126,7 @@ impl Workspace {
             if saved.ratio.is_finite() {
                 workspace.ratios[index] = saved.ratio.clamp(0., 1.);
             }
+            workspace.hidden[index] = saved.hidden && workspace.band_has_tabs(saved.band);
         }
         workspace
     }
@@ -151,6 +155,7 @@ impl Workspace {
                     band,
                     size: self.sizes[band.index()],
                     ratio: self.ratios[band.index()],
+                    hidden: self.hidden[band.index()],
                 })
                 .collect(),
         }
@@ -161,6 +166,7 @@ impl Workspace {
 mod tests {
     use super::*;
     use crate::panels::{Files, Output};
+    use crate::workspace::Side;
 
     const LAYOUT: [(&str, Place); 3] = [
         ("files", Place::LeftInnerTop),
@@ -196,6 +202,7 @@ mod tests {
         below.active = 1;
         workspace.sizes[Band::BelowMain.index()] = 300.;
         workspace.ratios[Band::LeftInner.index()] = 0.25;
+        workspace.toggle_side(Side::Left);
 
         let text = workspace.session().to_text().unwrap();
         let session = Session::parse(&text).unwrap();
@@ -213,6 +220,21 @@ mod tests {
             restored.ratios[Band::LeftInner.index()].to_bits(),
             0.25_f32.to_bits()
         );
+        assert!(!restored.side_shown(Side::Left));
+        assert!(restored.side_shown(Side::Bottom));
+    }
+
+    #[test]
+    fn a_band_without_tabs_doesnt_come_back_hidden() {
+        let text = r#"
+            [[bands]]
+            band = "left-inner"
+            size = 240.0
+            ratio = 0.5
+            hidden = true
+        "#;
+        let workspace = Workspace::new(&Session::parse(text).unwrap());
+        assert!(!workspace.hidden[Band::LeftInner.index()]);
     }
 
     #[test]
