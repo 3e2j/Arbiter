@@ -153,7 +153,6 @@ pub fn peel(bytes: &[u8]) -> formats::Result<Peeled<'_>> {
 
 #[cfg(test)]
 mod tests {
-    use formats::compression::Strategy;
     use formats::rarc::RarcFile;
     use formats::{ByteWriter, Encode};
 
@@ -178,9 +177,7 @@ mod tests {
 
     fn wrap(compression: Compression, data: &[u8]) -> Vec<u8> {
         let mut out = ByteWriter::new();
-        compression
-            .compress(data, Strategy::Parity, &mut out)
-            .unwrap();
+        compression.compress(data, &mut out).unwrap();
         out.finish()
     }
 

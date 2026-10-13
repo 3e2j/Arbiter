@@ -5,7 +5,7 @@ use diag::Diagnostics;
 use super::search::Tokens;
 use super::token::Token;
 use super::token::backref::Backreference;
-use super::{Strategy, decompressed_size, header, size_of};
+use super::{decompressed_size, header, size_of};
 use crate::{Be32, ByteReader, ByteWriter, Decode, Encode, Result, record};
 
 /// The flag byte: one bit per token in its group.
@@ -25,8 +25,6 @@ record! {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Yaz0 {
     pub data: Vec<u8>,
-    /// How [`encode`](Encode::encode) searches.
-    pub strategy: Strategy,
 }
 
 impl Yaz0 {
@@ -41,14 +39,13 @@ impl Decode for Yaz0 {
     fn decode(bytes: &[u8], _: &mut Diagnostics) -> Result<Self> {
         Ok(Self {
             data: decompress(bytes)?,
-            strategy: Strategy::Parity,
         })
     }
 }
 
 impl Encode for Yaz0 {
     fn encode(&self, out: &mut ByteWriter) -> Result<()> {
-        compress(&self.data, self.strategy, out)
+        compress(&self.data, out)
     }
 }
 
@@ -85,7 +82,7 @@ pub(super) fn decompress(input: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-pub(super) fn compress(input: &[u8], strategy: Strategy, out: &mut ByteWriter) -> Result<()> {
+pub(super) fn compress(input: &[u8], out: &mut ByteWriter) -> Result<()> {
     let size = size_of(input)?;
     out.bytes(&Yaz0::MAGIC);
     out.record(&Header {
@@ -98,7 +95,7 @@ pub(super) fn compress(input: &[u8], strategy: Strategy, out: &mut ByteWriter) -
     let mut group = Vec::with_capacity(GROUP_SIZE as usize * 3);
     let mut items = 0;
 
-    for token in Tokens::new(input, size, strategy) {
+    for token in Tokens::new(input, size) {
         match token {
             Token::Literal(byte) => {
                 flags |= TOP_FLAG_BIT >> items;

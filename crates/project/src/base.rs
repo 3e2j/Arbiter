@@ -463,10 +463,10 @@ mod tests {
     }
 
     fn yaz0(data: &[u8]) -> Vec<u8> {
-        use formats::{ByteWriter, compression::Strategy};
+        use formats::ByteWriter;
         let mut out = ByteWriter::new();
         formats::compression::Compression::Yaz0
-            .compress(data, Strategy::Parity, &mut out)
+            .compress(data, &mut out)
             .unwrap();
         out.finish()
     }

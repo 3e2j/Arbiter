@@ -30,17 +30,6 @@ pub enum Compression {
     Yay0,
 }
 
-/// How the encoder searches for back-references.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Strategy {
-    /// Nintendo's own search, so a retail file comes back byte for byte.
-    /// What decoding sets, since it's what made retail files.
-    Parity,
-    /// Chases longer back-references for a smaller file. Slower, and no
-    /// longer byte for byte with retail.
-    Extensive,
-}
-
 impl Compression {
     pub const ALL: [Self; 2] = [Self::Yaz0, Self::Yay0];
 
@@ -78,10 +67,10 @@ impl Compression {
     /// # Errors
     ///
     /// [`FormatError::TooLarge`] if `data` doesn't fit a 32-bit size.
-    pub fn compress(self, data: &[u8], strategy: Strategy, out: &mut ByteWriter) -> Result<()> {
+    pub fn compress(self, data: &[u8], out: &mut ByteWriter) -> Result<()> {
         match self {
-            Self::Yaz0 => yaz0::compress(data, strategy, out),
-            Self::Yay0 => yay0::compress(data, strategy, out),
+            Self::Yaz0 => yaz0::compress(data, out),
+            Self::Yay0 => yay0::compress(data, out),
         }
     }
 }
@@ -135,18 +124,16 @@ mod tests {
 
     fn round_trip(input: &[u8]) {
         for compression in Compression::ALL {
-            for strategy in [Strategy::Parity, Strategy::Extensive] {
-                let mut out = ByteWriter::new();
-                compression.compress(input, strategy, &mut out).unwrap();
-                let encoded = out.finish();
-                assert_eq!(Compression::detect(&encoded), Some(compression));
-                assert_eq!(
-                    compression.decompress(&encoded).unwrap(),
-                    input,
-                    "on {} bytes, {compression:?} {strategy:?}",
-                    input.len()
-                );
-            }
+            let mut out = ByteWriter::new();
+            compression.compress(input, &mut out).unwrap();
+            let encoded = out.finish();
+            assert_eq!(Compression::detect(&encoded), Some(compression));
+            assert_eq!(
+                compression.decompress(&encoded).unwrap(),
+                input,
+                "on {} bytes, {compression:?}",
+                input.len()
+            );
         }
     }
 

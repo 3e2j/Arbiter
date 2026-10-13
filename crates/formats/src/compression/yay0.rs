@@ -9,7 +9,7 @@ use diag::Diagnostics;
 use super::search::Tokens;
 use super::token::Token;
 use super::token::backref::Backreference;
-use super::{Strategy, decompressed_size, header, size_of};
+use super::{decompressed_size, header, size_of};
 use crate::{Be32, ByteReader, ByteWriter, Decode, Encode, FormatError, Record, Result, record};
 
 /// One mask word: one bit per token.
@@ -29,8 +29,6 @@ record! {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Yay0 {
     pub data: Vec<u8>,
-    /// How [`encode`](Encode::encode) searches.
-    pub strategy: Strategy,
 }
 
 impl Yay0 {
@@ -45,14 +43,13 @@ impl Decode for Yay0 {
     fn decode(bytes: &[u8], _: &mut Diagnostics) -> Result<Self> {
         Ok(Self {
             data: decompress(bytes)?,
-            strategy: Strategy::Parity,
         })
     }
 }
 
 impl Encode for Yay0 {
     fn encode(&self, out: &mut ByteWriter) -> Result<()> {
-        compress(&self.data, self.strategy, out)
+        compress(&self.data, out)
     }
 }
 
@@ -93,7 +90,7 @@ pub(super) fn decompress(input: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-pub(super) fn compress(input: &[u8], strategy: Strategy, out: &mut ByteWriter) -> Result<()> {
+pub(super) fn compress(input: &[u8], out: &mut ByteWriter) -> Result<()> {
     let size = size_of(input)?;
 
     let mut masks = ByteWriter::new();
@@ -102,7 +99,7 @@ pub(super) fn compress(input: &[u8], strategy: Strategy, out: &mut ByteWriter) -
     let mut mask: Mask = 0;
     let mut bits = 0;
 
-    for token in Tokens::new(input, size, strategy) {
+    for token in Tokens::new(input, size) {
         match token {
             Token::Literal(byte) => {
                 mask |= TOP_MASK_BIT >> bits;
