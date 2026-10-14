@@ -32,10 +32,12 @@ struct SavedDock {
     tabs: Vec<SavedTab>,
 }
 
-/// One panel. Where its own state goes, once panels save any.
+/// One panel, and what it keeps of itself, read by the panel alone.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct SavedTab {
     kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    state: Option<toml::Value>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -56,6 +58,7 @@ impl Session {
         for &(kind, place) in layout {
             let tab = SavedTab {
                 kind: kind.to_owned(),
+                state: None,
             };
             match docks.iter_mut().find(|dock| dock.place == place) {
                 Some(dock) => dock.tabs.push(tab),
@@ -104,8 +107,8 @@ impl Workspace {
         for saved in &session.docks {
             let dock = &mut workspace.docks[saved.place.index()];
             for (at, tab) in (0..).zip(&saved.tabs) {
-                let Some(panel) = Panel::open(&tab.kind) else {
-                    tracing::warn!("the session has a {} panel, which isn't one", tab.kind);
+                let Some(panel) = Panel::open(&tab.kind, tab.state.as_ref()) else {
+                    tracing::warn!("the session's {} panel can't open", tab.kind);
                     continue;
                 };
                 if !panel.places().contains(saved.place) {
@@ -131,29 +134,23 @@ impl Workspace {
         workspace
     }
 
-    /// As it's laid out now, for [`Workspace::new`] to bring back. Panels
-    /// that aren't [`Panel::saved`] are left out.
+    /// As it's laid out now, for [`Workspace::new`] to bring back.
     pub fn session(&self) -> Session {
         let docks = Place::ALL.into_iter().zip(&self.docks);
         Session {
             docks: docks
-                .filter_map(|(place, dock)| {
-                    let saved = |tab: &&Tab| tab.panel.saved();
-                    let tabs: Vec<_> = dock
+                .filter(|(_, dock)| !dock.tabs.is_empty())
+                .map(|(place, dock)| SavedDock {
+                    place,
+                    active: dock.active,
+                    tabs: dock
                         .tabs
                         .iter()
-                        .filter(saved)
                         .map(|tab| SavedTab {
                             kind: tab.panel.kind().to_owned(),
+                            state: tab.panel.state(),
                         })
-                        .collect();
-                    // Past an active tab that isn't kept is the next that is.
-                    let active = dock.tabs.iter().take(dock.active).filter(saved).count();
-                    (!tabs.is_empty()).then_some(SavedDock {
-                        place,
-                        active,
-                        tabs,
-                    })
+                        .collect(),
                 })
                 .collect(),
             bands: Band::ALL
@@ -172,7 +169,7 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::panels::{Files, Hex, Output};
+    use crate::panels::{Files, Output};
     use crate::workspace::Side;
 
     const LAYOUT: [(&str, Place); 3] = [
@@ -232,21 +229,27 @@ mod tests {
     }
 
     #[test]
-    fn a_file_isnt_saved_and_the_active_tab_stays_put() {
-        let mut workspace = Workspace::new(&Session::of(&[("Messages", Place::Main)]));
-        workspace.add(Place::Main, Panel::Hex(Hex::new("a.bin".into())));
-        let main = &mut workspace.docks[Place::Main.index()];
-        main.tabs.push(Tab {
-            panel: Panel::open("Messages").unwrap(),
-        });
-        main.active = 2;
-        let restored = Workspace::new(&workspace.session());
-        assert_eq!(titles(&restored, Place::Main), ["Messages", "Messages"]);
-        assert_eq!(restored.docks[Place::Main.index()].active, 1);
+    fn a_file_tab_comes_back_with_its_file_and_scroll() {
+        let text = r#"
+            [[docks]]
+            place = "main"
+            tabs = [{ kind = "file", state = { path = "files/a.bin", view = "hex", hex = { offset = 4096 } } }]
+        "#;
+        let session = Session::parse(text).unwrap();
+        let workspace = Workspace::new(&session);
+        assert_eq!(titles(&workspace, Place::Main), ["a.bin"]);
+        assert_eq!(workspace.session().docks, session.docks);
+    }
 
-        workspace.docks[Place::Main.index()].remove(0);
-        workspace.docks[Place::Main.index()].remove(1);
-        assert_eq!(workspace.session().docks, Session::default().docks);
+    #[test]
+    fn a_file_tab_without_its_file_is_left_out() {
+        let text = r#"
+            [[docks]]
+            place = "main"
+            tabs = [{ kind = "file" }, { kind = "file", state = { view = "hex" } }, { kind = "Messages" }]
+        "#;
+        let workspace = Workspace::new(&Session::parse(text).unwrap());
+        assert_eq!(titles(&workspace, Place::Main), ["Messages"]);
     }
 
     #[test]

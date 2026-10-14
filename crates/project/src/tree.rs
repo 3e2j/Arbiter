@@ -25,7 +25,7 @@ use std::{
 };
 
 use serde::{
-    Deserialize, Deserializer,
+    Deserialize, Deserializer, Serialize,
     de::{IgnoredAny, MapAccess, Visitor},
 };
 
@@ -198,13 +198,14 @@ impl Narrowed {
 
 /// What a tree's siblings are sorted by, after folders, which always come
 /// first. The default is how a tree is read.
-#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug, Serialize, Deserialize)]
 pub struct SortOrder {
     pub key: SortKey,
     pub descending: bool,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum SortKey {
     /// Ignoring ASCII case.
     #[default]

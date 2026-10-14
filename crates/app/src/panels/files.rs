@@ -12,6 +12,8 @@ use gui::{
     keymap::{AppCommand, Chord, ChordAction, KeyContext, Keymap},
     ui::{Align, Border, Direction, Element, Length, TextStyle, Ui},
 };
+use serde::{Deserialize, Serialize};
+
 use project::{
     git::GitStatus,
     tree::{
@@ -37,7 +39,8 @@ const FILES: KeyContext = KeyContext("files");
 /// Focuses the search, Ctrl+F by default.
 const SEARCH: ChordAction = ChordAction::Command(AppCommand("files.search"));
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 enum Tab {
     Project,
     Game,
@@ -61,6 +64,32 @@ enum Popover {
     Filter,
     /// Their order, and how they're shown.
     View,
+}
+
+/// How the panel shows its trees, as the session keeps it. Anything left
+/// out is as a new panel has it.
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(default)]
+pub struct FilesView {
+    tab: Tab,
+    /// [`TreeFilter::modded`]. Its editions are bits in one read's edition
+    /// list, so they aren't kept.
+    modded: bool,
+    compact: bool,
+    letters: bool,
+    order: SortOrder,
+}
+
+impl Default for FilesView {
+    fn default() -> Self {
+        Self {
+            tab: Tab::Project,
+            modded: false,
+            compact: true,
+            letters: true,
+            order: SortOrder::default(),
+        }
+    }
 }
 
 /// The open folders, a bit per node by [`NodeId::index`].
@@ -191,18 +220,44 @@ impl Files {
     }
 
     pub fn new() -> Self {
+        let view = FilesView::default();
         Self {
             opened: None,
-            tab: Tab::Project,
+            tab: view.tab,
             search: TextField::default(),
-            filter: TreeFilter::default(),
-            compact: true,
-            letters: true,
-            order: SortOrder::default(),
+            filter: TreeFilter {
+                modded: view.modded,
+                ..TreeFilter::default()
+            },
+            compact: view.compact,
+            letters: view.letters,
+            order: view.order,
             popover: None,
             active: false,
             picked: None,
         }
+    }
+
+    pub const fn view(&self) -> FilesView {
+        FilesView {
+            tab: self.tab,
+            modded: self.filter.modded,
+            compact: self.compact,
+            letters: self.letters,
+            order: self.order,
+        }
+    }
+
+    /// Shows its trees as `view` says, keeping what each tab has open.
+    pub fn set_view(&mut self, view: FilesView) {
+        self.tab = view.tab;
+        self.filter.modded = view.modded;
+        self.compact = view.compact;
+        self.letters = view.letters;
+        if view.order != self.order {
+            self.sort(view.order);
+        }
+        self.restale();
     }
 
     /// Shows `trees` in place of what was shown, every folder closed.
@@ -747,4 +802,57 @@ fn regions(ui: &mut Ui, tree: &Tree, editions: u32) {
 /// A game ID's region, its fourth letter.
 fn region(id: &str) -> Option<&str> {
     id.get(3..4)
+}
+
+#[cfg(test)]
+mod tests {
+    use project::tree::SortKey;
+
+    use super::super::Panel;
+    use super::*;
+
+    fn view(panel: &Panel) -> FilesView {
+        match panel {
+            Panel::Files(files) => files.view(),
+            _ => FilesView::default(),
+        }
+    }
+
+    #[test]
+    fn a_files_view_comes_back_from_its_state() {
+        let text = r#"
+            tab = "game"
+            modded = true
+            compact = false
+            order = { key = "type", descending = true }
+        "#;
+        let mut panel = Panel::Files(Files::new());
+        panel.restore(toml::from_str(text).unwrap());
+        let mut again = Panel::Files(Files::new());
+        again.restore(panel.state().unwrap());
+        assert_eq!(view(&again), view(&panel));
+        let FilesView {
+            tab,
+            modded,
+            compact,
+            letters,
+            order,
+        } = view(&again);
+        assert_eq!(tab, Tab::Game);
+        assert!(modded && !compact && letters);
+        assert_eq!(
+            order,
+            SortOrder {
+                key: SortKey::Type,
+                descending: true
+            }
+        );
+    }
+
+    #[test]
+    fn unreadable_state_leaves_a_panel_as_it_was() {
+        let mut panel = Panel::Files(Files::new());
+        panel.restore(toml::from_str("tab = \"nowhere\"").unwrap());
+        assert_eq!(view(&panel), FilesView::default());
+    }
 }

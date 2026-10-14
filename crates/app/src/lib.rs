@@ -97,6 +97,14 @@ impl Editor {
         if let Some(files) = self.files() {
             files.close();
         }
+        // The session's file tabs, which open before the project does.
+        if let Some(loader) = &self.loader {
+            for panel in self.workspace.panels_mut() {
+                if let Panel::Hex(hex) = panel {
+                    loader.ask(root.join(hex.path()));
+                }
+            }
+        }
         // Its first batch asks for the first read, once watching.
         let matters = move |path: &str| project.trees_read(path);
         self.watch = match Watch::new(root, matters, self.wake.clone()) {
@@ -121,15 +129,15 @@ impl Editor {
         let (Some(project), Some(loader)) = (&self.project, &self.loader) else {
             return;
         };
-        let path = project.root.join(path);
         if self
             .workspace
             .show(|panel| matches!(panel, Panel::Hex(hex) if hex.path() == path))
         {
             return;
         }
-        loader.ask(path.clone());
-        self.workspace.add(Place::Main, Panel::Hex(Hex::new(path)));
+        loader.ask(project.root.join(path));
+        self.workspace
+            .add(Place::Main, Panel::Hex(Hex::new(path.to_owned())));
     }
 
     fn files(&mut self) -> Option<&mut Files> {
@@ -191,9 +199,12 @@ impl App for Editor {
             Some(Err(err)) => tracing::warn!("can't read the project's files: {err}"),
             None => {}
         }
+        let root = self.project.as_ref().map(|project| &project.root);
         for (path, read) in self.loader.iter().flat_map(Loader::take) {
             let hex = self.workspace.panels_mut().find_map(|panel| match panel {
-                Panel::Hex(hex) if hex.path() == path => Some(hex),
+                Panel::Hex(hex) if root.is_some_and(|root| root.join(hex.path()) == path) => {
+                    Some(hex)
+                }
                 _ => None,
             });
             // Closed before it was read.

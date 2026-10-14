@@ -24,13 +24,31 @@ pub enum Panel {
 }
 
 impl Panel {
-    /// A new panel of `kind`, or `None` when no panel is.
-    pub fn open(kind: &str) -> Option<Self> {
-        match kind {
-            Files::KIND => Some(Self::Files(Files::new())),
-            Output::KIND => Some(Self::Output(Output::new())),
-            _ => Placeholder::open(kind).map(Self::Placeholder),
+    /// A panel of `kind` given back what [`Self::state`] kept, or `None`
+    /// when no panel is. A file's tab can't open without its state.
+    pub fn open(kind: &str, state: Option<&toml::Value>) -> Option<Self> {
+        let mut panel = match kind {
+            Files::KIND => Self::Files(Files::new()),
+            Hex::KIND => {
+                let Some(state) = state else {
+                    tracing::warn!("the session has a file tab without its file");
+                    return None;
+                };
+                return match state.clone().try_into() {
+                    Ok(state) => Some(Self::Hex(Hex::from_state(state))),
+                    Err(err) => {
+                        tracing::warn!("a file tab in the session isn't readable: {err}");
+                        None
+                    }
+                };
+            }
+            Output::KIND => Self::Output(Output::new()),
+            _ => Self::Placeholder(Placeholder::open(kind)?),
+        };
+        if let Some(state) = state {
+            panel.restore(state.clone());
         }
+        Some(panel)
     }
 
     /// What [`Self::open`] makes it from, which stays put when its title
@@ -44,6 +62,31 @@ impl Panel {
         }
     }
 
+    /// What it keeps of itself in the session, if anything.
+    pub fn state(&self) -> Option<toml::Value> {
+        match self {
+            Self::Files(panel) => toml::Value::try_from(panel.view())
+                .inspect_err(|err| tracing::warn!("can't save the files panel's view: {err}"))
+                .ok(),
+            Self::Hex(panel) => toml::Value::try_from(panel.state())
+                .inspect_err(|err| tracing::warn!("can't save {}'s tab: {err}", panel.path()))
+                .ok(),
+            Self::Output(_) | Self::Placeholder(_) => None,
+        }
+    }
+
+    /// Takes back what [`Self::state`] kept. State it can't read leaves it
+    /// as it was. A file's tab takes its state in [`Self::open`] instead.
+    pub fn restore(&mut self, state: toml::Value) {
+        match self {
+            Self::Files(panel) => match state.try_into() {
+                Ok(view) => panel.set_view(view),
+                Err(err) => tracing::warn!("the files panel's view isn't readable: {err}"),
+            },
+            Self::Hex(_) | Self::Output(_) | Self::Placeholder(_) => {}
+        }
+    }
+
     pub fn title(&self) -> &str {
         match self {
             Self::Files(_) => Files::TITLE,
@@ -51,12 +94,6 @@ impl Panel {
             Self::Output(_) => Output::TITLE,
             Self::Placeholder(panel) => panel.title(),
         }
-    }
-
-    /// Whether the session keeps it, which takes [`Self::open`] making it
-    /// again from its kind alone. A file's panel needs its file too.
-    pub const fn saved(&self) -> bool {
-        !matches!(self, Self::Hex(_))
     }
 
     /// Where its tab may sit.

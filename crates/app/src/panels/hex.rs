@@ -1,16 +1,14 @@
 //! A file's bytes, sixteen to a row: the offset, each byte in hex, then the
 //! bytes as ASCII. What any file opens in until its format has an editor.
 
-use std::{
-    fmt::Write,
-    io,
-    path::{Path, PathBuf},
-};
+use std::{fmt::Write, io};
 
 use gui::{
     components::{ListScroll, indexed_list, notice, rule},
     ui::{Element, TextStyle, Ui},
 };
+
+use serde::{Deserialize, Serialize};
 
 use crate::workspace::Places;
 
@@ -28,9 +26,8 @@ enum Bytes {
 }
 
 pub struct Hex {
-    path: PathBuf,
-    /// The file's name.
-    title: String,
+    /// Relative to the project's root.
+    path: String,
     bytes: Bytes,
     scroll: ListScroll,
 }
@@ -43,39 +40,87 @@ struct Columns {
     ascii: String,
 }
 
+/// A file's tab as the session keeps it. Hex is its only view until a
+/// format has an editor, and each view keeps its own place, so flicking
+/// between them doesn't lose it.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct FileState {
+    /// Relative to the project's root.
+    path: String,
+    #[serde(default)]
+    view: View,
+    #[serde(default)]
+    hex: HexState,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+enum View {
+    #[default]
+    Hex,
+}
+
+#[derive(Serialize, Deserialize, Default, Debug, PartialEq, Eq)]
+struct HexState {
+    /// The first byte of the row at the top, which outlasts a change to
+    /// [`ROW`].
+    offset: usize,
+}
+
 impl Hex {
-    pub const KIND: &str = "hex";
+    /// A file's tab, not the hex view's, so the session's tab holds once
+    /// the file can show in other views.
+    pub const KIND: &str = "file";
     pub const PLACES: Places = Places::MAIN;
 
-    /// Shows `path` once it's [`Self::load`]ed.
-    pub fn new(path: PathBuf) -> Self {
-        let title = path.file_name().map_or_else(
-            || path.display().to_string(),
-            |name| name.to_string_lossy().into_owned(),
-        );
+    /// Shows `path`, relative to the project's root, once it's
+    /// [`Self::load`]ed.
+    pub const fn new(path: String) -> Self {
         Self {
             path,
-            title,
             bytes: Bytes::Loading,
             scroll: ListScroll::TOP,
         }
     }
 
-    pub fn path(&self) -> &Path {
+    /// Scrolled where `state` left it, once it's [`Self::load`]ed.
+    pub fn from_state(state: FileState) -> Self {
+        let View::Hex = state.view;
+        Self {
+            scroll: ListScroll {
+                top: state.hex.offset / ROW,
+                offset: 0.,
+            },
+            ..Self::new(state.path)
+        }
+    }
+
+    pub fn state(&self) -> FileState {
+        FileState {
+            path: self.path.clone(),
+            view: View::Hex,
+            hex: HexState {
+                offset: self.scroll.top * ROW,
+            },
+        }
+    }
+
+    pub fn path(&self) -> &str {
         &self.path
     }
 
+    /// The file's name.
     pub fn title(&self) -> &str {
-        &self.title
+        self.path.rsplit('/').next().unwrap_or(&self.path)
     }
 
-    /// Shows what reading the file gave, from the top.
+    /// Shows what reading the file gave, where it was scrolled to. A list
+    /// that's now shorter clamps it.
     pub fn load(&mut self, read: io::Result<Vec<u8>>) {
         self.bytes = match read {
             Ok(bytes) => Bytes::Read(bytes),
-            Err(err) => Bytes::Failed(format!("Can't read {}: {err}", self.path.display())),
+            Err(err) => Bytes::Failed(format!("Can't read {}: {err}", self.path)),
         };
-        self.scroll = ListScroll::TOP;
     }
 
     pub fn ui(&mut self, ui: &mut Ui) {
@@ -201,6 +246,18 @@ mod tests {
         assert_eq!(columns.hex.len(), ROW * 3);
         assert!(columns.hex.starts_with("61 62 "));
         assert_eq!(columns.ascii, "ab");
+    }
+
+    #[test]
+    fn its_state_keeps_the_top_rows_first_byte() {
+        let state = |offset| FileState {
+            path: "files/a.bin".to_owned(),
+            view: View::Hex,
+            hex: HexState { offset },
+        };
+        let hex = Hex::from_state(state(0x1A35));
+        assert_eq!(hex.title(), "a.bin");
+        assert_eq!(hex.state(), state(0x1A30));
     }
 
     #[test]
