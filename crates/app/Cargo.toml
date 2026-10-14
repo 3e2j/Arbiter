@@ -11,6 +11,7 @@ name = "app"
 [dependencies]
 arbiter-gui.workspace = true
 arbiter-project.workspace = true
+dirs.workspace = true
 notify.workspace = true
 serde.workspace = true
 thiserror.workspace = true

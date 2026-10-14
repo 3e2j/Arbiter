@@ -43,6 +43,7 @@ harfrust = "0.12"
 arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
 unicode-segmentation = "1"
 notify = "8"
+dirs = "7"
 
 [workspace.lints.clippy]
 pedantic = { level = "deny", priority = -1 }

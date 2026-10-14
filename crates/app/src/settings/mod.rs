@@ -3,7 +3,10 @@
 //! Each page lives in its own module and draws its rows from [`widgets`].
 
 mod appearance;
+mod file;
 mod widgets;
+
+use std::path::PathBuf;
 
 use gui::{
     anim::{Tween, ease_out},
@@ -47,9 +50,12 @@ enum Page {
     Keybinds,
 }
 
-// TODO: saved to the user's settings file, once there is one.
 #[derive(Default)]
 pub struct Settings {
+    /// Where they're kept, unless there's nowhere to.
+    path: Option<PathBuf>,
+    /// As last read or written, to write again only once they change.
+    written: file::Saved,
     open: bool,
     page: Page,
     appearance: Appearance,
@@ -90,6 +96,38 @@ impl Settings {
     pub fn bind(keymap: &mut Keymap) {
         let chord = Chord::new(Key::Char(','), Modifiers::COMMAND);
         keymap.bind(chord, KeyContext::GLOBAL, Some(TOGGLE));
+    }
+
+    /// As the settings file left them.
+    pub fn load() -> Self {
+        let path = file::path();
+        if path.is_none() {
+            tracing::warn!("there's no folder for settings, so they won't be kept");
+        }
+        let written = path.as_deref().map(file::read).unwrap_or_default();
+        Self {
+            path,
+            written,
+            appearance: Appearance::new(written.appearance),
+            ..Self::default()
+        }
+    }
+
+    /// Writes the settings file, if anything changed since it was last.
+    pub fn save(&mut self) {
+        let saved = file::Saved {
+            appearance: self.appearance.saved(),
+        };
+        if saved == self.written {
+            return;
+        }
+        // Even if it fails, so it's tried once a change rather than a pass.
+        self.written = saved;
+        if let Some(path) = &self.path
+            && let Err(err) = file::write(path, saved)
+        {
+            tracing::warn!("can't save the settings: {err}");
+        }
     }
 
     pub const fn palette(&self) -> Palette {
@@ -145,6 +183,8 @@ impl Settings {
     /// The panel over the open box while it's open. Declare it last in the
     /// box it covers, so it draws over what's there.
     pub fn panel(&mut self, ui: &mut Ui) {
+        // Before the closed check, so it catches the pass that closed it.
+        self.save();
         if !self.open {
             return;
         }

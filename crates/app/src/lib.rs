@@ -164,7 +164,7 @@ impl App for Editor {
         start: &mut Startup,
         (log, project): Self::Args,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let settings = Settings::default();
+        let settings = Settings::load();
         let fonts = assets::fonts(start.glyphs)?;
         assets::load_icons(start.glyphs)?;
         start.theme = theme::theme(settings.palette(), fonts);
@@ -233,6 +233,7 @@ impl App for Editor {
     }
 
     fn on_close(&mut self) {
+        self.settings.save();
         let Some(project) = &self.project else {
             return;
         };

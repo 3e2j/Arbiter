@@ -6,12 +6,23 @@ use gui::{
     ui::{Align, Border, Direction, Element, Length, Ui},
 };
 
+use serde::{Deserialize, Serialize};
+
+use super::file::lenient;
 use super::widgets::{label, row, sized};
 use crate::assets::Icon;
 use crate::theme::Palette;
 
 /// Fits a theme's name under its picture.
 const CARD: f32 = 110.;
+
+/// What's kept of the page in the settings file.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[serde(default)]
+pub struct Saved {
+    #[serde(deserialize_with = "lenient")]
+    pub theme: Palette,
+}
 
 #[derive(Default)]
 pub struct Appearance {
@@ -23,6 +34,21 @@ pub struct Appearance {
 }
 
 impl Appearance {
+    /// As `saved` left it, worn from the start.
+    pub fn new(saved: Saved) -> Self {
+        Self {
+            palette: saved.theme,
+            worn: saved.theme,
+            ..Self::default()
+        }
+    }
+
+    pub const fn saved(&self) -> Saved {
+        Saved {
+            theme: self.palette,
+        }
+    }
+
     pub const fn palette(&self) -> Palette {
         self.palette
     }

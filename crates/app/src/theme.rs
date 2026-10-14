@@ -8,10 +8,13 @@ use gui::{
     ui::{Theme, ThemeColors, ThemeFonts, ThemeIcons, ThemeSizes},
 };
 
+use serde::{Deserialize, Serialize};
+
 use crate::assets::Icon;
 
 /// A set of colours the user picks in Settings.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Palette {
     #[default]
     Default,
