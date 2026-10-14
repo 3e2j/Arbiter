@@ -23,7 +23,7 @@ pub fn ui(ui: &mut Ui, title: &str, settings: &mut Settings) {
         };
         ui.element(inset, |ui| ui.text(theme.ui_text(theme.color.dim), title));
         spacer(ui);
-        settings.ui(ui);
+        settings.gear(ui);
         let maximize = if ui.input().maximized() {
             Icon::WindowRestore
         } else {

@@ -27,6 +27,11 @@ impl Palette {
         }
     }
 
+    /// What it gives the theme, also drawn in its card in Settings.
+    pub const fn colors(self) -> ThemeColors {
+        self.swatch().colors()
+    }
+
     const fn swatch(self) -> Swatch {
         match self {
             Self::Default => Swatch {
@@ -127,7 +132,7 @@ pub const HOVER_THUMB: ThumbShow = ThumbShow::Hover {
 /// In `palette`, with the fonts from [`assets::fonts`](crate::assets::fonts).
 pub const fn theme(palette: Palette, font: ThemeFonts) -> Theme {
     Theme {
-        color: palette.swatch().colors(),
+        color: palette.colors(),
         size: SIZES,
         font,
     }

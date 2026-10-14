@@ -168,6 +168,7 @@ impl App for Editor {
         let fonts = assets::fonts(start.glyphs)?;
         start.theme = theme::theme(settings.palette(), fonts);
         assets::load_icons(start.glyphs)?;
+        Settings::bind(&mut start.keymap);
         Files::bind(&mut start.keymap);
         Hex::bind(&mut start.keymap);
         let session = project
@@ -227,7 +228,7 @@ impl App for Editor {
     }
 
     fn take_theme(&mut self) -> Option<Theme> {
-        let palette = self.settings.take_picked()?;
+        let palette = self.settings.take_changed()?;
         Some(theme::theme(palette, self.fonts))
     }
 
@@ -247,20 +248,24 @@ impl App for Editor {
     fn ui(&mut self, ui: &mut Ui) {
         ui.element(Element::column(), |ui| {
             title_bar::ui(ui, Self::TITLE, &mut self.settings);
-            self.workspace.ui(ui);
-            let picked: Vec<_> = self
-                .workspace
-                .panels_mut()
-                .filter_map(|panel| match panel {
-                    Panel::Files(files) => files.take_picked(),
-                    _ => None,
-                })
-                .collect();
-            for path in &picked {
-                self.open_file(path);
-                ui.stale();
-            }
-            status_bar::ui(ui, &mut self.workspace);
+            // Settings covers everything under the title bar.
+            ui.element(Element::column(), |ui| {
+                self.workspace.ui(ui);
+                let picked: Vec<_> = self
+                    .workspace
+                    .panels_mut()
+                    .filter_map(|panel| match panel {
+                        Panel::Files(files) => files.take_picked(),
+                        _ => None,
+                    })
+                    .collect();
+                for path in &picked {
+                    self.open_file(path);
+                    ui.stale();
+                }
+                status_bar::ui(ui, &mut self.workspace);
+                self.settings.panel(ui);
+            });
             window_edges(ui, RESIZE_EDGE);
         });
     }
