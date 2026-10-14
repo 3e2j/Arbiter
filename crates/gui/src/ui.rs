@@ -27,7 +27,7 @@ use crate::layout::{Layout, Slot};
 pub use crate::layout::{
     Align, Anchor, Border, Direction, Element, Length, TextCaret, TextHighlight, TextStyle,
 };
-pub use crate::theme::{Theme, ThemeColors, ThemeFonts, ThemeSizes};
+pub use crate::theme::{Theme, ThemeColors, ThemeFonts, ThemeIcons, ThemeSizes};
 
 pub struct Ui<'a> {
     open: Open,

@@ -5,8 +5,10 @@
 use gui::{
     canvas::Color,
     components::ThumbShow,
-    ui::{Theme, ThemeColors, ThemeFonts, ThemeSizes},
+    ui::{Theme, ThemeColors, ThemeFonts, ThemeIcons, ThemeSizes},
 };
+
+use crate::assets::Icon;
 
 /// A set of colours the user picks in Settings.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -130,10 +132,15 @@ pub const HOVER_THUMB: ThumbShow = ThumbShow::Hover {
 };
 
 /// In `palette`, with the fonts from [`assets::fonts`](crate::assets::fonts).
-pub const fn theme(palette: Palette, font: ThemeFonts) -> Theme {
+/// Call it after [`assets::load_icons`](crate::assets::load_icons).
+pub fn theme(palette: Palette, font: ThemeFonts) -> Theme {
     Theme {
         color: palette.colors(),
         size: SIZES,
         font,
+        icon: ThemeIcons {
+            check: Icon::Check.into(),
+            down: Icon::ChevronDown.into(),
+        },
     }
 }

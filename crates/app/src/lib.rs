@@ -166,8 +166,8 @@ impl App for Editor {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let settings = Settings::default();
         let fonts = assets::fonts(start.glyphs)?;
-        start.theme = theme::theme(settings.palette(), fonts);
         assets::load_icons(start.glyphs)?;
+        start.theme = theme::theme(settings.palette(), fonts);
         Settings::bind(&mut start.keymap);
         Files::bind(&mut start.keymap);
         Hex::bind(&mut start.keymap);

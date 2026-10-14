@@ -4,7 +4,7 @@
 //! read back with [`Ui::theme`](crate::ui::Ui::theme). gui has no values of
 //! its own, so [`components`](crate::components) look however the app says.
 
-use crate::canvas::{Color, FontId};
+use crate::canvas::{Color, FontId, IconId};
 use crate::layout::{Border, TextStyle};
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
@@ -12,6 +12,7 @@ pub struct Theme {
     pub color: ThemeColors,
     pub size: ThemeSizes,
     pub font: ThemeFonts,
+    pub icon: ThemeIcons,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -79,6 +80,15 @@ pub struct ThemeFonts {
     pub ui: FontId,
     /// Code and logs, where text lines up in columns.
     pub buffer: FontId,
+}
+
+/// The icons components draw, from the app's own set.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct ThemeIcons {
+    /// By the picked choice in a list.
+    pub check: IconId,
+    /// On a button that opens a list under it.
+    pub down: IconId,
 }
 
 impl Theme {

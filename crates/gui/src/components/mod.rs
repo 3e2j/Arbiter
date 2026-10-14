@@ -10,6 +10,7 @@
 //! [`Ui::keyed`](crate::ui::Ui::keyed).
 
 mod button;
+mod dropdown;
 mod field;
 mod menu;
 mod notice;
@@ -21,6 +22,7 @@ mod toolbar;
 mod window;
 
 pub use button::{Clicks, IconState, button, icon_button};
+pub use dropdown::{Choice, Chosen, Dropdown, dropdown};
 pub use field::{TextField, text_field};
 pub use menu::{ContextMenu, MenuItem, context_menu};
 pub use notice::notice;

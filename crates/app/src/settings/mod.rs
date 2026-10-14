@@ -143,11 +143,13 @@ impl Settings {
         if !self.open {
             return;
         }
-        if ui
-            .input()
-            .keys()
-            .iter()
-            .any(|press| press.key == Key::Escape)
+        // Not while a box in it has the keyboard, which takes Escape itself.
+        if !ui.typing()
+            && ui
+                .input()
+                .keys()
+                .iter()
+                .any(|press| press.key == Key::Escape)
         {
             self.show(false);
             return;

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use super::*;
 use crate::canvas::IconId;
-use crate::input::{Event, PointerButton, WindowAction};
+use crate::input::{Event, Key, PointerButton, WindowAction};
 use crate::ui::tests::Kept;
 use crate::ui::{Element, Length};
 
@@ -373,4 +373,107 @@ fn escape_closes_a_menu() {
     });
     menu_pass(&mut kept, &mut state, false);
     assert!(!state.is_open());
+}
+
+/// Three choices in a dropdown 100 across and 10 tall, the second picked.
+fn dropdown_pass(kept: &mut Kept, state: &mut Dropdown) -> Chosen {
+    dropdown_typing(kept, state).0
+}
+
+/// [`dropdown_pass`], and whether a box has the keyboard after it.
+fn dropdown_typing(kept: &mut Kept, state: &mut Dropdown) -> (Chosen, bool) {
+    let choices = [
+        Choice::new("Noto Sans"),
+        Choice::new("Inter"),
+        Choice::new("Geist"),
+    ];
+    kept.pass(|ui| {
+        let chosen = ui.element(fixed(100., 10.), |ui| dropdown(ui, state, &choices, 1));
+        (chosen, ui.typing())
+    })
+}
+
+/// A dropdown pressed open, its list laid out with its rows ten tall from
+/// `[0, 14]`, and holding the keyboard.
+fn open_dropdown(kept: &mut Kept, state: &mut Dropdown) {
+    kept.theme.size.row = 10.;
+    kept.theme.size.gap = 0.;
+    dropdown_pass(kept, state);
+    press_dropdown(kept, state, [50., 5.]);
+    dropdown_pass(kept, state);
+    assert!(state.is_open());
+}
+
+/// Presses and lets go at `at`, returning what the last pass gave.
+fn press_dropdown(kept: &mut Kept, state: &mut Dropdown, at: [f32; 2]) -> Chosen {
+    kept.input.push(Event::Pointer(Some(at)));
+    dropdown_pass(kept, state);
+    kept.input.push(Event::Pressed(PointerButton::Left));
+    dropdown_pass(kept, state);
+    kept.input.push(Event::Released(PointerButton::Left));
+    dropdown_pass(kept, state)
+}
+
+fn key(kept: &mut Kept, key: Key) {
+    kept.input.push(Event::Key {
+        key,
+        code: None,
+        repeat: false,
+    });
+}
+
+#[test]
+fn a_dropdown_choice_under_the_pointer_is_marked_and_clicking_it_picks_it() {
+    let mut kept = Kept::default();
+    let mut state = Dropdown::CLOSED;
+    open_dropdown(&mut kept, &mut state);
+    kept.input.push(Event::Pointer(Some([50., 39.])));
+    dropdown_pass(&mut kept, &mut state);
+    assert_eq!(dropdown_pass(&mut kept, &mut state).marked, Some(2));
+    let chosen = press_dropdown(&mut kept, &mut state, [50., 39.]);
+    assert_eq!(chosen.picked, Some(2));
+    assert!(!state.is_open());
+}
+
+#[test]
+fn a_dropdown_closes_on_a_press_outside_it_or_on_its_button() {
+    let mut kept = Kept::default();
+    let mut state = Dropdown::CLOSED;
+    open_dropdown(&mut kept, &mut state);
+    let chosen = press_dropdown(&mut kept, &mut state, [50., 90.]);
+    assert_eq!(chosen, Chosen::default());
+    assert!(!state.is_open());
+    open_dropdown(&mut kept, &mut state);
+    press_dropdown(&mut kept, &mut state, [50., 5.]);
+    assert!(!state.is_open());
+}
+
+#[test]
+fn a_dropdown_marks_with_up_and_down_from_the_picked_choice_and_enter_picks() {
+    let mut kept = Kept::default();
+    let mut state = Dropdown::CLOSED;
+    open_dropdown(&mut kept, &mut state);
+    assert_eq!(dropdown_pass(&mut kept, &mut state).marked, None);
+    key(&mut kept, Key::Down);
+    assert_eq!(dropdown_pass(&mut kept, &mut state).marked, Some(2));
+    // Wraps around the end.
+    key(&mut kept, Key::Down);
+    assert_eq!(dropdown_pass(&mut kept, &mut state).marked, Some(0));
+    key(&mut kept, Key::Up);
+    key(&mut kept, Key::Enter);
+    assert_eq!(dropdown_pass(&mut kept, &mut state).picked, Some(2));
+    assert!(!state.is_open());
+}
+
+#[test]
+fn a_dropdown_holds_the_keyboard_only_while_open() {
+    let mut kept = Kept::default();
+    let mut state = Dropdown::CLOSED;
+    open_dropdown(&mut kept, &mut state);
+    assert!(dropdown_typing(&mut kept, &mut state).1);
+    key(&mut kept, Key::Escape);
+    // Still held the pass it lets go, so Escape isn't taken twice.
+    assert!(dropdown_typing(&mut kept, &mut state).1);
+    assert!(!state.is_open());
+    assert!(!dropdown_typing(&mut kept, &mut state).1);
 }
