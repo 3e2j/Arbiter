@@ -2,12 +2,13 @@
 //! bytes as ASCII. What any file opens in until its format has an editor.
 //!
 //! Dragging across either column selects bytes, lit in both. Ctrl+C copies
-//! them as the ASCII column shows them, and Ctrl+Shift+C as hex.
+//! them as the ASCII column shows them, and Ctrl+Shift+C as hex, as does the
+//! right click menu.
 
 use std::{fmt::Write, io, ops::Range};
 
 use gui::{
-    components::{ListScroll, indexed_list, notice, rule},
+    components::{ContextMenu, ListScroll, MenuItem, context_menu, indexed_list, notice, rule},
     input::{Key, Modifiers, PointerButton},
     keymap::{AppCommand, Chord, ChordAction, KeyContext, Keymap},
     ui::{Element, TextHighlight, TextStyle, Ui},
@@ -54,6 +55,7 @@ struct Picking {
     /// Whether the last press landed on the panel, so its keys are the
     /// panel's.
     active: bool,
+    menu: ContextMenu,
 }
 
 /// Bytes by their place in the file, both ends included, so a press picks
@@ -238,8 +240,13 @@ impl Hex {
                 let byte = row * ROW + column.byte(glyph(ui, style(c.text), &heading.hex, x));
                 Some((column, byte.min(bytes.len() - 1)))
             };
-            self.picking.drag(ui, held, bytes, at);
+            if self.picking.menu.open_on_right_press(ui) {
+                self.picking.point(ui, at);
+            } else {
+                self.picking.drag(ui, held, bytes, at);
+            }
         });
+        self.picking.menu(ui, bytes);
     }
 }
 
@@ -248,6 +255,7 @@ impl Picking {
         selection: None,
         dragging: None,
         active: false,
+        menu: ContextMenu::CLOSED,
     };
 
     /// Copies or selects as `ui`'s keys say, while the panel is active and
@@ -258,20 +266,61 @@ impl Picking {
         }
         let input = ui.input();
         for &press in input.keys() {
-            let action = ui.keymap().resolve(press, &[HEX]);
-            let picked = self.picked(bytes);
-            match action {
-                Some(COPY) if !picked.is_empty() => ui.clipboard().copy(&as_shown(picked)),
-                Some(COPY_HEX) if !picked.is_empty() => ui.clipboard().copy(&as_hex(picked)),
-                Some(SELECT_ALL) => {
-                    self.selection = Some(Selection {
-                        anchor: 0,
-                        caret: bytes.len() - 1,
-                    });
-                    ui.clipboard().select(&as_shown(bytes));
-                }
-                _ => {}
+            if let Some(action) = ui.keymap().resolve(press, &[HEX]) {
+                self.act(ui, action, bytes);
             }
+        }
+    }
+
+    /// The right click menu while it's open, doing what's clicked.
+    fn menu(&mut self, ui: &mut Ui, bytes: &[u8]) {
+        let picked = !self.picked(bytes).is_empty();
+        let items = [
+            (MenuItem::new("Copy").enabled(picked), COPY),
+            (MenuItem::new("Copy as Hex").enabled(picked), COPY_HEX),
+            (MenuItem::new("Select All"), SELECT_ALL),
+        ];
+        let labels = items.map(|(item, _)| item);
+        let clicked = context_menu(ui, &mut self.menu, &labels);
+        if let Some((_, action)) = clicked.and_then(|index| items.get(index)) {
+            self.act(ui, *action, bytes);
+        }
+    }
+
+    /// Does `action` if it's one of the panel's, from its keys or its menu.
+    fn act(&mut self, ui: &mut Ui, action: ChordAction, bytes: &[u8]) {
+        let picked = self.picked(bytes);
+        match action {
+            COPY if !picked.is_empty() => ui.clipboard().copy(&as_shown(picked)),
+            COPY_HEX if !picked.is_empty() => ui.clipboard().copy(&as_hex(picked)),
+            SELECT_ALL => {
+                self.selection = Some(Selection {
+                    anchor: 0,
+                    caret: bytes.len() - 1,
+                });
+                ui.clipboard().select(&as_shown(bytes));
+            }
+            _ => {}
+        }
+    }
+
+    /// Selects the byte `at` finds under the pointer, for a right click,
+    /// unless it's already selected so the menu acts on the selection.
+    fn point(
+        &mut self,
+        ui: &mut Ui,
+        at: impl FnOnce(&mut Ui, Option<Column>) -> Option<(Column, usize)>,
+    ) {
+        let Some((_, byte)) = at(ui, None) else {
+            return;
+        };
+        let range = self.selection.map(Selection::range);
+        if !range.is_some_and(|range| range.contains(&byte)) {
+            self.selection = Some(Selection {
+                anchor: byte,
+                caret: byte,
+            });
+            ui.stale();
         }
     }
 

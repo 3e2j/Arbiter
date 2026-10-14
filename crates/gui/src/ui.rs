@@ -199,6 +199,12 @@ impl<'a> Ui<'a> {
         self.open.rect
     }
 
+    /// The window's rect last pass, in logical pixels. `None` the first pass.
+    #[must_use]
+    pub fn window_rect(&self) -> Option<Rect> {
+        self.layout.window()
+    }
+
     /// How far the open box's children reached last pass along each axis,
     /// without its padding.
     #[must_use]

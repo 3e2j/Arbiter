@@ -248,3 +248,104 @@ fn double_clicking_a_title_bar_toggles_maximized() {
         Some(WindowAction::ToggleMaximize)
     );
 }
+
+/// A box filling the window that opens `state` and asks for the left
+/// button, under a menu of three items, the middle one disabled while
+/// `disabled`. Returns whether the box opened it, whether the box was
+/// pressed, and what the menu clicked.
+fn menu_pass(
+    kept: &mut Kept,
+    state: &mut ContextMenu,
+    disabled: bool,
+) -> (bool, bool, Option<usize>) {
+    let items = [
+        MenuItem::new("Copy"),
+        MenuItem::new("Copy as Hex").enabled(!disabled),
+        MenuItem::new("Select All"),
+    ];
+    kept.pass(|ui| {
+        let (opened, pressed) = ui.element(fixed(300., 100.), |ui| {
+            (
+                state.open_on_right_press(ui),
+                ui.pressed(PointerButton::Left),
+            )
+        });
+        (opened, pressed, context_menu(ui, state, &items))
+    })
+}
+
+/// A menu opened at `[20, 20]`, its rows ten tall from there, laid out.
+fn open_menu(kept: &mut Kept, state: &mut ContextMenu, disabled: bool) {
+    kept.theme.size.row = 10.;
+    kept.theme.size.gap = 0.;
+    menu_pass(kept, state, disabled);
+    kept.input.push(Event::Pointer(Some([20., 20.])));
+    menu_pass(kept, state, disabled);
+    kept.input.push(Event::Pressed(PointerButton::Right));
+    assert!(menu_pass(kept, state, disabled).0);
+    kept.input.push(Event::Released(PointerButton::Right));
+    menu_pass(kept, state, disabled);
+    assert!(state.is_open());
+}
+
+/// Clicks at `at`, returning what the last pass of [`menu_pass`] gave.
+fn click_menu(
+    kept: &mut Kept,
+    state: &mut ContextMenu,
+    disabled: bool,
+    at: [f32; 2],
+) -> (bool, bool, Option<usize>) {
+    kept.input.push(Event::Pointer(Some(at)));
+    menu_pass(kept, state, disabled);
+    kept.input.push(Event::Pressed(PointerButton::Left));
+    let pressed = menu_pass(kept, state, disabled);
+    kept.input.push(Event::Released(PointerButton::Left));
+    let released = menu_pass(kept, state, disabled);
+    (pressed.1 || released.1, released.1, released.2)
+}
+
+#[test]
+fn a_menu_item_clicked_is_returned_and_closes_it() {
+    let mut kept = Kept::default();
+    let mut state = ContextMenu::CLOSED;
+    open_menu(&mut kept, &mut state, false);
+    let (under, _, clicked) = click_menu(&mut kept, &mut state, false, [25., 35.]);
+    assert_eq!(clicked, Some(1));
+    assert!(!under);
+    assert!(!state.is_open());
+}
+
+#[test]
+fn a_disabled_menu_item_cant_be_clicked() {
+    let mut kept = Kept::default();
+    let mut state = ContextMenu::CLOSED;
+    open_menu(&mut kept, &mut state, true);
+    let (_, _, clicked) = click_menu(&mut kept, &mut state, true, [25., 35.]);
+    assert_eq!(clicked, None);
+    assert!(state.is_open());
+}
+
+#[test]
+fn a_press_outside_a_menu_closes_it_without_reaching_under() {
+    let mut kept = Kept::default();
+    let mut state = ContextMenu::CLOSED;
+    open_menu(&mut kept, &mut state, false);
+    let (under, _, clicked) = click_menu(&mut kept, &mut state, false, [5., 90.]);
+    assert_eq!(clicked, None);
+    assert!(!under);
+    assert!(!state.is_open());
+}
+
+#[test]
+fn escape_closes_a_menu() {
+    let mut kept = Kept::default();
+    let mut state = ContextMenu::CLOSED;
+    open_menu(&mut kept, &mut state, false);
+    kept.input.push(Event::Key {
+        key: crate::input::Key::Escape,
+        code: None,
+        repeat: false,
+    });
+    menu_pass(&mut kept, &mut state, false);
+    assert!(!state.is_open());
+}

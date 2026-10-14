@@ -11,6 +11,7 @@
 
 mod button;
 mod field;
+mod menu;
 mod notice;
 mod popover;
 mod row;
@@ -21,6 +22,7 @@ mod window;
 
 pub use button::{Clicks, IconState, button, icon_button};
 pub use field::{TextField, text_field};
+pub use menu::{ContextMenu, MenuItem, context_menu};
 pub use notice::notice;
 pub use popover::popover;
 pub use row::row;

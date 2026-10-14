@@ -528,6 +528,11 @@ impl Layout {
         self.last_slots.get(&(parent, slot)).copied()
     }
 
+    /// The window's box last pass, `None` before the first.
+    pub fn window(&self) -> Option<Rect> {
+        self.last.first().map(|node| node.rect)
+    }
+
     pub fn last_rect(&self, last: Option<usize>) -> Option<Rect> {
         last.map(|last| self.last[last].rect)
     }
