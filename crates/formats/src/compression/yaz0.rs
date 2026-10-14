@@ -95,7 +95,7 @@ pub(super) fn compress(input: &[u8], out: &mut ByteWriter) -> Result<()> {
     let mut group = Vec::with_capacity(GROUP_SIZE as usize * 3);
     let mut items = 0;
 
-    for token in Tokens::new(input, size) {
+    for token in Tokens::new(input) {
         match token {
             Token::Literal(byte) => {
                 flags |= TOP_FLAG_BIT >> items;

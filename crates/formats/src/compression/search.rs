@@ -26,13 +26,11 @@ pub struct Tokens<'a> {
 }
 
 impl<'a> Tokens<'a> {
-    /// `input` must fit a 32-bit size, which every format's header checks
-    /// first.
-    pub fn new(input: &'a [u8], size: u32) -> Self {
+    pub fn new(input: &'a [u8]) -> Self {
         Self {
             data: input,
             pos: 0,
-            chains: Chains::new(size),
+            chains: Chains::new(),
             pending: None,
         }
     }
@@ -82,45 +80,45 @@ const HASH_BITS: u32 = 13;
 /// Buckets of three-byte prefixes: one chain per hash of the [`MAX_DISTANCE`]
 /// window's worth of positions.
 const HASH_SIZE: usize = 1 << HASH_BITS;
-/// Position zero is a real one, so absence needs its own value.
-const NO_POSITION: u32 = u32::MAX;
+/// Positions a back-reference can reach, and so the slots the window holds.
+const WINDOW: usize = MAX_DISTANCE as usize;
+/// A position by its place in the window.
+type Slot = u16;
+/// A slot is a position modulo [`WINDOW`], which a power of two makes a mask.
+const SLOT_MASK: Slot = MAX_DISTANCE - 1;
+const _: () = assert!(WINDOW.is_power_of_two());
+/// Slot zero is a real one, so absence needs its own value.
+const NO_SLOT: Slot = Slot::MAX;
 
-/// Where a three-byte prefix turned up earlier: one chain per hash bucket,
-/// threaded backward through the input by `prev`.
+/// Positions from the last [`WINDOW`], chained by the hash of their first three
+/// bytes, so a search compares only positions sharing a prefix instead of
+/// brute forcing the whole window. A long run or short repeat still puts the
+/// whole window in one chain.
 ///
-/// Brute force is O(n * [`MAX_DISTANCE`]): compare every position against
-/// its whole window. Filing positions by their 3-byte prefix limits each
-/// comparison to positions sharing that prefix, cheap when prefixes are
-/// varied. But nothing caps chain length: if a whole window shares one
-/// prefix (a long run, a short repeat), the chain holds all of it, and the
-/// walk is back to O([`MAX_DISTANCE`]) per position.
-///
-/// Flat tables, not `HashMap`: `head` is the bucket lookup, a collision
-/// just costs one wasted byte comparison in `longest_match`, never a wrong
-/// match, and `prev` threads every position sharing a bucket, not just the
-/// newest. Both are sized once up front, no per-position allocation.
+/// Chains run oldest first and positions leave in the order they were filed,
+/// so each is a queue. A hash collision costs a wasted comparison, never a
+/// wrong match.
 struct Chains {
-    /// Newest position filed under each prefix.
-    head: Box<[u32]>,
-    /// Previous position sharing a position's prefix.
-    prev: Box<[u32]>,
+    /// Oldest slot filed under each bucket.
+    head: Box<[Slot]>,
+    /// Newest slot filed under each bucket.
+    tail: Box<[Slot]>,
+    /// The next newer slot sharing a slot's bucket.
+    next: Box<[Slot]>,
     /// First position not yet filed. Positions go in in order and once each.
-    unfiled: u32,
-    /// The chain within the window, reused so the search does not allocate
-    /// per byte.
-    in_window: Vec<u32>,
+    unfiled: usize,
+    /// `unfiled`'s slot.
+    unfiled_slot: Slot,
 }
 
 impl Chains {
-    fn new(len: u32) -> Self {
+    fn new() -> Self {
         Self {
-            head: vec![NO_POSITION; HASH_SIZE].into_boxed_slice(),
-            // Every slot is written when its position is filed, before
-            // anything reads it, so zeroed memory skips writing `NO_POSITION`
-            // into all `len` slots up front.
-            prev: vec![0; len as usize].into_boxed_slice(),
+            head: vec![NO_SLOT; HASH_SIZE].into_boxed_slice(),
+            tail: vec![NO_SLOT; HASH_SIZE].into_boxed_slice(),
+            next: vec![NO_SLOT; WINDOW].into_boxed_slice(),
             unfiled: 0,
-            in_window: Vec::with_capacity(MAX_DISTANCE as usize),
+            unfiled_slot: 0,
         }
     }
 
@@ -132,16 +130,34 @@ impl Chains {
         (key.wrapping_mul(2_654_435_761) >> (32 - HASH_BITS)) as usize
     }
 
-    /// Files every position below `end`. The last `MIN_MATCH - 1` bytes have
-    /// no full-length prefix and are left out.
+    /// Files every position below `end`, dropping each one that falls out of
+    /// reach. The last `MIN_LENGTH - 1` bytes have no full-length prefix and
+    /// are left out.
     fn fill(&mut self, data: &[u8], end: usize) {
         let end = end.min(data.len().saturating_sub(MIN_LENGTH as usize - 1));
-        while (self.unfiled as usize) < end {
+        while self.unfiled < end {
             let at = self.unfiled;
-            let bucket = Self::hash(data, at as usize);
-            self.prev[at as usize] = self.head[bucket];
-            self.head[bucket] = at;
+            // The window's oldest position, so the oldest in its bucket. It
+            // shares `at`'s slot, so it has to leave first.
+            if let Some(gone) = at.checked_sub(WINDOW) {
+                let bucket = Self::hash(data, gone);
+                let after = self.next[usize::from(self.head[bucket])];
+                self.head[bucket] = after;
+                if after == NO_SLOT {
+                    self.tail[bucket] = NO_SLOT;
+                }
+            }
+
+            let bucket = Self::hash(data, at);
+            let slot = self.unfiled_slot;
+            self.next[usize::from(slot)] = NO_SLOT;
+            match self.tail[bucket] {
+                NO_SLOT => self.head[bucket] = slot,
+                newest => self.next[usize::from(newest)] = slot,
+            }
+            self.tail[bucket] = slot;
             self.unfiled += 1;
+            self.unfiled_slot = slot.wrapping_add(1) & SLOT_MASK;
         }
     }
 
@@ -153,25 +169,21 @@ impl Chains {
         if pos + MIN_LENGTH as usize > data.len() {
             return None;
         }
-        self.fill(data, pos + 1);
+        self.fill(data, pos);
 
-        let window = pos.saturating_sub(MAX_DISTANCE as usize);
         let ceiling = (data.len() - pos).min(MAX_LENGTH as usize);
-
-        self.in_window.clear();
-        let mut candidate = self.prev[pos];
-        while candidate != NO_POSITION && candidate as usize >= window {
-            self.in_window.push(candidate);
-            candidate = self.prev[candidate as usize];
-        }
-
         let mut best: Option<Backreference> = None;
         // Nintendo parity: the window is scanned front to back and a candidate
         // only replaces a strictly shorter one, so ties go to the earliest.
         // This tie-break only changes which equal-length match is picked, not
-        // the final filesize. The chain runs newest first, hence the reverse.
-        for &candidate in self.in_window.iter().rev() {
-            let start = candidate as usize;
+        // the final filesize. Chains run oldest first already.
+        let mut slot = self.head[Self::hash(data, pos)];
+        while slot != NO_SLOT {
+            // Every filed position is within `WINDOW` behind `pos`, so its
+            // distance back fits the slot mask.
+            let start =
+                pos - 1 - ((pos - 1).wrapping_sub(usize::from(slot)) & usize::from(SLOT_MASK));
+            slot = self.next[usize::from(slot)];
             let best_len = best.map_or(0, |matched| matched.length() as usize);
 
             // The byte right after `best_len` must also match, or the candidate

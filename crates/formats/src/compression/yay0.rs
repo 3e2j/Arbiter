@@ -99,7 +99,7 @@ pub(super) fn compress(input: &[u8], out: &mut ByteWriter) -> Result<()> {
     let mut mask: Mask = 0;
     let mut bits = 0;
 
-    for token in Tokens::new(input, size) {
+    for token in Tokens::new(input) {
         match token {
             Token::Literal(byte) => {
                 mask |= TOP_MASK_BIT >> bits;
