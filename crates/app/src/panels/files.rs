@@ -24,6 +24,7 @@ use project::{
 
 use crate::assets::Icon;
 use crate::popover::{WIDTH as POPOVER, check, heading};
+use crate::theme::HOVER_THUMB;
 use crate::workspace::Places;
 
 /// Width of the gutter's bar.
@@ -179,6 +180,7 @@ impl Open {
 impl View {
     fn new() -> Self {
         Self {
+            scroll: ListScroll::TOP.thumb(HOVER_THUMB),
             stale: true,
             ..Self::default()
         }
@@ -329,7 +331,7 @@ impl Files {
     fn renarrow(&mut self) {
         for view in self.opened.iter_mut().flat_map(|opened| &mut opened.views) {
             view.flipped.clear();
-            view.scroll = ListScroll::TOP;
+            view.scroll.jump_to_top();
             view.stale = true;
         }
     }

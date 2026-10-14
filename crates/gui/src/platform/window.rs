@@ -214,7 +214,8 @@ impl<A: App> ApplicationHandler for Runner<A> {
             }
             WindowEvent::Moved(_) => open.pacer.set_interval(interval(&open.window)),
             WindowEvent::RedrawRequested => {
-                open.pacer.drew(Instant::now());
+                let now = Instant::now();
+                let elapsed = open.pacer.drew(now);
                 let size = open.window.inner_size();
                 open.gpu
                     .resize([size.width, size.height], open.window.scale_factor());
@@ -222,9 +223,12 @@ impl<A: App> ApplicationHandler for Runner<A> {
                 let rounded = !A::DECORATED && !open.maximized && open.gpu.transparent();
                 let out = self
                     .host
-                    .draw(open.rect(), scale, rounded, &mut self.canvas);
+                    .draw(open.rect(), scale, rounded, elapsed, &mut self.canvas);
                 if out.again {
                     open.pacer.request();
+                }
+                if let Some(at) = out.redraw_in.and_then(|after| now.checked_add(after)) {
+                    open.pacer.request_at(at);
                 }
                 if out.cursor != open.cursor {
                     open.cursor = out.cursor;

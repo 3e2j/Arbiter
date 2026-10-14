@@ -27,7 +27,7 @@ pub use notice::notice;
 pub use popover::popover;
 pub use row::row;
 pub use rule::rule;
-pub use scroll::{ListScroll, Scroll, indexed_list, list, scroll};
+pub use scroll::{ListScroll, Scroll, ThumbShow, indexed_list, list, scroll};
 pub use toolbar::{spacer, toolbar};
 pub use window::{title_bar, window_edges};
 

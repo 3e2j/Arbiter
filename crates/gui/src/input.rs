@@ -6,6 +6,7 @@
 //! except [`Input::motion`].
 
 use std::ops::Range;
+use std::time::Duration;
 
 /// A pointer button.
 #[repr(u8)]
@@ -198,6 +199,8 @@ pub struct Input {
     fresh: bool,
     focused: bool,
     maximized: bool,
+    /// Seconds, from [`Self::set_elapsed`].
+    elapsed: f32,
 }
 
 /// An [`Event`] waiting for the next pass, its text kept apart.
@@ -216,6 +219,10 @@ pub struct WindowRequest {
     /// The frame had input, or some waited for the next, so it should draw
     /// again straight away.
     pub again: bool,
+    /// Something changes over time, so a frame should come this long after
+    /// this one, though no sooner than the next refresh, with
+    /// [`Input::elapsed`] since this one.
+    pub redraw_in: Option<Duration>,
     pub action: Option<WindowAction>,
 }
 
@@ -421,6 +428,7 @@ impl Input {
     /// [`Self::trickle`].
     pub fn clear(&mut self) {
         self.fresh = false;
+        self.elapsed = 0.;
         self.focused = false;
         self.pressed = 0;
         self.released = 0;
@@ -429,6 +437,17 @@ impl Input {
         self.keys.clear();
         self.keys_at.clear();
         self.text.clear();
+    }
+
+    /// Seconds since the last frame, counted once a frame. Zero unless the
+    /// last frame asked for this one by [`WindowRequest::redraw_in`].
+    #[must_use]
+    pub const fn elapsed(&self) -> f32 {
+        self.elapsed
+    }
+
+    pub(crate) const fn set_elapsed(&mut self, seconds: f32) {
+        self.elapsed = seconds;
     }
 
     /// Whether anything came in since the last pass.

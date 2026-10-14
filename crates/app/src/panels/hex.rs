@@ -149,10 +149,7 @@ impl Hex {
     pub fn from_state(state: FileState) -> Self {
         let View::Hex = state.view;
         Self {
-            scroll: ListScroll {
-                top: state.hex.offset / ROW,
-                offset: 0.,
-            },
+            scroll: ListScroll::at(state.hex.offset / ROW),
             ..Self::new(state.path)
         }
     }

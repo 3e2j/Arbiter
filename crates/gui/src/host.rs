@@ -2,7 +2,7 @@
 //!
 //! The window drives a [`Host`] and never calls the app itself.
 
-use std::{error::Error, sync::Arc};
+use std::{error::Error, sync::Arc, time::Duration};
 
 use crate::canvas::{AtlasUpdate, Canvas, Color, Glyphs, Rect};
 use crate::clipboard::Clipboard;
@@ -88,6 +88,9 @@ pub struct Host<A> {
     layout: Layout,
     slots: Slots,
     memory: Memory,
+    /// Whether the last frame asked for another, as
+    /// [`WindowRequest::redraw_in`] says.
+    timed: bool,
 }
 
 impl<A: App> Host<A> {
@@ -112,6 +115,7 @@ impl<A: App> Host<A> {
             layout: Layout::default(),
             slots: Slots::default(),
             memory: Memory::new(Clipboard::system(), keymap),
+            timed: false,
         })
     }
 
@@ -120,32 +124,26 @@ impl<A: App> Host<A> {
         self.input.push(event);
     }
 
-    /// Runs one pass over `rect`, the window in logical pixels, with `scale`
-    /// physical pixels per logical one, using up the events pushed since the
-    /// last. With `rounded`, the page is drawn with the theme's
+    /// Draws a frame over `rect`, the window in logical pixels, with `scale`
+    /// physical pixels per logical one, from the events pushed since the last.
+    /// `rounded` draws the page with the theme's
     /// [`window_radius`](crate::ui::ThemeSizes::window_radius) and a border,
-    /// and what's past its corners left clear.
-    ///
-    /// A pass answers from last frame's rects. If a box moved or a button
-    /// changed hands, those answers are stale, such as a row that landed under
-    /// the pointer without its hover (which is incorrect), so the pass runs again
-    /// with no new input and that one is drawn instead. So a frame never runs
-    /// more than two passes, a button that changes twice since the last waits
-    /// for the next frame, which [`WindowRequest::again`] asks for.
-    ///
-    /// A frame with input also asks for the next, so whatever it changed after
-    /// the boxes it affects were declared, or a box new in the second pass
-    /// with no size yet, is drawn a frame late rather than left until the
-    /// next input.
+    /// clear past its corners. `elapsed` is the time since the last frame.
     pub fn draw(
         &mut self,
         rect: Rect,
         scale: f32,
         rounded: bool,
+        elapsed: Duration,
         canvas: &mut Canvas,
     ) -> WindowRequest {
         self.glyphs.set_scale(scale);
         self.glyphs.next_frame();
+        // After sitting idle, elapsed says nothing about what's moving, and
+        // would finish at once whatever starts this frame.
+        if self.timed {
+            self.input.set_elapsed(elapsed.as_secs_f32());
+        }
 
         // Act on input before any pass
         self.app.input(&self.input);
@@ -160,7 +158,9 @@ impl<A: App> Host<A> {
         self.input.clear();
         let shifted = self.layout.solve(rect, scale);
         if shifted || self.memory.changed() {
-            // 2nd pass, corrects any UI that would otherwise appear incorrectly
+            // The 1st pass answered from last frame's rects, stale now a box
+            // moved or a button changed hands. Never a 3rd: what's still
+            // stale waits for the next frame.
             let first = out;
             out = self.pass(rounded);
             // It has no input to act on, so it can't ask again.
@@ -178,6 +178,9 @@ impl<A: App> Host<A> {
         if let Some(cursor) = self.layout.cursor(self.input.pointer()) {
             out.cursor = cursor;
         }
+        self.timed = out.redraw_in.is_some();
+        // Input can change boxes after they were declared, so show that
+        // next frame rather than at the next input.
         out.again = self.input.trickle() || fresh;
         out
     }

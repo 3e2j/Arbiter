@@ -4,6 +4,7 @@
 
 use gui::{
     canvas::Color,
+    components::ThumbShow,
     ui::{Theme, ThemeColors, ThemeFonts, ThemeSizes},
 };
 
@@ -114,6 +115,13 @@ const SIZES: ThemeSizes = ThemeSizes {
     line: 1.,
     scroll_bar: 6.,
     window_radius: 10.,
+};
+
+/// A scroll thumb that shows while the pointer is over what it scrolls, and
+/// for a second after.
+pub const HOVER_THUMB: ThumbShow = ThumbShow::Hover {
+    hold: 1.,
+    fade: 0.25,
 };
 
 /// In `palette`, with the fonts from [`assets::fonts`](crate::assets::fonts).

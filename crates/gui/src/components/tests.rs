@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use super::*;
 use crate::canvas::IconId;
 use crate::input::{Event, PointerButton, WindowAction};
@@ -39,7 +41,7 @@ fn a_list_declares_only_the_rows_in_view() {
         list_pass(&mut kept, &mut state),
         (2..13).collect::<Vec<_>>()
     );
-    assert_eq!(state, ListScroll { top: 2, offset: 5. });
+    assert_eq!((state.top, state.offset), (2, 5.));
 }
 
 #[test]
@@ -52,16 +54,10 @@ fn a_list_stops_at_both_ends() {
     kept.input.push(Event::Scroll([0., -10_000.]));
     list_pass(&mut kept, &mut state);
     assert!(state.at_end(100., 10., 100));
-    assert_eq!(
-        state,
-        ListScroll {
-            top: 90,
-            offset: 0.
-        }
-    );
+    assert_eq!((state.top, state.offset), (90, 0.));
     kept.input.push(Event::Scroll([0., 10_000.]));
     list_pass(&mut kept, &mut state);
-    assert_eq!(state, ListScroll::TOP);
+    assert_eq!((state.top, state.offset), (0, 0.));
 }
 
 #[test]
@@ -78,16 +74,45 @@ fn dragging_the_thumb_scrolls_as_far_as_it_moves() {
     kept.input.push(Event::Pointer(Some([294., 5.])));
     kept.input.push(Event::Pressed(PointerButton::Left));
     list_pass(&mut kept, &mut state);
-    assert_eq!(state, ListScroll::TOP);
+    assert_eq!((state.top, state.offset), (0, 0.));
     kept.input.push(Event::Pointer(Some([294., 47.])));
     list_pass(&mut kept, &mut state);
-    assert_eq!(
-        state,
-        ListScroll {
-            top: 45,
-            offset: 0.
-        }
-    );
+    assert_eq!((state.top, state.offset), (45, 0.));
+}
+
+#[test]
+fn a_hover_thumb_waits_out_its_hold_in_one_frame_then_fades() {
+    let mut kept = Kept::default();
+    let mut state = ListScroll::TOP.thumb(ThumbShow::Hover {
+        hold: 1.,
+        fade: 0.25,
+    });
+    list_pass(&mut kept, &mut state);
+    kept.input.push(Event::Pointer(Some([5., 5.])));
+    list_pass(&mut kept, &mut state);
+    list_pass(&mut kept, &mut state);
+    assert_eq!(kept.out.redraw_in, None);
+    kept.input.push(Event::Pointer(None));
+    list_pass(&mut kept, &mut state);
+    assert_eq!(kept.out.redraw_in, Some(Duration::from_secs(1)));
+    kept.input.set_elapsed(1.);
+    list_pass(&mut kept, &mut state);
+    assert_eq!(kept.out.redraw_in, Some(Duration::ZERO));
+    kept.input.set_elapsed(0.25);
+    list_pass(&mut kept, &mut state);
+    assert_eq!(kept.out.redraw_in, None);
+}
+
+#[test]
+fn an_always_shown_thumb_asks_for_no_frames() {
+    let mut kept = Kept::default();
+    let mut state = ListScroll::TOP;
+    list_pass(&mut kept, &mut state);
+    kept.input.push(Event::Pointer(Some([5., 5.])));
+    list_pass(&mut kept, &mut state);
+    kept.input.push(Event::Pointer(None));
+    list_pass(&mut kept, &mut state);
+    assert_eq!(kept.out.redraw_in, None);
 }
 
 #[test]

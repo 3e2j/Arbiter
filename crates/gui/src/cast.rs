@@ -31,3 +31,9 @@ pub(crate) fn pixel_offset(v: f64) -> i32 {
 pub(crate) const fn count(v: usize) -> f32 {
     v as f32
 }
+
+/// A 0 to 255 value, such as a [`Color`](crate::canvas::Color)'s channel.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+pub(crate) fn byte(v: f32) -> u8 {
+    v.round() as u8
+}

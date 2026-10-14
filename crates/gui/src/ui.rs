@@ -16,6 +16,7 @@
 
 use std::collections::HashMap;
 use std::panic::Location;
+use std::time::Duration;
 
 use crate::canvas::{Color, Glyphs, IconId, Quad, Rect, Vertex};
 use crate::clipboard::Clipboard;
@@ -179,6 +180,28 @@ impl<'a> Ui<'a> {
 
     pub fn cursor(&mut self, cursor: CursorIcon) {
         self.out.cursor = cursor;
+    }
+
+    /// Seconds since the last frame, for what changes over time to move by,
+    /// as [`Input::elapsed`] says.
+    #[must_use]
+    pub const fn elapsed(&self) -> f32 {
+        self.input.elapsed()
+    }
+
+    /// Asks for the next frame at the next refresh, for something still
+    /// changing over time. Asked each pass until it settles.
+    pub fn animate(&mut self) {
+        self.redraw_in(0.);
+    }
+
+    /// Asks for a frame `seconds` from this one, for something that next
+    /// changes then, such as a delay running out. The soonest asked wins.
+    pub fn redraw_in(&mut self, seconds: f32) {
+        let Ok(after) = Duration::try_from_secs_f32(seconds.max(0.)) else {
+            return;
+        };
+        self.out.redraw_in = Some(self.out.redraw_in.map_or(after, |was| was.min(after)));
     }
 
     /// Grabs the pointer for this pass, as [`WindowRequest::grab`] says, so it

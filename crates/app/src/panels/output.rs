@@ -280,7 +280,7 @@ impl Output {
             if let Some(view) = view
                 && self.follow
             {
-                self.scroll = ListScroll::end(view, height, self.rows.len());
+                self.scroll.jump_to_end(view, height, self.rows.len());
             }
             let mut time = String::new();
             list(ui, &mut self.scroll, &self.rows, height, |ui, &index| {
@@ -301,7 +301,7 @@ impl Output {
             if button(ui, "Clear") {
                 self.lines.clear();
                 self.stale = true;
-                self.scroll = ListScroll::TOP;
+                self.scroll.jump_to_top();
                 self.follow = true;
             }
             spacer(ui);

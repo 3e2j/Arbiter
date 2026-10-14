@@ -15,7 +15,7 @@ pub use glyphs::{
     ShapedLine,
 };
 
-use crate::cast::sixteenths;
+use crate::cast::{byte, sixteenths};
 
 /// In logical pixels, from the window's top left.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -100,6 +100,13 @@ impl Color {
     pub const fn alpha(self, a: u8) -> Self {
         let [r, g, b, _] = self.0;
         Self([r, g, b, a])
+    }
+
+    /// With its alpha scaled by `opacity`, from 0 to 1.
+    #[must_use]
+    pub fn faded(self, opacity: f32) -> Self {
+        let [r, g, b, a] = self.0;
+        Self([r, g, b, byte(f32::from(a) * opacity.clamp(0., 1.))])
     }
 
     /// Linear RGBA, straight alpha, as the shaders blend in.

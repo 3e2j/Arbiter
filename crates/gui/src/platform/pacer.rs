@@ -12,6 +12,8 @@ pub struct Pacer {
     last_frame: Option<Instant>,
     /// Whether something changed since the last redraw.
     dirty: bool,
+    /// When the last redraw asked for the next, if it did.
+    timer: Option<Instant>,
 }
 
 impl Pacer {
@@ -21,6 +23,7 @@ impl Pacer {
             interval,
             last_frame: None,
             dirty: true,
+            timer: None,
         }
     }
 
@@ -36,23 +39,37 @@ impl Pacer {
         self.dirty = true;
     }
 
-    pub const fn drew(&mut self, now: Instant) {
+    /// Redraws at `at`, or as soon after as the interval allows. Each redraw
+    /// forgets it, so the frame drawn asks again if it still wants one.
+    pub fn request_at(&mut self, at: Instant) {
+        self.timer = Some(self.timer.map_or(at, |was| was.min(at)));
+    }
+
+    /// Returns how long since the last redraw, nothing before the first.
+    pub fn drew(&mut self, now: Instant) -> Duration {
+        let since = self
+            .last_frame
+            .map_or(Duration::ZERO, |last| now.saturating_duration_since(last));
         self.last_frame = Some(now);
+        self.timer = None;
+        since
     }
 
     /// Whether to redraw now. If not, but one is waiting, when it's due.
     pub fn poll(&mut self, now: Instant) -> (bool, Option<Instant>) {
-        if !self.dirty {
+        let wanted = if self.dirty { Some(now) } else { self.timer };
+        let Some(wanted) = wanted else {
             return (false, None);
-        }
+        };
         let due = self
             .interval
             .zip(self.last_frame)
-            .map_or(now, |(interval, last)| last + interval);
+            .map_or(wanted, |(interval, last)| wanted.max(last + interval));
         if now < due {
             return (false, Some(due));
         }
         self.dirty = false;
+        self.timer = None;
         (true, None)
     }
 }
@@ -68,6 +85,7 @@ mod tests {
             interval,
             last_frame: None,
             dirty: false,
+            timer: None,
         }
     }
 
@@ -104,5 +122,37 @@ mod tests {
         let mut pacer = pacer(None);
         pacer.set_interval(INTERVAL);
         assert_eq!(pacer.interval, None);
+    }
+
+    #[test]
+    fn a_timer_waits_for_its_time_without_redrawing() {
+        let mut pacer = pacer(Some(INTERVAL));
+        let start = Instant::now();
+        pacer.drew(start);
+        pacer.request_at(start + INTERVAL * 5);
+        assert_eq!(
+            pacer.poll(start + INTERVAL),
+            (false, Some(start + INTERVAL * 5))
+        );
+        assert_eq!(pacer.poll(start + INTERVAL * 5), (true, None));
+        assert_eq!(pacer.poll(start + INTERVAL * 5), (false, None));
+    }
+
+    #[test]
+    fn a_timer_sooner_than_the_interval_waits_for_it() {
+        let mut pacer = pacer(Some(INTERVAL));
+        let start = Instant::now();
+        pacer.drew(start);
+        pacer.request_at(start);
+        assert_eq!(pacer.poll(start), (false, Some(start + INTERVAL)));
+    }
+
+    #[test]
+    fn a_redraw_forgets_the_timer() {
+        let mut pacer = pacer(Some(INTERVAL));
+        let start = Instant::now();
+        pacer.request_at(start + INTERVAL);
+        pacer.drew(start);
+        assert_eq!(pacer.poll(start + INTERVAL), (false, None));
     }
 }
