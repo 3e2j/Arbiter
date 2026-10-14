@@ -258,6 +258,10 @@ impl Workspace {
             dock.rect = ui.rect();
             dock.ui(ui)
         });
+        if let Some(index) = out.close {
+            dock.remove(index);
+            return;
+        }
         if let Some((index, rect)) = out.held {
             self.grip = Some(Grip { place, index, rect });
         }

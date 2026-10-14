@@ -2,9 +2,9 @@
 
 use gui::{
     canvas::Rect,
-    components::{IconState, icon_button, rule},
+    components::{Clicks, IconState, icon_button, rule},
     input::{CursorIcon, PointerButton},
-    ui::{Align, Direction, Element, Length, ThemeSizes, Ui},
+    ui::{Align, Anchor, Direction, Element, Length, ThemeSizes, Ui},
 };
 
 use std::ops::Range;
@@ -54,6 +54,7 @@ impl Dock {
     /// under it, so it reads as part of the panel below. The menu button sits
     /// at the right end. Tabs that would be cut off there are left out, the
     /// active one never, and arrows beside the menu step through them all.
+    /// A tab under the pointer shows a close button over its right end.
     ///
     pub(super) fn ui(&mut self, ui: &mut Ui) -> DockOut {
         let mut out = DockOut::default();
@@ -98,17 +99,20 @@ impl Dock {
             for (key, (i, (tab, &width))) in tabs.skip(range.start).take(range.len()) {
                 let fits = (room - TAB_GAP).max(0.);
                 let state = Self::tab(ui, key, tab.panel.title(), width.min(fits), i == active);
-                if state.pressed {
+                if state.left == Some(Left::Pressed) {
                     active = i;
                 }
                 if let Some(rect) = state.rect {
                     self.shown.push((i, rect));
-                    if state.held {
+                    if state.left == Some(Left::Held) {
                         out.held = Some((i, rect));
                     }
                     if state.menu {
                         out.menu = Some((i, rect, Align::Start));
                     }
+                }
+                if state.left == Some(Left::Closed) {
+                    out.close = Some(i);
                 }
                 on_line(ui, Length::Fixed(TAB_GAP), |_| {});
             }
@@ -171,6 +175,8 @@ impl Dock {
 
     /// One tab `width` wide, keyed by `key`, its top corners rounded and its
     /// title centred, or from the left when it's narrower than the title asks.
+    /// While the pointer is on it, a close button floats over its right end,
+    /// in the room set aside for it, so the title doesn't move.
     fn tab(ui: &mut Ui, key: u32, title: &str, width: f32, active: bool) -> TabState {
         let theme = ui.theme();
         let (color, size) = (theme.color, theme.size);
@@ -182,13 +188,26 @@ impl Dock {
             ..Element::DEFAULT
         };
         ui.keyed(key, element, |ui| {
+            let hovered = ui.hovered();
+            let close = if hovered {
+                close_button(ui)
+            } else {
+                Clicks::default()
+            };
+            let left = if close.clicked {
+                Some(Left::Closed)
+            } else if ui.dragged(PointerButton::Left).is_some() {
+                Some(Left::Held)
+            } else if ui.pressed(PointerButton::Left) && !close.pressed {
+                Some(Left::Pressed)
+            } else {
+                None
+            };
             let state = TabState {
                 rect: ui.rect(),
-                pressed: ui.pressed(PointerButton::Left),
-                held: ui.dragged(PointerButton::Left).is_some(),
+                left,
                 menu: ui.pressed(PointerButton::Right),
             };
-            let hovered = ui.hovered();
             let squeezed = ui.measure(theme.ui_text(color.text), title)[0] > width;
             let mut label = Element {
                 size: [Length::Grow; 2],
@@ -232,11 +251,19 @@ impl Dock {
 struct TabState {
     /// Its rect last pass.
     pub(super) rect: Option<Rect>,
-    pressed: bool,
-    /// Whether it holds the left button, so it can be dragged.
-    held: bool,
+    left: Option<Left>,
     /// Whether the right button went down over it, opening its menu.
     menu: bool,
+}
+
+/// What the left button did to a tab this pass.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Left {
+    Pressed,
+    /// It holds the button, so it can be dragged.
+    Held,
+    /// Its close button was clicked.
+    Closed,
 }
 
 /// What a dock's tab bar saw this pass.
@@ -247,6 +274,36 @@ pub(super) struct DockOut {
     /// The tab whose menu opens, by index, with what the menu hangs from and
     /// which of its edges the menu lines up with.
     pub(super) menu: Option<(usize, Rect, Align)>,
+    /// The tab whose close button was clicked, by index.
+    pub(super) close: Option<usize>,
+}
+
+/// A tab's close button, floating over the right end of the open tab and
+/// centred on the tab above the bar's line.
+fn close_button(ui: &mut Ui) -> Clicks {
+    let theme = ui.theme();
+    let (color, size) = (theme.color, theme.size);
+    let element = Element {
+        size: [Length::Fixed(size.row); 2],
+        align: [Align::Center; 2],
+        radius: [size.radius; 4],
+        float: Some(Anchor::Parent {
+            parent: [Align::End, Align::Center],
+            own: [Align::End, Align::Center],
+            offset: [-size.icon_gap / 2., -size.line / 2.],
+            clipped: true,
+        }),
+        cursor: Some(CursorIcon::Pointer),
+        ..Element::DEFAULT
+    };
+    ui.element(element, |ui| {
+        let lit = if ui.hovered() { color.text } else { color.dim };
+        ui.icon(Icon::Close, size.icon, lit);
+        Clicks {
+            pressed: ui.pressed(PointerButton::Left),
+            clicked: ui.clicked(PointerButton::Left),
+        }
+    })
 }
 
 /// A piece of the tab bar `width` wide, with the bar's line along its bottom
