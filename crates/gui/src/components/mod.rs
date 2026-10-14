@@ -19,6 +19,7 @@ mod row;
 mod rule;
 mod scroll;
 mod slider;
+mod switch;
 mod toolbar;
 mod window;
 
@@ -32,6 +33,7 @@ pub use row::row;
 pub use rule::rule;
 pub use scroll::{ListScroll, Scroll, ThumbShow, indexed_list, list, scroll};
 pub use slider::{Slid, slider};
+pub use switch::switch;
 pub use toolbar::{spacer, toolbar};
 pub use window::{title_bar, window_edges};
 

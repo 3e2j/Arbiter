@@ -518,3 +518,22 @@ fn a_slider_ignores_a_press_elsewhere() {
     kept.input.push(Event::Released(PointerButton::Left));
     assert_eq!(slider_pass(&mut kept), Slid::default());
 }
+
+#[test]
+fn a_switch_says_when_its_clicked_and_not_when_the_press_was_elsewhere() {
+    let mut kept = Kept::default();
+    kept.theme.size.icon = 10.;
+    let pass = |kept: &mut Kept| kept.pass(|ui| switch(ui, 0.));
+    pass(&mut kept);
+    kept.input.push(Event::Pointer(Some([5., 5.])));
+    kept.input.push(Event::Pressed(PointerButton::Left));
+    assert!(!pass(&mut kept));
+    kept.input.push(Event::Released(PointerButton::Left));
+    assert!(pass(&mut kept));
+    kept.input.push(Event::Pointer(Some([50., 50.])));
+    kept.input.push(Event::Pressed(PointerButton::Left));
+    pass(&mut kept);
+    kept.input.push(Event::Pointer(Some([5., 5.])));
+    kept.input.push(Event::Released(PointerButton::Left));
+    assert!(!pass(&mut kept));
+}
