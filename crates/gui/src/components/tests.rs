@@ -477,3 +477,44 @@ fn a_dropdown_holds_the_keyboard_only_while_open() {
     assert!(!state.is_open());
     assert!(!dropdown_typing(&mut kept, &mut state).1);
 }
+
+/// A slider a hundred and ten across with five notches, its knob ten across,
+/// so the notches sit at 5, 30, 55, 80 and 105.
+fn slider_pass(kept: &mut Kept) -> Slid {
+    kept.theme.size.row = 10.;
+    kept.theme.size.icon = 10.;
+    kept.pass(|ui| ui.element(fixed(110., 10.), |ui| slider(ui, 5, 2)))
+}
+
+fn point(kept: &mut Kept, at: [f32; 2]) -> Slid {
+    kept.input.push(Event::Pointer(Some(at)));
+    slider_pass(kept)
+}
+
+#[test]
+fn a_slider_holds_the_notch_nearest_the_pointer_and_sets_it_on_letting_go() {
+    let mut kept = Kept::default();
+    slider_pass(&mut kept);
+    point(&mut kept, [33., 5.]);
+    kept.input.push(Event::Pressed(PointerButton::Left));
+    assert_eq!(slider_pass(&mut kept).held, Some(1));
+    assert_eq!(point(&mut kept, [70., 5.]).held, Some(3));
+    // Past the end, and off it, still the last notch.
+    assert_eq!(point(&mut kept, [500., 50.]).held, Some(4));
+    kept.input.push(Event::Released(PointerButton::Left));
+    let slid = slider_pass(&mut kept);
+    assert_eq!((slid.held, slid.set), (None, Some(4)));
+    assert_eq!(slider_pass(&mut kept), Slid::default());
+}
+
+#[test]
+fn a_slider_ignores_a_press_elsewhere() {
+    let mut kept = Kept::default();
+    slider_pass(&mut kept);
+    point(&mut kept, [50., 50.]);
+    kept.input.push(Event::Pressed(PointerButton::Left));
+    assert_eq!(slider_pass(&mut kept), Slid::default());
+    assert_eq!(point(&mut kept, [50., 5.]), Slid::default());
+    kept.input.push(Event::Released(PointerButton::Left));
+    assert_eq!(slider_pass(&mut kept), Slid::default());
+}

@@ -18,6 +18,7 @@ mod popover;
 mod row;
 mod rule;
 mod scroll;
+mod slider;
 mod toolbar;
 mod window;
 
@@ -30,6 +31,7 @@ pub use popover::popover;
 pub use row::row;
 pub use rule::rule;
 pub use scroll::{ListScroll, Scroll, ThumbShow, indexed_list, list, scroll};
+pub use slider::{Slid, slider};
 pub use toolbar::{spacer, toolbar};
 pub use window::{title_bar, window_edges};
 
