@@ -11,7 +11,7 @@ use std::{
 use gui::{
     canvas::Color,
     components::{self, ListScroll, button, list, spacer, toolbar},
-    ui::{Align, Element, Length, TextStyle, Ui},
+    ui::{Align, Element, Length, TextStyle, ThemeColors, Ui},
 };
 use tracing::{
     Event, Subscriber,
@@ -20,7 +20,6 @@ use tracing::{
 use tracing_subscriber::layer::{Context, Layer};
 
 use crate::assets::Icon;
-use crate::theme;
 
 /// What [`Capture`] took in since the [`Output`] last looked. A static, since
 /// the subscriber is set up before the editor exists.
@@ -109,12 +108,12 @@ impl Level {
     }
 
     /// For its icon and message.
-    const fn color(self, dim: Color, text: Color) -> Color {
+    const fn color(self, c: &ThemeColors) -> Color {
         match self {
-            Self::Error => theme::ERROR,
-            Self::Warning => theme::WARNING,
-            Self::Info => text,
-            Self::Verbose => dim,
+            Self::Error => c.err,
+            Self::Warning => c.warn,
+            Self::Info => c.text,
+            Self::Verbose => c.dim,
         }
     }
 }
@@ -331,7 +330,7 @@ fn toggle(ui: &mut Ui, level: Level, count: u32, on: bool) -> bool {
     element.size[0] = Length::Fit;
     let (clicked, ()) = components::row(ui, element, on, |ui| {
         let (icon_color, text_color) = if on {
-            (level.color(c.dim, c.text), c.text)
+            (level.color(&c), c.text)
         } else {
             (c.dim, c.dim)
         };
@@ -358,7 +357,7 @@ fn entry_ui(ui: &mut Ui, lines: &Lines, entry: &Entry, time: &mut String) {
     };
     ui.element(element, |ui| {
         ui.style().background = ui.hovered().then_some(c.hover);
-        let color = entry.level.color(c.dim, c.text);
+        let color = entry.level.color(&c);
         ui.icon(entry.level.icon(), s.icon, color);
         time.clear();
         let _ = write!(time, "{:>9.3}", entry.at.as_secs_f64());

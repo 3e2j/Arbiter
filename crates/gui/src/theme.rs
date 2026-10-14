@@ -41,6 +41,12 @@ pub struct ThemeColors {
     pub thumb_hover: Color,
     /// Marks where something dragged will land.
     pub accent: Color,
+    /// Success, and what's added.
+    pub ok: Color,
+    /// Warnings, and what's modified.
+    pub warn: Color,
+    /// Errors, and what's deleted.
+    pub err: Color,
 }
 
 /// In logical pixels.

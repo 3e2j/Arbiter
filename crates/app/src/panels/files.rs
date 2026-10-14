@@ -23,7 +23,6 @@ use project::{
 };
 
 use crate::assets::Icon;
-use crate::theme;
 use crate::workspace::Places;
 
 /// Width of the gutter's bar.
@@ -664,9 +663,9 @@ fn row_ui(
                 }
                 let color = match tree[id].git {
                     GitStatus::Clean => c.text,
-                    GitStatus::Added => theme::GIT_ADDED,
-                    GitStatus::Modified => theme::GIT_MODIFIED,
-                    GitStatus::Deleted => theme::GIT_DELETED,
+                    GitStatus::Added => c.ok,
+                    GitStatus::Modified => c.warn,
+                    GitStatus::Deleted => c.err,
                 };
                 ui.text(theme.ui_text(color), tree.name(id));
             }
