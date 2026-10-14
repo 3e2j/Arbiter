@@ -9,6 +9,7 @@ mod loader;
 mod panels;
 mod popover;
 mod reader;
+mod settings;
 mod status_bar;
 mod theme;
 mod title_bar;
@@ -22,13 +23,14 @@ use gui::{
     host::{App, Startup, Wake},
     input::Input,
     platform::window,
-    ui::{Element, Ui},
+    ui::{Element, Theme, ThemeFonts, Ui},
 };
 use loader::Loader;
 pub use panels::Capture;
 use panels::{Files, Hex, Output, Panel};
 use project::{Log, Project};
 use reader::TreeReader;
+use settings::Settings;
 use watch::Watch;
 use workspace::{Place, Session, Workspace};
 
@@ -66,6 +68,9 @@ pub fn run(log: Arc<Log>, project: Option<Project>) -> Result<(), AppError> {
 /// The editor, as one [`App`]. Owns what only Arbiter knows about.
 struct Editor {
     workspace: Workspace,
+    settings: Settings,
+    /// Kept for each theme the settings pick.
+    fonts: ThemeFonts,
     log: Arc<Log>,
     /// The open one, whose session the workspace is saved to on close.
     project: Option<Arc<Project>>,
@@ -159,7 +164,9 @@ impl App for Editor {
         start: &mut Startup,
         (log, project): Self::Args,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        start.theme = theme::theme(assets::fonts(start.glyphs)?);
+        let settings = Settings::default();
+        let fonts = assets::fonts(start.glyphs)?;
+        start.theme = theme::theme(settings.palette(), fonts);
         assets::load_icons(start.glyphs)?;
         Files::bind(&mut start.keymap);
         Hex::bind(&mut start.keymap);
@@ -169,6 +176,8 @@ impl App for Editor {
             .unwrap_or_else(|| Session::of(&LAYOUT));
         let mut app = Self {
             workspace: Workspace::new(&session),
+            settings,
+            fonts,
             log,
             project: None,
             watch: None,
@@ -217,6 +226,11 @@ impl App for Editor {
         self.workspace.input(input);
     }
 
+    fn take_theme(&mut self) -> Option<Theme> {
+        let palette = self.settings.take_picked()?;
+        Some(theme::theme(palette, self.fonts))
+    }
+
     fn on_close(&mut self) {
         let Some(project) = &self.project else {
             return;
@@ -232,7 +246,7 @@ impl App for Editor {
 
     fn ui(&mut self, ui: &mut Ui) {
         ui.element(Element::column(), |ui| {
-            title_bar::ui(ui, Self::TITLE);
+            title_bar::ui(ui, Self::TITLE, &mut self.settings);
             self.workspace.ui(ui);
             let picked: Vec<_> = self
                 .workspace

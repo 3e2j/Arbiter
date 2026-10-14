@@ -35,6 +35,11 @@ pub trait App: Sized {
     /// is already in place when the boxes are declared. Where shortcuts that
     /// aren't asked of a box go, such as Escape closing a menu.
     fn input(&mut self, _input: &Input) {}
+    /// A theme to draw with from now on, in place of the one before. Asked
+    /// once a frame, after [`App::input`] and before any pass.
+    fn take_theme(&mut self) -> Option<Theme> {
+        None
+    }
     /// Declares one pass's boxes through `ui`, which starts in the window's
     /// box. Can run twice in a frame, when the first pass's answers went
     /// stale, and only the second is drawn.
@@ -144,6 +149,9 @@ impl<A: App> Host<A> {
 
         // Act on input before any pass
         self.app.input(&self.input);
+        if let Some(theme) = self.app.take_theme() {
+            self.theme = theme;
+        }
 
         // 1st pass
         let mut out = self.pass(rounded);

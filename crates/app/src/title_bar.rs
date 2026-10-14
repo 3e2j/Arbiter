@@ -9,9 +9,10 @@ use gui::{
 };
 
 use crate::assets::Icon;
+use crate::settings::Settings;
 
-/// `title`, then the window's buttons at the right end.
-pub fn ui(ui: &mut Ui, title: &str) {
+/// `title`, then the settings and the window's buttons at the right end.
+pub fn ui(ui: &mut Ui, title: &str, settings: &mut Settings) {
     let theme = ui.theme();
     title_bar(ui, |ui| {
         // With the bar's own half gap, two gaps in, about where the panels'
@@ -22,6 +23,7 @@ pub fn ui(ui: &mut Ui, title: &str) {
         };
         ui.element(inset, |ui| ui.text(theme.ui_text(theme.color.dim), title));
         spacer(ui);
+        settings.ui(ui);
         let maximize = if ui.input().maximized() {
             Icon::WindowRestore
         } else {
