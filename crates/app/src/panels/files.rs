@@ -107,6 +107,9 @@ pub struct Files {
     popover: Option<Popover>,
     /// The last press landed in the panel, so its [`FILES`] keys apply.
     active: bool,
+    /// The file last double clicked, relative to the project root, until
+    /// [`Self::take_picked`].
+    picked: Option<String>,
 }
 
 impl Open {
@@ -198,6 +201,7 @@ impl Files {
             order: SortOrder::default(),
             popover: None,
             active: false,
+            picked: None,
         }
     }
 
@@ -234,6 +238,11 @@ impl Files {
         project.remap(&opened.trees.project.ids_in(&trees.project));
         game.remap(&opened.trees.game.ids_in(&trees.game));
         opened.trees = trees;
+    }
+
+    /// The file last double clicked, relative to the project root, once.
+    pub const fn take_picked(&mut self) -> Option<String> {
+        self.picked.take()
     }
 
     /// The filter as `tab`'s tree takes it.
@@ -329,6 +338,24 @@ impl Files {
         view.scroll = scroll;
         if let Some(id) = clicked {
             view.selected = Some(id);
+            if tree[id].kind == NodeKind::File && ui.input().pressed_again(PointerButton::Left) {
+                let mut path = String::new();
+                let found = match self.tab {
+                    Tab::Game => opened.trees.game_file(id, &mut path),
+                    Tab::Project => {
+                        tree.path(id, &mut path);
+                        true
+                    }
+                };
+                if found {
+                    self.picked = Some(path);
+                } else {
+                    tracing::info!(
+                        "{} is only a change, with nothing to show yet",
+                        tree.name(id)
+                    );
+                }
+            }
             if tree[id].kind == NodeKind::Folder {
                 if narrowing {
                     view.flipped.toggle(id);

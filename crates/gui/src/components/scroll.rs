@@ -64,6 +64,24 @@ pub fn list<T>(
     height: f32,
     mut row: impl FnMut(&mut Ui, &T),
 ) {
+    indexed_list(ui, state, items.len(), height, |ui, index| {
+        if let Some(item) = items.get(index) {
+            row(ui, item);
+        }
+    });
+}
+
+/// [`list`] over `len` rows with nothing behind them, each declared by
+/// `row` from its index, for rows made from their place, such as a hex
+/// view's.
+#[track_caller]
+pub fn indexed_list(
+    ui: &mut Ui,
+    state: &mut ListScroll,
+    len: usize,
+    height: f32,
+    mut row: impl FnMut(&mut Ui, usize),
+) {
     let element = Element {
         clip: true,
         ..Element::column()
@@ -76,7 +94,6 @@ pub fn list<T>(
         let wheel = ui.wheel()[1];
         // Nothing to place rows against until the list has a size.
         let Some(view) = ui.rect() else { return };
-        let len = items.len();
         let content = count(len) * height;
         let pixels = -wheel
             + thumb(
@@ -88,11 +105,13 @@ pub fn list<T>(
         state.by(view.h, height, pixels, len);
         ui.style().offset[1] = -state.offset;
         let mut top = -state.offset;
-        for (key, item) in (0..).zip(items).skip(state.top) {
+        for index in state.top..len {
+            // Past `u32::MAX` rows they'd need keys of their own.
+            let Ok(key) = u32::try_from(index) else { break };
             if top >= view.h {
                 break;
             }
-            ui.keyed(key, slot, |ui| row(ui, item));
+            ui.keyed(key, slot, |ui| row(ui, index));
             top += height;
         }
     });

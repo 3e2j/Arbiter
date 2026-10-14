@@ -5,6 +5,7 @@
 //! slows the build.
 
 mod assets;
+mod loader;
 mod panels;
 mod reader;
 mod status_bar;
@@ -22,8 +23,9 @@ use gui::{
     platform::window,
     ui::{Element, Ui},
 };
+use loader::Loader;
 pub use panels::Capture;
-use panels::{Files, Output, Panel};
+use panels::{Files, Hex, Output, Panel};
 use project::{Log, Project};
 use reader::TreeReader;
 use watch::Watch;
@@ -70,6 +72,8 @@ struct Editor {
     watch: Option<Watch>,
     /// The open project's, unless its thread couldn't start.
     reader: Option<TreeReader>,
+    /// Unless its thread couldn't start.
+    loader: Option<Loader>,
     wake: Wake,
 }
 
@@ -111,6 +115,23 @@ impl Editor {
         }
     }
 
+    /// Shows the file at `path`, relative to the open project's root, in a
+    /// tab of the main view, the one it's already in if it's open.
+    fn open_file(&mut self, path: &str) {
+        let (Some(project), Some(loader)) = (&self.project, &self.loader) else {
+            return;
+        };
+        let path = project.root.join(path);
+        if self
+            .workspace
+            .show(|panel| matches!(panel, Panel::Hex(hex) if hex.path() == path))
+        {
+            return;
+        }
+        loader.ask(path.clone());
+        self.workspace.add(Place::Main, Panel::Hex(Hex::new(path)));
+    }
+
     fn files(&mut self) -> Option<&mut Files> {
         self.workspace.panels_mut().find_map(|panel| match panel {
             Panel::Files(files) => Some(files),
@@ -142,6 +163,9 @@ impl App for Editor {
             project: None,
             watch: None,
             reader: None,
+            loader: Loader::new(start.wake.clone())
+                .inspect_err(|err| tracing::warn!("can't start reading files to open: {err}"))
+                .ok(),
             wake: start.wake.clone(),
         };
         if let Some(project) = project {
@@ -167,6 +191,16 @@ impl App for Editor {
             Some(Err(err)) => tracing::warn!("can't read the project's files: {err}"),
             None => {}
         }
+        for (path, read) in self.loader.iter().flat_map(Loader::take) {
+            let hex = self.workspace.panels_mut().find_map(|panel| match panel {
+                Panel::Hex(hex) if hex.path() == path => Some(hex),
+                _ => None,
+            });
+            // Closed before it was read.
+            if let Some(hex) = hex {
+                hex.load(read);
+            }
+        }
         self.workspace.input(input);
     }
 
@@ -187,6 +221,18 @@ impl App for Editor {
         ui.element(Element::column(), |ui| {
             title_bar::ui(ui, Self::TITLE);
             self.workspace.ui(ui);
+            let picked: Vec<_> = self
+                .workspace
+                .panels_mut()
+                .filter_map(|panel| match panel {
+                    Panel::Files(files) => files.take_picked(),
+                    _ => None,
+                })
+                .collect();
+            for path in &picked {
+                self.open_file(path);
+                ui.stale();
+            }
             status_bar::ui(ui, &mut self.workspace);
             window_edges(ui, RESIZE_EDGE);
         });

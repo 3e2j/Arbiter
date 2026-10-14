@@ -131,22 +131,29 @@ impl Workspace {
         workspace
     }
 
-    /// As it's laid out now, for [`Workspace::new`] to bring back.
+    /// As it's laid out now, for [`Workspace::new`] to bring back. Panels
+    /// that aren't [`Panel::saved`] are left out.
     pub fn session(&self) -> Session {
         let docks = Place::ALL.into_iter().zip(&self.docks);
         Session {
             docks: docks
-                .filter(|(_, dock)| !dock.tabs.is_empty())
-                .map(|(place, dock)| SavedDock {
-                    place,
-                    active: dock.active,
-                    tabs: dock
+                .filter_map(|(place, dock)| {
+                    let saved = |tab: &&Tab| tab.panel.saved();
+                    let tabs: Vec<_> = dock
                         .tabs
                         .iter()
+                        .filter(saved)
                         .map(|tab| SavedTab {
                             kind: tab.panel.kind().to_owned(),
                         })
-                        .collect(),
+                        .collect();
+                    // Past an active tab that isn't kept is the next that is.
+                    let active = dock.tabs.iter().take(dock.active).filter(saved).count();
+                    (!tabs.is_empty()).then_some(SavedDock {
+                        place,
+                        active,
+                        tabs,
+                    })
                 })
                 .collect(),
             bands: Band::ALL
@@ -165,7 +172,7 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::panels::{Files, Output};
+    use crate::panels::{Files, Hex, Output};
     use crate::workspace::Side;
 
     const LAYOUT: [(&str, Place); 3] = [
@@ -222,6 +229,24 @@ mod tests {
         );
         assert!(!restored.side_shown(Side::Left));
         assert!(restored.side_shown(Side::Bottom));
+    }
+
+    #[test]
+    fn a_file_isnt_saved_and_the_active_tab_stays_put() {
+        let mut workspace = Workspace::new(&Session::of(&[("Messages", Place::Main)]));
+        workspace.add(Place::Main, Panel::Hex(Hex::new("a.bin".into())));
+        let main = &mut workspace.docks[Place::Main.index()];
+        main.tabs.push(Tab {
+            panel: Panel::open("Messages").unwrap(),
+        });
+        main.active = 2;
+        let restored = Workspace::new(&workspace.session());
+        assert_eq!(titles(&restored, Place::Main), ["Messages", "Messages"]);
+        assert_eq!(restored.docks[Place::Main.index()].active, 1);
+
+        workspace.docks[Place::Main.index()].remove(0);
+        workspace.docks[Place::Main.index()].remove(1);
+        assert_eq!(workspace.session().docks, Session::default().docks);
     }
 
     #[test]

@@ -265,6 +265,25 @@ impl Project {
 }
 
 impl Trees {
+    /// Writes where the Game tree's file `id` is read from into `out`,
+    /// relative to the project root: its copy in `base/` of the first
+    /// edition that has it. `false` for a folder, or a file only the mod
+    /// adds, whose change isn't the file's bytes.
+    pub fn game_file(&self, id: NodeId, out: &mut String) -> bool {
+        let tree = &self.game;
+        let node = tree[id];
+        if node.kind != NodeKind::File || node.status == NodeStatus::Added {
+            return false;
+        }
+        let mut editions = (0..).zip(&tree.editions);
+        let Some((_, edition)) = editions.find(|&(bit, _)| node.editions >> bit & 1 != 0) else {
+            return false;
+        };
+        tree.path(id, out);
+        out.insert_str(0, &format!("{}/{edition}/", base::DIR));
+        true
+    }
+
     fn read(root: &Path, config: &ProjectConfig) -> Result<Self, TreeError> {
         let git = git::status(root).unwrap_or_default();
         // TODO: a game project's Game tree, once game projects have a layout.
@@ -964,6 +983,20 @@ impl Tree {
         }
     }
 
+    /// Writes `id`'s path from the root into `out`, its folders' names and
+    /// its own joined by `/`.
+    pub fn path(&self, id: NodeId, out: &mut String) {
+        out.clear();
+        let mut at = id;
+        while at != NodeId::ROOT {
+            if !out.is_empty() {
+                out.insert(0, '/');
+            }
+            out.insert_str(0, self.name(at));
+            at = self[at].parent;
+        }
+    }
+
     /// Writes `row`'s name into `out`, its nodes' names joined by `/`.
     pub fn row_name(&self, row: TreeRow, out: &mut String) {
         out.clear();
@@ -1152,6 +1185,33 @@ mod tests {
                 "  main.dol",
             ]
         );
+    }
+
+    #[test]
+    fn a_game_file_reads_from_the_first_edition_in_base_that_has_it() {
+        let (dir, config) = mod_project();
+        let trees = Trees::read(dir.path(), &config).unwrap();
+        let game = &trees.game;
+        let find = |path: &str| {
+            let mut at = String::new();
+            (0..)
+                .map(NodeId)
+                .take(game.nodes.len())
+                .find(|&id| {
+                    game.path(id, &mut at);
+                    at == path
+                })
+                .unwrap()
+        };
+        let mut out = String::new();
+        assert!(trees.game_file(find("res/Msgus/zel_00.bmg"), &mut out));
+        assert_eq!(out, "base/GZ2E01/res/Msgus/zel_00.bmg");
+        assert!(trees.game_file(find("res/Msgjp/zel_00.bmg"), &mut out));
+        assert_eq!(out, "base/GZ2J01/res/Msgjp/zel_00.bmg");
+        assert!(trees.game_file(find("res/Layout/logo.bti"), &mut out));
+        assert_eq!(out, "base/GZ2E01/res/Layout/logo.bti");
+        assert!(!trees.game_file(find("res/Msgus/zel_50.bmg"), &mut out));
+        assert!(!trees.game_file(find("res/Msgus"), &mut out));
     }
 
     #[test]

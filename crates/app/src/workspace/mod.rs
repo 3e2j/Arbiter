@@ -34,7 +34,7 @@ use gui::{
 
 use crate::panels::Panel;
 
-use dock::{Dock, dock_radius};
+use dock::{Dock, Tab, dock_radius};
 use drag::{Grip, TabDrag};
 use layout::{Divider, Drag, Pass, fit};
 use menu::Menu;
@@ -78,6 +78,25 @@ impl Workspace {
     pub fn panels_mut(&mut self) -> impl Iterator<Item = &mut Panel> {
         let tabs = self.docks.iter_mut().flat_map(|dock| &mut dock.tabs);
         tabs.map(|tab| &mut tab.panel)
+    }
+
+    /// Shows the first panel `find` picks out, in whichever dock it's in.
+    /// Returns whether there was one.
+    pub fn show(&mut self, find: impl Fn(&Panel) -> bool) -> bool {
+        for dock in &mut self.docks {
+            if let Some(at) = dock.tabs.iter().position(|tab| find(&tab.panel)) {
+                dock.active = at;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Adds `panel` as the last tab at `place`, and shows it.
+    pub fn add(&mut self, place: Place, panel: Panel) {
+        let dock = &mut self.docks[place.index()];
+        dock.active = dock.tabs.len();
+        dock.tabs.push(Tab { panel });
     }
 
     /// Escape closes the menu.
