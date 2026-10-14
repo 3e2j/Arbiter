@@ -161,6 +161,7 @@ impl App for Editor {
         start.theme = theme::theme(assets::fonts(start.glyphs)?);
         assets::load_icons(start.glyphs)?;
         Files::bind(&mut start.keymap);
+        Hex::bind(&mut start.keymap);
         let session = project
             .as_ref()
             .and_then(session)
