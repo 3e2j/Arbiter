@@ -7,6 +7,7 @@
 mod assets;
 mod loader;
 mod panels;
+mod popover;
 mod reader;
 mod status_bar;
 mod theme;

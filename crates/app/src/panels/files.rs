@@ -23,6 +23,7 @@ use project::{
 };
 
 use crate::assets::Icon;
+use crate::popover::{WIDTH as POPOVER, check, heading};
 use crate::workspace::Places;
 
 /// Width of the gutter's bar.
@@ -30,8 +31,6 @@ const BAR: f32 = 3.;
 /// How strong a folder's gutter bar is beside a file's.
 // Low alpha so the color is noticeably different
 const INSIDE: u8 = 0x39;
-/// Width of the Filter and View popovers.
-const POPOVER: f32 = 220.;
 
 /// While the panel is active, see [`Files::active`].
 const FILES: KeyContext = KeyContext("files");
@@ -673,47 +672,6 @@ fn row_ui(
         if columns.letters {
             regions(ui, tree, node.editions);
         }
-    });
-    clicked
-}
-
-/// A dim line naming the checks below it in a popover.
-fn heading(ui: &mut Ui, text: &str) {
-    let theme = ui.theme();
-    let s = theme.size;
-    let element = Element {
-        size: [Length::Grow, Length::Fixed(s.row)],
-        padding: [s.icon_gap, 0., s.icon_gap, 0.],
-        align: [Align::Start, Align::Center],
-        ..Element::DEFAULT
-    };
-    ui.element(element, |ui| {
-        ui.text(theme.ui_text(theme.color.dim), text);
-    });
-}
-
-/// A line in a popover: a tick while `on`, then `label`. Returns whether it
-/// was clicked this pass.
-fn check(ui: &mut Ui, label: &str, on: bool) -> bool {
-    let theme = ui.theme();
-    let (c, s) = (theme.color, theme.size);
-    let element = Element {
-        padding: [s.icon_gap, 0., s.icon_gap, 0.],
-        gap: s.icon_gap,
-        radius: [s.radius; 4],
-        ..Element::line(s.row)
-    };
-    let tick = Element {
-        size: [Length::Fixed(s.icon); 2],
-        ..Element::DEFAULT
-    };
-    let (clicked, ()) = components::row(ui, element, false, |ui| {
-        ui.element(tick, |ui| {
-            if on {
-                ui.icon(Icon::Check, s.icon, c.accent);
-            }
-        });
-        ui.text(theme.ui_text(c.text), label);
     });
     clicked
 }
