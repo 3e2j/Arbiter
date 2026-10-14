@@ -8,14 +8,14 @@ mod widgets;
 use gui::{
     anim::{Tween, ease_out},
     canvas::Color,
-    components::{IconState, icon_button, notice, rule, spacer},
+    components::{IconState, Scroll, icon_button, notice, rule, scroll, spacer},
     input::{CursorIcon, Key, Modifiers, PointerButton},
     keymap::{AppCommand, Chord, ChordAction, KeyContext, Keymap},
     ui::{Align, Anchor, Direction, Element, Length, TextStyle, Ui},
 };
 
 use crate::assets::Icon;
-use crate::theme::Palette;
+use crate::theme::{HOVER_THUMB, Palette};
 use appearance::Appearance;
 use widgets::sized;
 
@@ -59,6 +59,8 @@ pub struct Settings {
     swap: Tween,
     /// Fades the scrim while a preview is worn, so it shows on the workspace.
     lift: Tween,
+    /// The open page's rows, when they don't fit.
+    scroll: Scroll,
 }
 
 impl Page {
@@ -107,6 +109,8 @@ impl Settings {
             self.opening.go(true);
             self.swap = Tween::END;
             self.lift = Tween::START;
+            self.scroll.offset = 0.;
+            self.scroll.thumb = HOVER_THUMB;
         }
     }
 
@@ -118,6 +122,7 @@ impl Settings {
         self.appearance.leave();
         self.swap = Tween::START;
         self.swap.go(true);
+        self.scroll.offset = 0.;
     }
 
     /// The gear, lit while the panel is open.
@@ -303,7 +308,6 @@ impl Settings {
         let swapped = ease_out(self.swap.step(ui, SWAP_SECONDS));
         let body = Element {
             padding: [14., 10., 14., 18.],
-            clip: true,
             offset: [0., RISE * (1. - swapped)],
             ..Element::column()
         };
@@ -316,7 +320,7 @@ impl Settings {
                 icon_button(ui, Icon::Close, IconState::Normal).clicked
             });
             rule(ui);
-            ui.element(body, |ui| {
+            scroll(ui, &mut self.scroll, body, |ui| {
                 match page {
                     Page::Appearance => self.appearance.ui(ui),
                     Page::Editor | Page::Tools | Page::Keybinds => {
