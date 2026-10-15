@@ -48,7 +48,7 @@ impl Palette {
                 text: 0xe6_e6_e4,
                 dim: 0x9a_9b_98,
                 sel: 0x33_36_3d,
-                accent: 0x44_d4_d8,
+                accent: 0x6c_a6_e0,
                 ok: 0x42_be_65,
                 warn: 0xe8_b3_4b,
                 err: 0xf0_5a_5a,
