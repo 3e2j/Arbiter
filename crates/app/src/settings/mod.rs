@@ -64,12 +64,16 @@ pub struct Settings {
     written: file::Saved,
     open: bool,
     page: Page,
+    /// The page picked before `page`, whose marker shrinks as `leaving` runs
+    /// back.
+    left: Page,
     appearance: Appearance,
     editor: Editor,
     /// The panel coming in.
     opening: Tween,
     /// The open page coming in.
     swap: Tween,
+    leaving: Tween,
     /// Fades the scrim while a preview is worn, so it shows on the workspace.
     lift: Tween,
     /// The open page's rows, when they don't fit.
@@ -174,6 +178,7 @@ impl Settings {
             self.opening = Tween::START;
             self.opening.go(true);
             self.swap = Tween::END;
+            self.leaving = Tween::START;
             self.lift = Tween::START;
             self.scroll.offset = 0.;
             self.scroll.thumb = HOVER_THUMB;
@@ -184,7 +189,10 @@ impl Settings {
         if page == self.page {
             return;
         }
+        self.left = self.page;
         self.page = page;
+        self.leaving = Tween::END;
+        self.leaving.go(false);
         self.appearance.leave();
         self.swap = Tween::START;
         self.swap.go(true);
@@ -310,10 +318,12 @@ impl Settings {
             radius: [6.; 4],
             ..Element::line(ITEM)
         };
-        // Grows from its middle as its page swaps in.
+        // Grows from its middle as its page swaps in, and shrinks back into it
+        // on the last page.
         let grown = ease_out(self.swap.progress());
+        let leaving = 1. - ease_out(1. - self.leaving.step(ui, SWAP_SECONDS));
         let bar = ITEM - 18.;
-        let marker = Element {
+        let marker = |grown: f32| Element {
             size: [Length::Fixed(3.), Length::Fixed(bar * grown)],
             background: Some(c.accent),
             radius: [1.5; 4],
@@ -347,7 +357,9 @@ impl Settings {
                     };
                     ui.style().background = background;
                     if on {
-                        ui.element(marker, |_| ());
+                        ui.element(marker(grown), |_| ());
+                    } else if page == self.left && leaving > 0. {
+                        ui.element(marker(leaving), |_| ());
                     }
                     ui.icon(page.icon(), s.icon, color);
                     ui.text(theme.ui_text(color), page.name());
