@@ -537,3 +537,27 @@ fn a_switch_says_when_its_clicked_and_not_when_the_press_was_elsewhere() {
     kept.input.push(Event::Released(PointerButton::Left));
     assert!(!pass(&mut kept));
 }
+
+#[test]
+fn a_segmented_picker_says_which_segment_was_clicked() {
+    let mut kept = Kept::default();
+    kept.theme.size.row = 20.;
+    // Three segments 32 across, at 2, 36 and 70.
+    let pass = |kept: &mut Kept| {
+        kept.pass(|ui| ui.element(fixed(104., 20.), |ui| segmented(ui, &[""; 3], 0)))
+    };
+    pass(&mut kept);
+    kept.input.push(Event::Pointer(Some([50., 10.])));
+    pass(&mut kept);
+    kept.input.push(Event::Pressed(PointerButton::Left));
+    assert_eq!(pass(&mut kept), None);
+    kept.input.push(Event::Released(PointerButton::Left));
+    assert_eq!(pass(&mut kept), Some(1));
+    // Between two segments is neither.
+    kept.input.push(Event::Pointer(Some([35., 10.])));
+    pass(&mut kept);
+    kept.input.push(Event::Pressed(PointerButton::Left));
+    pass(&mut kept);
+    kept.input.push(Event::Released(PointerButton::Left));
+    assert_eq!(pass(&mut kept), None);
+}
