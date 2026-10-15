@@ -3,6 +3,7 @@
 //! Each page lives in its own module and draws its rows from [`widgets`].
 
 mod appearance;
+mod editor;
 mod file;
 mod widgets;
 
@@ -21,6 +22,7 @@ use crate::assets::Icon;
 use crate::theme::{HOVER_THUMB, Palette};
 use appearance::Appearance;
 pub use appearance::Zoom;
+use editor::Editor;
 use widgets::sized;
 
 const TOGGLE: ChordAction = ChordAction::Command(AppCommand("settings.toggle"));
@@ -63,6 +65,7 @@ pub struct Settings {
     open: bool,
     page: Page,
     appearance: Appearance,
+    editor: Editor,
     /// The panel coming in.
     opening: Tween,
     /// The open page coming in.
@@ -123,6 +126,7 @@ impl Settings {
             path,
             written,
             appearance: Appearance::new(written.appearance),
+            editor: Editor::new(written.editor),
             ..Self::default()
         }
     }
@@ -131,6 +135,7 @@ impl Settings {
     pub fn save(&mut self) {
         let saved = file::Saved {
             appearance: self.appearance.saved(),
+            editor: self.editor.saved(),
         };
         if saved == self.written {
             return;
@@ -186,8 +191,10 @@ impl Settings {
         self.scroll.offset = 0.;
     }
 
-    /// The gear, lit while the panel is open. Where its keys are acted on.
+    /// The gear, lit while the panel is open. Where its keys are acted on,
+    /// and what gui keeps is handed to it, before the boxes that read it.
     pub fn gear(&mut self, ui: &mut Ui) {
+        self.editor.apply(ui);
         let mut toggled = false;
         for &press in ui.input().keys() {
             match ui.keymap().resolve(press, &[KeyContext::GLOBAL]) {
@@ -391,7 +398,8 @@ impl Settings {
             scroll(ui, &mut self.scroll, body, |ui| {
                 match page {
                     Page::Appearance => self.appearance.ui(ui),
-                    Page::Editor | Page::Tools | Page::Keybinds => {
+                    Page::Editor => self.editor.ui(ui),
+                    Page::Tools | Page::Keybinds => {
                         notice(ui, "Nothing to set here yet.");
                     }
                 }

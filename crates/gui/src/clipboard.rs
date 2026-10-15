@@ -21,7 +21,6 @@ pub struct Clipboard {
     /// one. On by default. The desktop's own setting isn't read, though a
     /// compositor that withholds the primary selection leaves nothing to
     /// paste.
-    // TODO: from the user's Settings.
     pub middle_click_paste: bool,
 }
 
@@ -36,6 +35,10 @@ struct Own {
 }
 
 impl Clipboard {
+    /// Whether the platform has a primary selection, so whether
+    /// [`Self::middle_click_paste`] does anything.
+    pub const HAS_PRIMARY: bool = PRIMARY;
+
     /// The system's clipboard, or one only this app sees when it can't be
     /// reached.
     #[must_use]

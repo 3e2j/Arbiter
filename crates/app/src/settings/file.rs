@@ -13,7 +13,7 @@ use std::{fs, io};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use super::appearance;
+use super::{appearance, editor};
 
 const NAME: &str = "settings.toml";
 
@@ -22,6 +22,20 @@ const NAME: &str = "settings.toml";
 pub struct Saved {
     #[serde(deserialize_with = "lenient")]
     pub appearance: appearance::Saved,
+    #[serde(deserialize_with = "lenient")]
+    pub editor: editor::Saved,
+}
+
+/// A switch that's on until it's turned off, which a plain `bool` can't
+/// default to.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(transparent)]
+pub struct OnByDefault(pub bool);
+
+impl Default for OnByDefault {
+    fn default() -> Self {
+        Self(true)
+    }
 }
 
 /// Where the file is. `None` when the platform's folder can't be found, so
@@ -103,6 +117,16 @@ mod tests {
         let unknown = "[appearance]\ntheme = \"twilight\"\nmissing = 1\n";
         let saved: Saved = toml::from_str(unknown).unwrap();
         assert_eq!(saved.appearance.theme, Palette::Twilight);
+    }
+
+    #[test]
+    fn a_switch_on_by_default_stays_on_when_missing_or_unreadable() {
+        let saved: Saved = toml::from_str("").unwrap();
+        assert!(saved.editor.middle_click_paste.0);
+        let off: Saved = toml::from_str("[editor]\nmiddle_click_paste = false\n").unwrap();
+        assert!(!off.editor.middle_click_paste.0);
+        let bad: Saved = toml::from_str("[editor]\nmiddle_click_paste = 3\n").unwrap();
+        assert!(bad.editor.middle_click_paste.0);
     }
 
     #[test]
