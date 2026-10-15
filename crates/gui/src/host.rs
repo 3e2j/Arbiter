@@ -40,6 +40,11 @@ pub trait App: Sized {
     fn take_theme(&mut self) -> Option<Theme> {
         None
     }
+    /// A zoom to draw at from now on, as [`Startup::zoom`] says. Asked once
+    /// a frame, before [`App::input`], so the frame is drawn at it.
+    fn take_zoom(&mut self) -> Option<f32> {
+        None
+    }
     /// Declares one pass's boxes through `ui`, which starts in the window's
     /// box. Can run twice in a frame, when the first pass's answers went
     /// stale, and only the second is drawn.
@@ -78,11 +83,15 @@ pub struct Startup<'a> {
     pub keymap: Keymap,
     /// For the app's threads to keep.
     pub wake: Wake,
+    /// How much bigger than the system's scale everything is drawn, 1 for as
+    /// is. The window keeps its minimum size in zoomed logical pixels.
+    pub zoom: f32,
 }
 
 pub struct Host<A> {
     app: A,
     theme: Theme,
+    zoom: f32,
     glyphs: Glyphs,
     input: Input,
     layout: Layout,
@@ -104,12 +113,19 @@ impl<A: App> Host<A> {
             glyphs: &mut glyphs,
             keymap: Keymap::default(),
             wake,
+            zoom: 1.,
         };
         let app = A::new(&mut start, args)?;
-        let Startup { theme, keymap, .. } = start;
+        let Startup {
+            theme,
+            keymap,
+            zoom,
+            ..
+        } = start;
         Ok(Self {
             app,
             theme,
+            zoom,
             glyphs,
             input: Input::default(),
             layout: Layout::default(),
@@ -119,13 +135,27 @@ impl<A: App> Host<A> {
         })
     }
 
+    pub const fn zoom(&self) -> f32 {
+        self.zoom
+    }
+
+    /// Picks up a zoom the app changed since the last call. Call before
+    /// working out the scale for [`Self::draw`]. Returns whether it changed.
+    pub fn update_zoom(&mut self) -> bool {
+        let Some(zoom) = self.app.take_zoom() else {
+            return false;
+        };
+        self.zoom = zoom;
+        true
+    }
+
     /// Holds `event` for the next pass.
     pub fn push(&mut self, event: Event) {
         self.input.push(event);
     }
 
     /// Draws a frame over `rect`, the window in logical pixels, with `scale`
-    /// physical pixels per logical one, from the events pushed since the last.
+    /// physical pixels per logical one, zoom included, from the events pushed since the last.
     /// `rounded` draws the page with the theme's
     /// [`window_radius`](crate::ui::ThemeSizes::window_radius) and a border,
     /// clear past its corners. `elapsed` is the time since the last frame.

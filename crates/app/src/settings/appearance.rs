@@ -1,7 +1,7 @@
-//! How Arbiter looks: the theme.
+//! How Arbiter looks: the theme, and how big it's drawn.
 
 use gui::{
-    components::spacer,
+    components::{rule, segmented, spacer},
     input::{CursorIcon, PointerButton},
     ui::{Align, Border, Direction, Element, Length, Ui},
 };
@@ -9,7 +9,7 @@ use gui::{
 use serde::{Deserialize, Serialize};
 
 use super::file::lenient;
-use super::widgets::{label, row, sized};
+use super::widgets::{beside, label, row, sized};
 use crate::assets::Icon;
 use crate::theme::Palette;
 
@@ -22,6 +22,22 @@ const CARD: f32 = 110.;
 pub struct Saved {
     #[serde(deserialize_with = "lenient")]
     pub theme: Palette,
+    #[serde(deserialize_with = "lenient")]
+    pub zoom: Zoom,
+}
+
+/// How much bigger than the system's scale everything is drawn. In fixed
+/// steps, so the glyph atlas doesn't fill with sizes that are never reused.
+/// Kept as its percent.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[serde(try_from = "u16", into = "u16")]
+pub enum Zoom {
+    P90,
+    #[default]
+    P100,
+    P110,
+    P125,
+    P150,
 }
 
 #[derive(Default)]
@@ -31,6 +47,66 @@ pub struct Appearance {
     preview: Option<Palette>,
     /// Handed to gui last, by [`Self::take_changed`].
     worn: Palette,
+    zoom: Zoom,
+    /// Handed to gui last, by [`Self::take_zoom`].
+    zoomed: Zoom,
+}
+
+impl Zoom {
+    const ALL: [Self; 5] = [Self::P90, Self::P100, Self::P110, Self::P125, Self::P150];
+
+    const fn percent(self) -> u16 {
+        match self {
+            Self::P90 => 90,
+            Self::P100 => 100,
+            Self::P110 => 110,
+            Self::P125 => 125,
+            Self::P150 => 150,
+        }
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::P90 => "90%",
+            Self::P100 => "100%",
+            Self::P110 => "110%",
+            Self::P125 => "125%",
+            Self::P150 => "150%",
+        }
+    }
+
+    /// The next level up, or down, staying at the ends.
+    fn step(self, up: bool) -> Self {
+        let levels = Self::ALL.into_iter();
+        let next = if up {
+            levels.skip_while(|&zoom| zoom != self).nth(1)
+        } else {
+            levels.rev().skip_while(|&zoom| zoom != self).nth(1)
+        };
+        next.unwrap_or(self)
+    }
+
+    /// As gui takes it, 1 for as is.
+    pub fn factor(self) -> f32 {
+        f32::from(self.percent()) / 100.
+    }
+}
+
+impl From<Zoom> for u16 {
+    fn from(zoom: Zoom) -> Self {
+        zoom.percent()
+    }
+}
+
+impl TryFrom<u16> for Zoom {
+    type Error = String;
+
+    fn try_from(percent: u16) -> Result<Self, Self::Error> {
+        Self::ALL
+            .into_iter()
+            .find(|zoom| zoom.percent() == percent)
+            .ok_or_else(|| format!("{percent}% isn't a zoom level"))
+    }
 }
 
 impl Appearance {
@@ -39,6 +115,8 @@ impl Appearance {
         Self {
             palette: saved.theme,
             worn: saved.theme,
+            zoom: saved.zoom,
+            zoomed: saved.zoom,
             ..Self::default()
         }
     }
@@ -46,11 +124,16 @@ impl Appearance {
     pub const fn saved(&self) -> Saved {
         Saved {
             theme: self.palette,
+            zoom: self.zoom,
         }
     }
 
     pub const fn palette(&self) -> Palette {
         self.palette
+    }
+
+    pub const fn zoom(&self) -> Zoom {
+        self.zoom
     }
 
     pub const fn previewing(&self) -> bool {
@@ -71,11 +154,33 @@ impl Appearance {
         })
     }
 
+    pub fn step_zoom(&mut self, up: bool) {
+        self.zoom = self.zoom.step(up);
+    }
+
+    pub fn reset_zoom(&mut self) {
+        self.zoom = Zoom::default();
+    }
+
+    /// The zoom to draw at, if it changed since the last call.
+    pub fn take_zoom(&mut self) -> Option<Zoom> {
+        (self.zoom != self.zoomed).then(|| {
+            self.zoomed = self.zoom;
+            self.zoom
+        })
+    }
+
     pub fn ui(&mut self, ui: &mut Ui) {
+        self.theme(ui);
+        rule(ui);
+        self.zoom_row(ui);
+    }
+
+    fn theme(&mut self, ui: &mut Ui) {
         let changed = self.palette != Palette::default();
         let mut hovered = None;
         row(ui, |ui| {
-            if label(ui, "Theme", "Hover to try one on.", changed) {
+            if label(ui, "Theme", Some("Hover to try one on."), changed) {
                 self.palette = Palette::default();
             }
             let cards = Element {
@@ -97,6 +202,25 @@ impl Appearance {
             });
         });
         self.preview = hovered;
+    }
+
+    fn zoom_row(&mut self, ui: &mut Ui) {
+        let changed = self.zoom != Zoom::default();
+        let labels = Zoom::ALL.map(Zoom::label);
+        let at = (0..)
+            .zip(Zoom::ALL)
+            .find_map(|(n, zoom)| (zoom == self.zoom).then_some(n))
+            .unwrap_or_default();
+        row(ui, |ui| {
+            let (reset, picked) =
+                beside(ui, "Zoom", None, changed, |ui| segmented(ui, &labels, at));
+            if reset {
+                self.zoom = Zoom::default();
+            }
+            if let Some(zoom) = picked.and_then(|n| Zoom::ALL.get(usize::from(n))) {
+                self.zoom = *zoom;
+            }
+        });
     }
 }
 
@@ -197,4 +321,17 @@ fn card(ui: &mut Ui, palette: Palette, on: bool) -> (bool, bool) {
         });
         (over, ui.clicked(PointerButton::Left))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zoom_steps_through_its_levels_and_stays_at_the_ends() {
+        assert_eq!(Zoom::P100.step(true), Zoom::P110);
+        assert_eq!(Zoom::P100.step(false), Zoom::P90);
+        assert_eq!(Zoom::P150.step(true), Zoom::P150);
+        assert_eq!(Zoom::P90.step(false), Zoom::P90);
+    }
 }

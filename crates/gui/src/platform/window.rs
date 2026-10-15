@@ -101,9 +101,9 @@ struct Open {
 }
 
 impl Open {
-    /// Opens at `min`, in logical pixels, and never smaller.
-    fn new<A: App>(event_loop: &ActiveEventLoop) -> Result<Self, RunError> {
-        let min = LogicalSize::new(A::MIN_SIZE[0], A::MIN_SIZE[1]);
+    /// Opens at its least size at `zoom`, and never smaller.
+    fn new<A: App>(event_loop: &ActiveEventLoop, zoom: f32) -> Result<Self, RunError> {
+        let min = min_size::<A>(zoom);
         let attributes = Window::default_attributes()
             .with_title(A::TITLE)
             .with_inner_size(min)
@@ -112,7 +112,7 @@ impl Open {
             // So the app can round the corners of the frame it draws.
             .with_transparent(!A::DECORATED);
         let window = Arc::new(event_loop.create_window(attributes)?);
-        let gpu = gpu(&window, !A::DECORATED)?;
+        let gpu = gpu(&window, scale(&window, zoom), !A::DECORATED)?;
         let pacer = Pacer::new((!compositor_paced(event_loop)).then(|| interval(&window)));
         Ok(Self {
             window,
@@ -148,25 +148,46 @@ impl Open {
         event
     }
 
-    /// The window's contents in logical pixels.
-    fn rect(&self) -> Rect {
-        let size = self
-            .window
-            .inner_size()
-            .to_logical::<f32>(self.window.scale_factor());
+    /// The window's contents in logical pixels, at `scale`.
+    fn rect(&self, scale: f64) -> Rect {
+        let size = self.window.inner_size().to_logical::<f32>(scale);
         Rect::new(0., 0., size.width, size.height)
     }
 }
 
-/// A new surface on `window`, at its current size and scale, `transparent`
+/// `A`'s least size, in the system's logical pixels at `zoom`.
+fn min_size<A: App>(zoom: f32) -> LogicalSize<f32> {
+    let [w, h] = A::MIN_SIZE.map(|n| n * zoom);
+    LogicalSize::new(w, h)
+}
+
+/// Keeps `window` no smaller than `A`'s least size at `zoom`, growing it
+/// if it already is, since not every system does so for a new minimum.
+fn zoom_min_size<A: App>(window: &Window, zoom: f32) {
+    let min = min_size::<A>(zoom);
+    window.set_min_inner_size(Some(min));
+    let now = window.inner_size().to_logical::<f32>(window.scale_factor());
+    if now.width < min.width || now.height < min.height {
+        let grown = LogicalSize::new(now.width.max(min.width), now.height.max(min.height));
+        // `None` when it was resized at once, and a resize event follows.
+        let _ = window.request_inner_size(grown);
+    }
+}
+
+/// Physical pixels per logical one: the system's for `window`, at `zoom`.
+fn scale(window: &Window, zoom: f32) -> f64 {
+    window.scale_factor() * f64::from(zoom)
+}
+
+/// A new surface on `window`, at its current size and `scale`, `transparent`
 /// as [`Gpu::new`] says.
-fn gpu(window: &Arc<Window>, transparent: bool) -> Result<Gpu, render::Error> {
+fn gpu(window: &Arc<Window>, scale: f64, transparent: bool) -> Result<Gpu, render::Error> {
     let size = window.inner_size();
     Gpu::new(
         // The surface holds a clone, so the window can't close before the surface is dropped.
         Arc::clone(window),
         [size.width, size.height],
-        window.scale_factor(),
+        scale,
         transparent,
     )
 }
@@ -184,7 +205,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
         if self.open.is_some() {
             return;
         }
-        match Open::new::<A>(event_loop) {
+        match Open::new::<A>(event_loop, self.host.zoom()) {
             Ok(mut open) => {
                 open.maximized = open.window.is_maximized();
                 self.host.push(Event::Maximized(open.maximized));
@@ -216,14 +237,20 @@ impl<A: App> ApplicationHandler for Runner<A> {
             WindowEvent::RedrawRequested => {
                 let now = Instant::now();
                 let elapsed = open.pacer.drew(now);
+                if self.host.update_zoom() {
+                    zoom_min_size::<A>(&open.window, self.host.zoom());
+                }
+                let scale = scale(&open.window, self.host.zoom());
                 let size = open.window.inner_size();
-                open.gpu
-                    .resize([size.width, size.height], open.window.scale_factor());
-                let scale = narrow(open.window.scale_factor());
+                open.gpu.resize([size.width, size.height], scale);
                 let rounded = !A::DECORATED && !open.maximized && open.gpu.transparent();
-                let out = self
-                    .host
-                    .draw(open.rect(), scale, rounded, elapsed, &mut self.canvas);
+                let out = self.host.draw(
+                    open.rect(scale),
+                    narrow(scale),
+                    rounded,
+                    elapsed,
+                    &mut self.canvas,
+                );
                 if out.again {
                     open.pacer.request();
                 }
@@ -252,7 +279,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
                     .draw(&self.canvas, atlas, || window.pre_present_notify())
                 {
                     Ok(()) => {}
-                    Err(render::Error::Lost) => match gpu(&open.window, !A::DECORATED) {
+                    Err(render::Error::Lost) => match gpu(&open.window, scale, !A::DECORATED) {
                         Ok(gpu) => {
                             open.gpu = gpu;
                             self.host.reupload_atlas();
@@ -275,7 +302,7 @@ impl<A: App> ApplicationHandler for Runner<A> {
                 open.pacer.request();
             }
             event => {
-                let scale = open.window.scale_factor();
+                let scale = scale(&open.window, self.host.zoom());
                 let now = Instant::now();
                 let mut pushed = false;
                 translate(&event, scale, |event| {

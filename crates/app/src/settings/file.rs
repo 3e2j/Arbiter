@@ -82,6 +82,7 @@ pub fn lenient<'de, D: Deserializer<'de>, T: Deserialize<'de> + Default>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::Zoom;
     use crate::theme::Palette;
 
     #[test]
@@ -101,6 +102,16 @@ mod tests {
         assert_eq!(toml::from_str::<Saved>(text).unwrap(), Saved::default());
         let unknown = "[appearance]\ntheme = \"twilight\"\nmissing = 1\n";
         let saved: Saved = toml::from_str(unknown).unwrap();
+        assert_eq!(saved.appearance.theme, Palette::Twilight);
+    }
+
+    #[test]
+    fn zoom_reads_as_its_percent_and_off_levels_as_the_default() {
+        let saved: Saved = toml::from_str("[appearance]\nzoom = 125\n").unwrap();
+        assert_eq!(saved.appearance.zoom, Zoom::P125);
+        let off = "[appearance]\ntheme = \"twilight\"\nzoom = 130\n";
+        let saved: Saved = toml::from_str(off).unwrap();
+        assert_eq!(saved.appearance.zoom, Zoom::default());
         assert_eq!(saved.appearance.theme, Palette::Twilight);
     }
 }

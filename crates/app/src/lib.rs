@@ -168,6 +168,7 @@ impl App for Editor {
         let fonts = assets::fonts(start.glyphs)?;
         assets::load_icons(start.glyphs)?;
         start.theme = theme::theme(settings.palette(), fonts);
+        start.zoom = settings.zoom().factor();
         Settings::bind(&mut start.keymap);
         Files::bind(&mut start.keymap);
         Hex::bind(&mut start.keymap);
@@ -230,6 +231,10 @@ impl App for Editor {
     fn take_theme(&mut self) -> Option<Theme> {
         let palette = self.settings.take_changed()?;
         Some(theme::theme(palette, self.fonts))
+    }
+
+    fn take_zoom(&mut self) -> Option<f32> {
+        self.settings.take_zoom().map(settings::Zoom::factor)
     }
 
     fn on_close(&mut self) {

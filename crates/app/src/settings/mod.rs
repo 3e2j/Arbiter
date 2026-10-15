@@ -20,9 +20,13 @@ use gui::{
 use crate::assets::Icon;
 use crate::theme::{HOVER_THUMB, Palette};
 use appearance::Appearance;
+pub use appearance::Zoom;
 use widgets::sized;
 
 const TOGGLE: ChordAction = ChordAction::Command(AppCommand("settings.toggle"));
+const ZOOM_IN: ChordAction = ChordAction::Command(AppCommand("zoom.in"));
+const ZOOM_OUT: ChordAction = ChordAction::Command(AppCommand("zoom.out"));
+const ZOOM_RESET: ChordAction = ChordAction::Command(AppCommand("zoom.reset"));
 
 /// The panel's size, and how close it comes to the edges of the room under
 /// the title bar before it shrinks, down to its least.
@@ -92,10 +96,20 @@ impl Page {
 }
 
 impl Settings {
-    /// Ctrl+, opens and closes it, from anywhere.
+    /// Ctrl+, opens and closes it, and Ctrl with +, - or 0 steps the zoom,
+    /// from anywhere. Both + and = zoom in, for layouts that need Shift for +.
     pub fn bind(keymap: &mut Keymap) {
-        let chord = Chord::new(Key::Char(','), Modifiers::COMMAND);
-        keymap.bind(chord, KeyContext::GLOBAL, Some(TOGGLE));
+        let binds = [
+            (',', TOGGLE),
+            ('+', ZOOM_IN),
+            ('=', ZOOM_IN),
+            ('-', ZOOM_OUT),
+            ('0', ZOOM_RESET),
+        ];
+        for (key, action) in binds {
+            let chord = Chord::new(Key::Char(key), Modifiers::COMMAND);
+            keymap.bind(chord, KeyContext::GLOBAL, Some(action));
+        }
     }
 
     /// As the settings file left them.
@@ -139,6 +153,15 @@ impl Settings {
         self.appearance.take_changed()
     }
 
+    pub const fn zoom(&self) -> Zoom {
+        self.appearance.zoom()
+    }
+
+    /// The zoom to draw at, if it changed since the last call.
+    pub fn take_zoom(&mut self) -> Option<Zoom> {
+        self.appearance.take_zoom()
+    }
+
     fn show(&mut self, open: bool) {
         self.open = open;
         self.appearance.leave();
@@ -163,13 +186,18 @@ impl Settings {
         self.scroll.offset = 0.;
     }
 
-    /// The gear, lit while the panel is open.
+    /// The gear, lit while the panel is open. Where its keys are acted on.
     pub fn gear(&mut self, ui: &mut Ui) {
-        let input = ui.input();
-        let toggled = input
-            .keys()
-            .iter()
-            .any(|&press| ui.keymap().resolve(press, &[KeyContext::GLOBAL]) == Some(TOGGLE));
+        let mut toggled = false;
+        for &press in ui.input().keys() {
+            match ui.keymap().resolve(press, &[KeyContext::GLOBAL]) {
+                Some(TOGGLE) => toggled = true,
+                Some(ZOOM_IN) => self.appearance.step_zoom(true),
+                Some(ZOOM_OUT) => self.appearance.step_zoom(false),
+                Some(ZOOM_RESET) => self.appearance.reset_zoom(),
+                _ => {}
+            }
+        }
         let state = if self.open {
             IconState::Lit
         } else {
