@@ -11,11 +11,11 @@ mod widgets;
 use std::path::PathBuf;
 
 use crate::components::{IconState, Scroll, icon_button, notice, rule, scroll, spacer};
+use crate::keymap::{self, AppCommand, Chord, ChordAction, KeyContext, Keymap};
 use gui::{
     anim::{Tween, ease_out},
     canvas::Color,
     input::{CursorIcon, Key, Modifiers, PointerButton},
-    keymap::{AppCommand, Chord, ChordAction, KeyContext, Keymap},
     ui::{Align, Anchor, Direction, Element, Length, Ui},
 };
 
@@ -224,7 +224,7 @@ impl Settings {
     pub fn gear(&mut self, ui: &mut Ui) {
         self.editor.apply(ui);
         if let Some(keymap) = self.keybinds.take_keymap() {
-            *ui.keymap() = keymap;
+            keymap::set(keymap);
         }
         let mut toggled = false;
         let keys = if self.keybinds.recording() {
@@ -233,8 +233,7 @@ impl Settings {
             ui.input().keys()
         };
         for &press in keys {
-            let Some(ChordAction::Command(command)) =
-                ui.keymap().resolve(press, &[KeyContext::GLOBAL])
+            let Some(ChordAction::Command(command)) = keymap::resolve(press, &[KeyContext::GLOBAL])
             else {
                 continue;
             };

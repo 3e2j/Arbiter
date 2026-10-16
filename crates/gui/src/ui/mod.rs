@@ -26,7 +26,6 @@ use std::time::Duration;
 use crate::canvas::{Color, Glyphs, IconId, Quad, Rect, Vertex};
 use crate::clipboard::Clipboard;
 use crate::input::{CursorIcon, Input, PointerButton, WindowAction, WindowRequest};
-use crate::keymap::Keymap;
 use layout::{Layout, Slot};
 
 pub use layout::{
@@ -75,8 +74,6 @@ pub(crate) struct Memory {
     focus: Focus,
     /// Here as it lives as long as the rest, not because a pass changes it.
     clipboard: Clipboard,
-    /// What keys do, which the app and the user's settings change.
-    keymap: Keymap,
     /// Whether a button or the focus changed hands or was let go of, or a box
     /// called [`Ui::stale`].
     changed: bool,
@@ -326,18 +323,6 @@ impl<'a> Ui<'a> {
         &mut self.memory.clipboard
     }
 
-    /// What keys do, for a box to look its presses up in, or the app to
-    /// bind its own.
-    pub fn keymap(&mut self) -> &mut Keymap {
-        &mut self.memory.keymap
-    }
-
-    /// What editing text needs at once: the keys to look presses up in, and
-    /// the clipboard.
-    pub fn editing(&mut self) -> (&Keymap, &mut Clipboard) {
-        (&self.memory.keymap, &mut self.memory.clipboard)
-    }
-
     /// The open box, to change from what its queries say.
     pub fn style(&mut self) -> &mut Element {
         self.layout.element_mut(self.open.node)
@@ -487,10 +472,9 @@ impl<'a> Ui<'a> {
 }
 
 impl Memory {
-    pub fn new(clipboard: Clipboard, keymap: Keymap) -> Self {
+    pub fn new(clipboard: Clipboard) -> Self {
         Self {
             clipboard,
-            keymap,
             ..Self::default()
         }
     }

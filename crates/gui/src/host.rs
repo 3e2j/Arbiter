@@ -7,7 +7,6 @@ use std::{error::Error, sync::Arc, time::Duration};
 use crate::canvas::{AtlasUpdate, Canvas, Color, Glyphs, Rect};
 use crate::clipboard::Clipboard;
 use crate::input::{Event, Input, WindowRequest};
-use crate::keymap::Keymap;
 use crate::ui::layout::Layout;
 use crate::ui::{Border, Memory, Slots, Ui};
 
@@ -84,8 +83,6 @@ pub struct WindowStyle {
 pub struct Startup<'a> {
     /// Where the app adds its fonts and icons.
     pub glyphs: &'a mut Glyphs,
-    /// The default keys, for the app to bind its own over.
-    pub keymap: Keymap,
     /// For the app's threads to keep.
     pub wake: Wake,
     /// How much bigger than the system's scale everything is drawn, 1 for as
@@ -114,12 +111,11 @@ impl<A: App> Host<A> {
         let mut glyphs = Glyphs::default();
         let mut start = Startup {
             glyphs: &mut glyphs,
-            keymap: Keymap::default(),
             wake,
             zoom: 1.,
         };
         let app = A::new(&mut start, args)?;
-        let Startup { keymap, zoom, .. } = start;
+        let Startup { zoom, .. } = start;
         Ok(Self {
             app,
             zoom,
@@ -127,7 +123,7 @@ impl<A: App> Host<A> {
             input: Input::default(),
             layout: Layout::default(),
             slots: Slots::default(),
-            memory: Memory::new(Clipboard::system(), keymap),
+            memory: Memory::new(Clipboard::system()),
             timed: false,
         })
     }

@@ -11,11 +11,27 @@
 //! file to keep, and names its keys for the user with [`Chord::caps`].
 
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::fmt;
 use std::str::FromStr;
 
-use crate::edit::{Edit, Motion};
-use crate::input::{Input, Key, KeyCode, KeyPress, Modifiers};
+use gui::edit::{Edit, Motion};
+use gui::input::{Input, Key, KeyCode, KeyPress, Modifiers};
+
+thread_local! {
+    static CURRENT: RefCell<Keymap> = RefCell::new(Keymap::default());
+}
+
+/// What `press` does in the keymap in use, as [`Keymap::resolve`] finds it.
+#[must_use]
+pub fn resolve(press: KeyPress, contexts: &[KeyContext]) -> Option<ChordAction> {
+    CURRENT.with_borrow(|keymap| keymap.resolve(press, contexts))
+}
+
+/// Looks presses up in `keymap` from now on, in place of the one before.
+pub fn set(keymap: Keymap) {
+    CURRENT.set(keymap);
+}
 
 /// A key and the modifiers held with it: exactly those, or any for a key
 /// held down, such as moving while Shift speeds it up.
@@ -130,7 +146,7 @@ impl Chord {
     /// Its keys as the user knows them, modifiers first, one to a cap.
     pub fn caps(self) -> impl Iterator<Item = Cow<'static, str>> {
         let held = self.modifiers.unwrap_or_default();
-        let modifiers = held.caps().map(Cow::Borrowed);
+        let modifiers = modifier_caps(held).map(Cow::Borrowed);
         let key = match self.key {
             ChordKey::Key(Key::F(n)) => Cow::Owned(format!("F{n}")),
             ChordKey::Key(Key::Char(' ')) => Cow::Borrowed("Space"),
@@ -152,20 +168,18 @@ const MODIFIERS: [(Modifiers, &str); 4] = [
     (Modifiers::SUPER, "Super"),
 ];
 
-impl Modifiers {
-    /// Those held as the user knows them, in the order a chord names them,
-    /// one to a cap.
-    pub fn caps(self) -> impl Iterator<Item = &'static str> {
-        let mac = cfg!(target_os = "macos");
-        MODIFIERS.into_iter().filter_map(move |(modifier, name)| {
-            let name = match (modifier, mac) {
-                (Modifiers::ALT, true) => "Option",
-                (Modifiers::SUPER, true) => "Cmd",
-                _ => name,
-            };
-            self.contains(modifier).then_some(name)
-        })
-    }
+/// Those of `modifiers` held as the user knows them, in the order a chord
+/// names them, one to a cap.
+pub fn modifier_caps(modifiers: Modifiers) -> impl Iterator<Item = &'static str> {
+    let mac = cfg!(target_os = "macos");
+    MODIFIERS.into_iter().filter_map(move |(modifier, name)| {
+        let name = match (modifier, mac) {
+            (Modifiers::ALT, true) => "Option",
+            (Modifiers::SUPER, true) => "Cmd",
+            _ => name,
+        };
+        modifiers.contains(modifier).then_some(name)
+    })
 }
 
 /// A key without a character's cap. Its name in a chord's text is the same,
@@ -576,7 +590,7 @@ mod tests {
 
     #[test]
     fn a_key_bound_by_place_is_held_with_any_modifiers() {
-        use crate::input::Event;
+        use gui::input::Event;
         let mut keymap = Keymap::empty();
         let fly = KeyContext("fly");
         let forward = ChordAction::Command(AppCommand("forward"));

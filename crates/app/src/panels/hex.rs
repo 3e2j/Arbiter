@@ -10,9 +10,9 @@ use std::{fmt::Write, io, ops::Range};
 use crate::components::{
     ContextMenu, ListScroll, MenuItem, context_menu, indexed_list, notice, rule,
 };
+use crate::keymap::{self, AppCommand, Chord, ChordAction, KeyContext};
 use gui::{
     input::{Key, Modifiers, PointerButton},
-    keymap::{AppCommand, Chord, ChordAction, KeyContext},
     ui::{Element, TextHighlight, TextStyle, Ui},
 };
 
@@ -284,7 +284,7 @@ impl Picking {
         }
         let input = ui.input();
         for &press in input.keys() {
-            if let Some(ChordAction::Command(command)) = ui.keymap().resolve(press, &[HEX]) {
+            if let Some(ChordAction::Command(command)) = keymap::resolve(press, &[HEX]) {
                 self.act(ui, command, bytes);
             }
         }

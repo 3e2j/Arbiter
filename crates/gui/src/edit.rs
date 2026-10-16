@@ -1,5 +1,5 @@
 //! Editing text, shared by everything that does: a field, and later the code
-//! editor. Keys become [`Edit`]s through the [`Keymap`](crate::keymap::Keymap),
+//! editor. Keys become [`Edit`]s through the app's keymap,
 //! and [`apply`] carries one out on a string and its [`Selection`].
 //!
 //! Every position is a byte offset into the text, between graphemes, so an

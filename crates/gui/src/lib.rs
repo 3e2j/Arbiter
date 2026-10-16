@@ -11,7 +11,6 @@ pub mod clipboard;
 pub mod edit;
 pub mod host;
 pub mod input;
-pub mod keymap;
 pub mod platform;
 pub mod render;
 pub mod ui;

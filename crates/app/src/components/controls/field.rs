@@ -1,11 +1,11 @@
 //! A line of text the user types in.
 
+use crate::keymap::{self, ChordAction, KeyContext};
 use crate::theme;
 use gui::canvas::IconId;
 use gui::clipboard::Clipboard;
 use gui::edit::{self, Edit, Lines, Selection};
 use gui::input::{CursorIcon, Input, Modifiers, PointerButton, TypedInput};
-use gui::keymap::{ChordAction, KeyContext, Keymap};
 use gui::ui::{Align, Direction, Element, Length, TextCaret, TextHighlight, TextStyle, Ui};
 
 /// What a [`text_field`] holds, owned by the caller.
@@ -51,14 +51,14 @@ impl TextField {
         self.selection = Selection::default();
     }
 
-    /// Applies `input`'s keys, as `keymap` binds them, and text in the order
-    /// they came.
-    fn type_in(&mut self, input: &Input, keymap: &Keymap, clipboard: &mut Clipboard) -> Typing {
+    /// Applies `input`'s keys, as the keymap binds them, and text in the
+    /// order they came.
+    fn type_in(&mut self, input: &Input, clipboard: &mut Clipboard) -> Typing {
         let mut typing = Typing::default();
         for typed in input.typed() {
             let edit = match typed {
                 TypedInput::Text(text) => Edit::Insert(text),
-                TypedInput::Key(press) => match keymap.resolve(press, &[KeyContext::TEXT]) {
+                TypedInput::Key(press) => match keymap::resolve(press, &[KeyContext::TEXT]) {
                     Some(ChordAction::Edit(edit)) => edit,
                     Some(ChordAction::Confirm | ChordAction::Cancel) => {
                         typing.done = true;
@@ -149,8 +149,7 @@ pub fn text_field(
         let mut typing = Typing::default();
         if focused {
             let input = ui.input();
-            let (keymap, clipboard) = ui.editing();
-            typing = field.type_in(input, keymap, clipboard);
+            typing = field.type_in(input, ui.clipboard());
             if typing.done {
                 ui.unfocus();
             }
@@ -237,8 +236,7 @@ mod tests {
             ..TextField::default()
         };
         let input = input(Modifiers::COMMAND, &[Key::Char('a')], "a");
-        let keymap = Keymap::default();
-        let typing = field.type_in(&input, &keymap, &mut Clipboard::default());
+        let typing = field.type_in(&input, &mut Clipboard::default());
         assert!(!typing.changed);
         assert_eq!(field.selection.range(), 0..6);
     }
@@ -257,7 +255,7 @@ mod tests {
             Key::Char('v'),
         ];
         let input = input(Modifiers::COMMAND, &keys, "");
-        field.type_in(&input, &Keymap::default(), &mut clipboard);
+        field.type_in(&input, &mut clipboard);
         assert_eq!(field.text, "bmgbmg");
         assert_eq!(clipboard.text().as_deref(), Some("bmg"));
     }
@@ -266,8 +264,7 @@ mod tests {
     fn enter_lets_go() {
         let mut field = TextField::default();
         let input = input(Modifiers::default(), &[Key::Enter], "");
-        let keymap = Keymap::default();
-        let typing = field.type_in(&input, &keymap, &mut Clipboard::default());
+        let typing = field.type_in(&input, &mut Clipboard::default());
         assert!(typing.done && !typing.changed);
     }
 }

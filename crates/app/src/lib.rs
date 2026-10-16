@@ -8,6 +8,7 @@ mod assets;
 mod commands;
 pub mod components;
 mod disk;
+pub mod keymap;
 mod panels;
 mod settings;
 mod theme;
@@ -164,7 +165,7 @@ impl App for Editor {
         assets::load_icons(start.glyphs)?;
         theme::set(theme::theme(settings.palette(), fonts));
         start.zoom = settings.zoom().factor();
-        start.keymap = settings.keymap();
+        keymap::set(settings.keymap());
         let session = project
             .as_ref()
             .and_then(session)

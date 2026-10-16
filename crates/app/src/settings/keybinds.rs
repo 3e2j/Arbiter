@@ -14,9 +14,9 @@
 use std::collections::BTreeMap;
 
 use crate::components::{IconState, TextField, icon_button, notice, rule, spacer, text_field};
+use crate::keymap::{self, Chord, KeyContext, Keymap};
 use gui::{
     input::{CursorIcon, Input, Key, Modifiers, PointerButton},
-    keymap::{Chord, KeyContext, Keymap},
     ui::{Align, Border, Direction, Element, Length, Ui},
 };
 
@@ -595,7 +595,7 @@ fn recorder(
         } else if held == Modifiers::default() {
             ui.text(sized(&theme, -1., c.dim), "Press keys…");
         } else {
-            held.caps().for_each(|cap| key_cap(ui, cap, c.text));
+            keymap::modifier_caps(held).for_each(|cap| key_cap(ui, cap, c.text));
         }
         spacer(ui);
         if chord.is_some() && icon_button(ui, Icon::Close, IconState::Normal).clicked {

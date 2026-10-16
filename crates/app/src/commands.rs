@@ -2,7 +2,7 @@
 //! do it until the user says otherwise. The keymap and the keybinds page both
 //! read them from here.
 
-use gui::keymap::{AppCommand, Chord, ChordAction, KeyContext, Keymap};
+use crate::keymap::{AppCommand, Chord, ChordAction, KeyContext, Keymap};
 
 use crate::panels::{Files, Hex};
 use crate::settings::Settings;

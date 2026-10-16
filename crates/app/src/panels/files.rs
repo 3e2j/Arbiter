@@ -6,9 +6,9 @@
 use crate::components::{
     self, IconState, ListScroll, TextField, icon_button, list, notice, rule, text_field, toolbar,
 };
+use crate::keymap::{self, AppCommand, Chord, ChordAction, KeyContext};
 use gui::{
     input::{CursorIcon, Key, Modifiers, PointerButton},
-    keymap::{AppCommand, Chord, ChordAction, KeyContext},
     ui::{Align, Border, Direction, Element, Length, TextStyle, Ui},
 };
 use serde::{Deserialize, Serialize};
@@ -428,11 +428,10 @@ impl Files {
     /// The search across, then Filter on the Game tab, then View.
     fn toolbar(&mut self, ui: &mut Ui) {
         let input = ui.input();
-        let keymap = ui.keymap();
         let focus = input
             .keys()
             .iter()
-            .any(|&press| keymap.resolve(press, &[FILES]) == Some(ChordAction::Command(SEARCH)));
+            .any(|&press| keymap::resolve(press, &[FILES]) == Some(ChordAction::Command(SEARCH)));
         if self.active && focus && !ui.typing() {
             self.search.focus = true;
         }
