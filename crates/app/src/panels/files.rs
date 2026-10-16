@@ -9,7 +9,7 @@ use gui::{
         toolbar,
     },
     input::{CursorIcon, Key, Modifiers, PointerButton},
-    keymap::{AppCommand, Chord, ChordAction, KeyContext, Keymap},
+    keymap::{AppCommand, Chord, ChordAction, KeyContext},
     ui::{Align, Border, Direction, Element, Length, TextStyle, Ui},
 };
 use serde::{Deserialize, Serialize};
@@ -23,6 +23,7 @@ use project::{
 };
 
 use crate::assets::Icon;
+use crate::commands::Command;
 use crate::popover::{WIDTH as POPOVER, check, heading};
 use crate::theme::HOVER_THUMB;
 use crate::workspace::Places;
@@ -36,7 +37,7 @@ const INSIDE: u8 = 0x39;
 /// While the panel is active, see [`Files::active`].
 const FILES: KeyContext = KeyContext("files");
 /// Focuses the search, Ctrl+F by default.
-const SEARCH: ChordAction = ChordAction::Command(AppCommand("files.search"));
+const SEARCH: AppCommand = AppCommand("files.search");
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -212,12 +213,13 @@ impl Files {
     pub const TITLE: &str = "Files";
     pub const PLACES: Places = Places::BANDS;
 
-    /// Binds Ctrl+F (Command+F on macOS) in `keymap` to focus the search,
-    /// once for every file tree.
-    pub fn bind(keymap: &mut Keymap) {
-        let find = Chord::new(Key::Char('f'), Modifiers::COMMAND);
-        keymap.bind(find, FILES, Some(SEARCH));
-    }
+    /// Once for every file tree.
+    pub const COMMANDS: [Command; 1] = [Command {
+        id: SEARCH,
+        name: "Search files",
+        context: FILES,
+        chords: &[Chord::new(Key::Char('f'), Modifiers::COMMAND)],
+    }];
 
     pub fn new() -> Self {
         let view = FilesView::default();
@@ -429,7 +431,7 @@ impl Files {
         let focus = input
             .keys()
             .iter()
-            .any(|&press| keymap.resolve(press, &[FILES]) == Some(SEARCH));
+            .any(|&press| keymap.resolve(press, &[FILES]) == Some(ChordAction::Command(SEARCH)));
         if self.active && focus && !ui.typing() {
             self.search.focus = true;
         }

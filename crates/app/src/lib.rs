@@ -5,6 +5,7 @@
 //! slows the build.
 
 mod assets;
+mod commands;
 mod loader;
 mod panels;
 mod popover;
@@ -169,9 +170,7 @@ impl App for Editor {
         assets::load_icons(start.glyphs)?;
         start.theme = theme::theme(settings.palette(), fonts);
         start.zoom = settings.zoom().factor();
-        Settings::bind(&mut start.keymap);
-        Files::bind(&mut start.keymap);
-        Hex::bind(&mut start.keymap);
+        start.keymap = commands::keymap(commands::all().map(|command| command.chords));
         let session = project
             .as_ref()
             .and_then(session)

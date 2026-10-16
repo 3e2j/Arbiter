@@ -10,12 +10,13 @@ use std::{fmt::Write, io, ops::Range};
 use gui::{
     components::{ContextMenu, ListScroll, MenuItem, context_menu, indexed_list, notice, rule},
     input::{Key, Modifiers, PointerButton},
-    keymap::{AppCommand, Chord, ChordAction, KeyContext, Keymap},
+    keymap::{AppCommand, Chord, ChordAction, KeyContext},
     ui::{Element, TextHighlight, TextStyle, Ui},
 };
 
 use serde::{Deserialize, Serialize};
 
+use crate::commands::Command;
 use crate::workspace::Places;
 
 /// Bytes to a row.
@@ -26,10 +27,10 @@ const HALF: usize = ROW / 2;
 /// While the panel is active, see [`Picking::active`].
 const HEX: KeyContext = KeyContext("hex");
 /// Copies the selection as the ASCII column shows it, Ctrl+C by default.
-const COPY: ChordAction = ChordAction::Command(AppCommand("hex.copy"));
+const COPY: AppCommand = AppCommand("hex.copy");
 /// Copies the selection as hex, Ctrl+Shift+C by default.
-const COPY_HEX: ChordAction = ChordAction::Command(AppCommand("hex.copy-hex"));
-const SELECT_ALL: ChordAction = ChordAction::Command(AppCommand("hex.select-all"));
+const COPY_HEX: AppCommand = AppCommand("hex.copy-hex");
+const SELECT_ALL: AppCommand = AppCommand("hex.select-all");
 
 enum Bytes {
     /// Asked of the [`Loader`](crate::loader::Loader), not back yet.
@@ -133,17 +134,34 @@ impl Hex {
         }
     }
 
-    /// Binds the copies and Ctrl+A (Command on macOS) in `keymap`, once for
-    /// every hex view.
-    pub fn bind(keymap: &mut Keymap) {
-        let command = Modifiers::COMMAND;
-        let c = Key::Char('c');
-        keymap.bind(Chord::new(c, command), HEX, Some(COPY));
-        keymap.bind(Chord::new(Key::Insert, Modifiers::CTRL), HEX, Some(COPY));
-        let shifted = command.with(Modifiers::SHIFT);
-        keymap.bind(Chord::new(c, shifted), HEX, Some(COPY_HEX));
-        keymap.bind(Chord::new(Key::Char('a'), command), HEX, Some(SELECT_ALL));
-    }
+    /// The copies and Ctrl+A (Command on macOS), once for every hex view.
+    pub const COMMANDS: [Command; 3] = {
+        const C: Key = Key::Char('c');
+        const COMMAND: Modifiers = Modifiers::COMMAND;
+        [
+            Command {
+                id: COPY,
+                name: "Copy",
+                context: HEX,
+                chords: &[
+                    Chord::new(C, COMMAND),
+                    Chord::new(Key::Insert, Modifiers::CTRL),
+                ],
+            },
+            Command {
+                id: COPY_HEX,
+                name: "Copy as hex",
+                context: HEX,
+                chords: &[Chord::new(C, COMMAND.with(Modifiers::SHIFT))],
+            },
+            Command {
+                id: SELECT_ALL,
+                name: "Select all",
+                context: HEX,
+                chords: &[Chord::new(Key::Char('a'), COMMAND)],
+            },
+        ]
+    };
 
     /// Scrolled where `state` left it, once it's [`Self::load`]ed.
     pub fn from_state(state: FileState) -> Self {
@@ -263,8 +281,8 @@ impl Picking {
         }
         let input = ui.input();
         for &press in input.keys() {
-            if let Some(action) = ui.keymap().resolve(press, &[HEX]) {
-                self.act(ui, action, bytes);
+            if let Some(ChordAction::Command(command)) = ui.keymap().resolve(press, &[HEX]) {
+                self.act(ui, command, bytes);
             }
         }
     }
@@ -284,10 +302,10 @@ impl Picking {
         }
     }
 
-    /// Does `action` if it's one of the panel's, from its keys or its menu.
-    fn act(&mut self, ui: &mut Ui, action: ChordAction, bytes: &[u8]) {
+    /// Does `command` if it's one of the panel's, from its keys or its menu.
+    fn act(&mut self, ui: &mut Ui, command: AppCommand, bytes: &[u8]) {
         let picked = self.picked(bytes);
-        match action {
+        match command {
             COPY if !picked.is_empty() => ui.clipboard().copy(&as_shown(picked)),
             COPY_HEX if !picked.is_empty() => ui.clipboard().copy(&as_hex(picked)),
             SELECT_ALL => {

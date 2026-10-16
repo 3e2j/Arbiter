@@ -14,21 +14,22 @@ use gui::{
     canvas::Color,
     components::{IconState, Scroll, icon_button, notice, rule, scroll, spacer},
     input::{CursorIcon, Key, Modifiers, PointerButton},
-    keymap::{AppCommand, Chord, ChordAction, KeyContext, Keymap},
+    keymap::{AppCommand, Chord, ChordAction, KeyContext},
     ui::{Align, Anchor, Direction, Element, Length, TextStyle, Ui},
 };
 
 use crate::assets::Icon;
+use crate::commands::Command;
 use crate::theme::{HOVER_THUMB, Palette};
 use appearance::Appearance;
 pub use appearance::Zoom;
 use editor::Editor;
 use widgets::sized;
 
-const TOGGLE: ChordAction = ChordAction::Command(AppCommand("settings.toggle"));
-const ZOOM_IN: ChordAction = ChordAction::Command(AppCommand("zoom.in"));
-const ZOOM_OUT: ChordAction = ChordAction::Command(AppCommand("zoom.out"));
-const ZOOM_RESET: ChordAction = ChordAction::Command(AppCommand("zoom.reset"));
+const TOGGLE: AppCommand = AppCommand("settings.toggle");
+const ZOOM_IN: AppCommand = AppCommand("zoom.in");
+const ZOOM_OUT: AppCommand = AppCommand("zoom.out");
+const ZOOM_RESET: AppCommand = AppCommand("zoom.reset");
 
 /// The panel's size, and how close it comes to the edges of the room under
 /// the title bar before it shrinks, down to its least.
@@ -105,19 +106,25 @@ impl Page {
 impl Settings {
     /// Ctrl+, opens and closes it, and Ctrl with +, - or 0 steps the zoom,
     /// from anywhere. Both + and = zoom in, for layouts that need Shift for +.
-    pub fn bind(keymap: &mut Keymap) {
-        let binds = [
-            (',', TOGGLE),
-            ('+', ZOOM_IN),
-            ('=', ZOOM_IN),
-            ('-', ZOOM_OUT),
-            ('0', ZOOM_RESET),
-        ];
-        for (key, action) in binds {
-            let chord = Chord::new(Key::Char(key), Modifiers::COMMAND);
-            keymap.bind(chord, KeyContext::GLOBAL, Some(action));
+    pub const COMMANDS: [Command; 4] = {
+        const fn on(key: char) -> Chord {
+            Chord::new(Key::Char(key), Modifiers::COMMAND)
         }
-    }
+        const fn global(id: AppCommand, name: &'static str, chords: &'static [Chord]) -> Command {
+            Command {
+                id,
+                name,
+                context: KeyContext::GLOBAL,
+                chords,
+            }
+        }
+        [
+            global(TOGGLE, "Open or close settings", &[on(',')]),
+            global(ZOOM_IN, "Zoom in", &[on('+'), on('=')]),
+            global(ZOOM_OUT, "Zoom out", &[on('-')]),
+            global(ZOOM_RESET, "Reset zoom", &[on('0')]),
+        ]
+    };
 
     /// As the settings file left them.
     pub fn load() -> Self {
@@ -205,11 +212,16 @@ impl Settings {
         self.editor.apply(ui);
         let mut toggled = false;
         for &press in ui.input().keys() {
-            match ui.keymap().resolve(press, &[KeyContext::GLOBAL]) {
-                Some(TOGGLE) => toggled = true,
-                Some(ZOOM_IN) => self.appearance.step_zoom(true),
-                Some(ZOOM_OUT) => self.appearance.step_zoom(false),
-                Some(ZOOM_RESET) => self.appearance.reset_zoom(),
+            let Some(ChordAction::Command(command)) =
+                ui.keymap().resolve(press, &[KeyContext::GLOBAL])
+            else {
+                continue;
+            };
+            match command {
+                TOGGLE => toggled = true,
+                ZOOM_IN => self.appearance.step_zoom(true),
+                ZOOM_OUT => self.appearance.step_zoom(false),
+                ZOOM_RESET => self.appearance.reset_zoom(),
                 _ => {}
             }
         }
