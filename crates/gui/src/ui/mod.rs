@@ -15,7 +15,10 @@
 //! - A component called from several places can take `#[track_caller]`.
 
 pub(crate) mod layout;
+#[cfg(any(test, feature = "test-util"))]
+pub mod testing;
 mod theme;
+pub mod window;
 
 use std::collections::HashMap;
 use std::panic::Location;
@@ -569,53 +572,15 @@ impl Painter<'_> {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
+    use super::testing::Kept;
     use super::*;
     use crate::input::Event;
-
-    pub const WINDOW: Rect = Rect::new(0., 0., 300., 100.);
 
     fn fixed(w: f32, h: f32) -> Element {
         Element {
             size: [Length::Fixed(w), Length::Fixed(h)],
             ..Element::DEFAULT
-        }
-    }
-
-    /// What the host keeps between passes.
-    #[derive(Default)]
-    pub(crate) struct Kept {
-        pub theme: Theme,
-        pub layout: Layout,
-        pub glyphs: Glyphs,
-        pub input: Input,
-        slots: Slots,
-        memory: Memory,
-        /// What the last pass asked of the window.
-        pub out: WindowRequest,
-    }
-
-    impl Kept {
-        /// Runs one pass and solves it, returning what `body` did. The input
-        /// is used up and what waited comes in, as between the host's frames.
-        pub fn pass<R>(&mut self, body: impl FnOnce(&mut Ui) -> R) -> R {
-            self.layout.clear();
-            self.out = WindowRequest::default();
-            let mut ui = Ui::root(
-                &self.theme,
-                &mut self.layout,
-                &mut self.glyphs,
-                &self.input,
-                &mut self.out,
-                &mut self.slots,
-                &mut self.memory,
-            );
-            let r = body(&mut ui);
-            self.memory.end(&self.input);
-            self.input.clear();
-            self.input.trickle();
-            self.layout.solve(WINDOW, 1.);
-            r
         }
     }
 

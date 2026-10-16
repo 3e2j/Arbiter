@@ -7,8 +7,10 @@
 
 use std::{fmt::Write, io, ops::Range};
 
+use crate::components::{
+    ContextMenu, ListScroll, MenuItem, context_menu, indexed_list, notice, rule,
+};
 use gui::{
-    components::{ContextMenu, ListScroll, MenuItem, context_menu, indexed_list, notice, rule},
     input::{Key, Modifiers, PointerButton},
     keymap::{AppCommand, Chord, ChordAction, KeyContext},
     ui::{Element, TextHighlight, TextStyle, Ui},

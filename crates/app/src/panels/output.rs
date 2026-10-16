@@ -8,9 +8,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::components::{self, ListScroll, button, list, spacer, toolbar};
 use gui::{
     canvas::Color,
-    components::{self, ListScroll, button, list, spacer, toolbar},
     ui::{Align, Element, Length, TextStyle, ThemeColors, Ui},
 };
 use tracing::{

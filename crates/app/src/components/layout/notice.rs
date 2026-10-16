@@ -1,6 +1,6 @@
 //! A message standing in for content there isn't, such as an empty list.
 
-use crate::ui::{Align, Element, Ui};
+use gui::ui::{Align, Element, Ui};
 
 /// `text`, dim and centred in the room left in the open box.
 #[track_caller]

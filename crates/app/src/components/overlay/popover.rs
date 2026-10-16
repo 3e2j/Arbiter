@@ -3,8 +3,8 @@
 //!
 //! If picking something should close it, use a menu instead.
 
-use crate::input::PointerButton;
-use crate::ui::{Align, Anchor, Element, Length, Ui};
+use gui::input::PointerButton;
+use gui::ui::{Align, Anchor, Element, Length, Ui};
 
 /// A raised box `width` wide under the right end of the open box. Returns
 /// what `body` returned, and whether a press landed outside it.

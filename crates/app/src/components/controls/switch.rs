@@ -1,8 +1,8 @@
 //! A knob in a rounded track that flips a setting on or off when clicked.
 //! On, the knob sits at the right end and the track takes the accent.
 
-use crate::input::{CursorIcon, PointerButton};
-use crate::ui::{Align, Anchor, Element, Length, Ui};
+use gui::input::{CursorIcon, PointerButton};
+use gui::ui::{Align, Anchor, Element, Length, Ui};
 
 /// Between the knob and the track's edge.
 const INSET: f32 = 3.;

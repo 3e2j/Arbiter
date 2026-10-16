@@ -1,8 +1,8 @@
 //! Things to press.
 
-use crate::canvas::IconId;
-use crate::input::{CursorIcon, PointerButton};
-use crate::ui::{Align, Element, Length, Ui};
+use gui::canvas::IconId;
+use gui::input::{CursorIcon, PointerButton};
+use gui::ui::{Align, Element, Length, Ui};
 
 /// A line of text on a raised box. Returns whether it was clicked this pass.
 #[track_caller]

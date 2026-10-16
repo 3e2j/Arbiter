@@ -2,8 +2,8 @@
 //! dot. Pressing anywhere on it moves the knob there, and dragging carries
 //! it along, so a press is its own small drag.
 
-use crate::input::PointerButton;
-use crate::ui::{Align, Anchor, Element, Length, Ui};
+use gui::input::PointerButton;
+use gui::ui::{Align, Anchor, Element, Length, Ui};
 
 /// What the user did to a [`slider`] this pass.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]

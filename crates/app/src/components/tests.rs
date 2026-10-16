@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use super::*;
-use crate::canvas::IconId;
-use crate::input::{Event, Key, PointerButton, WindowAction};
-use crate::ui::tests::Kept;
-use crate::ui::{Element, Length};
+use gui::canvas::IconId;
+use gui::input::{Event, Key, PointerButton, WindowAction};
+use gui::ui::testing::Kept;
+use gui::ui::{Element, Length};
 
 fn fixed(w: f32, h: f32) -> Element {
     Element {
@@ -95,10 +95,10 @@ fn a_hover_thumb_waits_out_its_hold_in_one_frame_then_fades() {
     kept.input.push(Event::Pointer(None));
     list_pass(&mut kept, &mut state);
     assert_eq!(kept.out.redraw_in, Some(Duration::from_secs(1)));
-    kept.input.set_elapsed(1.);
+    kept.set_elapsed(1.);
     list_pass(&mut kept, &mut state);
     assert_eq!(kept.out.redraw_in, Some(Duration::ZERO));
-    kept.input.set_elapsed(0.25);
+    kept.set_elapsed(0.25);
     list_pass(&mut kept, &mut state);
     assert_eq!(kept.out.redraw_in, None);
 }
@@ -367,7 +367,7 @@ fn escape_closes_a_menu() {
     let mut state = ContextMenu::CLOSED;
     open_menu(&mut kept, &mut state, false);
     kept.input.push(Event::Key {
-        key: crate::input::Key::Escape,
+        key: gui::input::Key::Escape,
         code: None,
         repeat: false,
     });

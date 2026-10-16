@@ -1,7 +1,7 @@
 //! How Arbiter looks: the theme, and how big it's drawn.
 
+use crate::components::{rule, segmented, spacer};
 use gui::{
-    components::{rule, segmented, spacer},
     input::{CursorIcon, PointerButton},
     ui::{Align, Border, Direction, Element, Length, Ui},
 };

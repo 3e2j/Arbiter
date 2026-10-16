@@ -2,9 +2,9 @@
 //! Picking one closes it, as does a press anywhere else or Escape. While it's
 //! open it has the keyboard: Up and Down mark a choice, Enter picks it.
 
-use crate::canvas::FontId;
-use crate::input::{CursorIcon, Key, PointerButton};
-use crate::ui::{Align, Anchor, Border, Direction, Element, Length, TextStyle, Theme, Ui};
+use gui::canvas::FontId;
+use gui::input::{CursorIcon, Key, PointerButton};
+use gui::ui::{Align, Anchor, Border, Direction, Element, Length, TextStyle, Theme, Ui};
 
 /// Whether a [`dropdown`] is open, owned by the caller.
 #[derive(Clone, Copy, PartialEq, Debug, Default)]

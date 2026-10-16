@@ -1,8 +1,8 @@
 //! What the pages build their rows from.
 
+use crate::components::{IconState, icon_button};
 use gui::{
     canvas::Color,
-    components::{IconState, icon_button},
     ui::{Align, Direction, Element, Length, TextStyle, Theme, Ui},
 };
 
@@ -44,7 +44,7 @@ pub fn key_cap_width(ui: &mut Ui, name: &str) -> f32 {
 }
 
 /// A setting: its label, then its control under it or beside. Its words
-/// line up with the [`rule`](gui::components::rule)s a page puts between
+/// line up with the [`rule`](crate::components::rule)s a page puts between
 /// rows.
 pub fn row(ui: &mut Ui, body: impl FnOnce(&mut Ui)) {
     let element = Element {

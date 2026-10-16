@@ -13,8 +13,8 @@
 
 use std::collections::BTreeMap;
 
+use crate::components::{IconState, TextField, icon_button, notice, rule, spacer, text_field};
 use gui::{
-    components::{IconState, TextField, icon_button, notice, rule, spacer, text_field},
     input::{CursorIcon, Input, Key, Modifiers, PointerButton},
     keymap::{Chord, KeyContext, Keymap},
     ui::{Align, Border, Direction, Element, Length, Ui},

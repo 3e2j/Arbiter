@@ -104,7 +104,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::ui::tests::Kept;
+    use crate::ui::testing::Kept;
 
     const SECONDS: f32 = 0.5;
 

@@ -1,6 +1,6 @@
 //! A strip of controls along the top of a panel.
 
-use crate::ui::{Align, Direction, Element, Length, Ui};
+use gui::ui::{Align, Direction, Element, Length, Ui};
 
 /// Fills the open box across, as tall as what `body` declares, which sits
 /// left to right with half a gap around and between.

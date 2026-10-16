@@ -1,8 +1,8 @@
 //! A line of a list or menu that can be clicked, lit while selected or under
 //! the pointer.
 
-use crate::input::{CursorIcon, PointerButton};
-use crate::ui::{Element, Ui};
+use gui::input::{CursorIcon, PointerButton};
+use gui::ui::{Element, Ui};
 
 /// A clickable box holding whatever `body` declares. Its background shows
 /// when `selected` or under the pointer.

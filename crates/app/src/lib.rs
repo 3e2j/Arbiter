@@ -6,6 +6,7 @@
 
 mod assets;
 mod commands;
+pub mod components;
 mod disk;
 mod panels;
 mod settings;
@@ -16,11 +17,10 @@ use std::sync::Arc;
 
 use disk::{Loader, TreeReader, Watch};
 use gui::{
-    components::window_edges,
     host::{App, Startup, Wake},
     input::Input,
     platform::window,
-    ui::{Element, Theme, ThemeFonts, Ui},
+    ui::{Element, Theme, ThemeFonts, Ui, window::window_edges},
 };
 pub use panels::Capture;
 use panels::{Files, Hex, Output, Panel};

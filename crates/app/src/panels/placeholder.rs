@@ -1,6 +1,7 @@
 //! A panel that only shows its title, standing in for one not written yet.
 
-use gui::{components::notice, ui::Ui};
+use crate::components::notice;
+use gui::ui::Ui;
 
 use crate::workspace::Places;
 

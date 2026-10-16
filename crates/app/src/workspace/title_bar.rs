@@ -2,8 +2,8 @@
 //! goes in it besides the window's buttons, such as settings, goes left of
 //! them.
 
+use crate::components::{IconState, icon_button, spacer, title_bar};
 use gui::{
-    components::{IconState, icon_button, spacer, title_bar},
     input::WindowAction,
     ui::{Element, Ui},
 };

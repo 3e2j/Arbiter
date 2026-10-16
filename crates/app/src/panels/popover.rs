@@ -1,10 +1,8 @@
-//! Lines that go in a [`popover`](gui::components::popover): headings, and
+//! Lines that go in a [`popover`](crate::components::popover): headings, and
 //! checks under them.
 
-use gui::{
-    components,
-    ui::{Align, Element, Length, Ui},
-};
+use crate::components;
+use gui::ui::{Align, Element, Length, Ui};
 
 use crate::assets::Icon;
 

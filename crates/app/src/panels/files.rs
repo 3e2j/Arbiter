@@ -3,11 +3,10 @@
 //!
 //! Includes Search, Filter, and View options.
 
+use crate::components::{
+    self, IconState, ListScroll, TextField, icon_button, list, notice, rule, text_field, toolbar,
+};
 use gui::{
-    components::{
-        self, IconState, ListScroll, TextField, icon_button, list, notice, rule, text_field,
-        toolbar,
-    },
     input::{CursorIcon, Key, Modifiers, PointerButton},
     keymap::{AppCommand, Chord, ChordAction, KeyContext},
     ui::{Align, Border, Direction, Element, Length, TextStyle, Ui},

@@ -1,11 +1,11 @@
 //! A line of text the user types in.
 
-use crate::canvas::IconId;
-use crate::clipboard::Clipboard;
-use crate::edit::{self, Edit, Lines, Selection};
-use crate::input::{CursorIcon, Input, Modifiers, PointerButton, TypedInput};
-use crate::keymap::{ChordAction, KeyContext, Keymap};
-use crate::ui::{Align, Direction, Element, Length, TextCaret, TextHighlight, TextStyle, Ui};
+use gui::canvas::IconId;
+use gui::clipboard::Clipboard;
+use gui::edit::{self, Edit, Lines, Selection};
+use gui::input::{CursorIcon, Input, Modifiers, PointerButton, TypedInput};
+use gui::keymap::{ChordAction, KeyContext, Keymap};
+use gui::ui::{Align, Direction, Element, Length, TextCaret, TextHighlight, TextStyle, Ui};
 
 /// What a [`text_field`] holds, owned by the caller.
 #[derive(Clone, PartialEq, Debug, Default)]
@@ -213,7 +213,7 @@ pub fn text_field(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::input::{Event, Key, Modifiers};
+    use gui::input::{Event, Key, Modifiers};
 
     fn input(modifiers: Modifiers, keys: &[Key], text: &str) -> Input {
         let mut input = Input::default();

@@ -23,5 +23,9 @@ wgpu.workspace = true
 winit.workspace = true
 zeno.workspace = true
 
+[features]
+# Runs passes without a window, for other crates' tests.
+test-util = []
+
 [lints]
 workspace = true

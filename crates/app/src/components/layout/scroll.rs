@@ -1,8 +1,8 @@
 //! Boxes taller than the space they're given, moved by the wheel while the
 //! pointer is over them, with a thumb along the right edge showing where.
 
-use crate::input::PointerButton;
-use crate::ui::{Align, Anchor, Element, Length, Ui};
+use gui::input::PointerButton;
+use gui::ui::{Align, Anchor, Element, Length, Ui};
 
 /// When a scroll box's thumb shows, while there's more than fits.
 #[derive(Clone, Copy, PartialEq, Debug, Default)]

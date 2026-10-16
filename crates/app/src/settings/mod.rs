@@ -10,10 +10,10 @@ mod widgets;
 
 use std::path::PathBuf;
 
+use crate::components::{IconState, Scroll, icon_button, notice, rule, scroll, spacer};
 use gui::{
     anim::{Tween, ease_out},
     canvas::Color,
-    components::{IconState, Scroll, icon_button, notice, rule, scroll, spacer},
     input::{CursorIcon, Key, Modifiers, PointerButton},
     keymap::{AppCommand, Chord, ChordAction, KeyContext, Keymap},
     ui::{Align, Anchor, Direction, Element, Length, Ui},

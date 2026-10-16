@@ -2,7 +2,7 @@
 //!
 //! Plain data the app fills in through [`Startup`](crate::host::Startup),
 //! read back with [`Ui::theme`](crate::ui::Ui::theme). gui has no values of
-//! its own, so [`components`](crate::components) look however the app says.
+//! its own, so components look however the app says.
 
 use super::layout::{Border, TextStyle};
 use crate::canvas::{Color, FontId, IconId};

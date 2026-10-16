@@ -2,9 +2,9 @@
 //! picks a [`Palette`]. Panels read it back from
 //! [`Ui::theme`](gui::ui::Ui::theme).
 
+use crate::components::ThumbShow;
 use gui::{
     canvas::Color,
-    components::ThumbShow,
     ui::{Theme, ThemeColors, ThemeFonts, ThemeIcons, ThemeSizes},
 };
 

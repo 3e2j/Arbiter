@@ -1,8 +1,8 @@
 //! A row of choices sharing one sunken track, the chosen one raised in it,
 //! for picking one of a few fixed values such as a zoom level.
 
-use crate::input::{CursorIcon, PointerButton};
-use crate::ui::{Align, Element, Length, TextStyle, Ui};
+use gui::input::{CursorIcon, PointerButton};
+use gui::ui::{Align, Element, Length, TextStyle, Ui};
 
 /// Between the track's edge and its segments, and between segments.
 const INSET: f32 = 2.;

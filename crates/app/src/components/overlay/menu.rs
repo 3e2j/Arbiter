@@ -4,8 +4,8 @@
 //! The box that's right clicked opens its [`ContextMenu`], then declares
 //! [`context_menu`] each pass with what it offers there.
 
-use crate::input::{Key, PointerButton};
-use crate::ui::{Anchor, Element, Length, Ui};
+use gui::input::{Key, PointerButton};
+use gui::ui::{Anchor, Element, Length, Ui};
 
 /// Where a [`context_menu`] is open, owned by the caller.
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
@@ -116,7 +116,7 @@ pub fn context_menu(ui: &mut Ui, state: &mut ContextMenu, items: &[MenuItem]) ->
         let mut clicked = None;
         for (index, item) in (0..).zip(items) {
             let picked = if item.enabled {
-                let (picked, ()) = super::row(ui, line, false, |ui| {
+                let (picked, ()) = crate::components::row(ui, line, false, |ui| {
                     ui.text(theme.ui_text(c.text), item.label);
                 });
                 picked

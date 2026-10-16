@@ -1,9 +1,9 @@
 //! How editing behaves: for now, what a middle click does.
 
+use crate::components::{notice, switch};
 use gui::{
     anim::{Tween, ease_in_out},
     clipboard::Clipboard,
-    components::{notice, switch},
     ui::{Align, Direction, Element, Length, Ui},
 };
 

@@ -22,8 +22,8 @@ pub trait App: Sized {
     /// Whether the system draws the window's frame and title bar. Without
     /// it, the app draws its own and asks for what the system's would do
     /// through [`Ui::window`], such as with
-    /// [`title_bar`](crate::components::title_bar) and
-    /// [`window_edges`](crate::components::window_edges).
+    /// [`window_drag`](crate::ui::window::window_drag) and
+    /// [`window_edges`](crate::ui::window::window_edges).
     const DECORATED: bool = true;
     /// What [`run`](crate::platform::window::run) hands to [`App::new`].
     type Args;

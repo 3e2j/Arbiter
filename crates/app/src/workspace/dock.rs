@@ -1,8 +1,8 @@
 //! A dock: its tab bar and the active tab's panel.
 
+use crate::components::{Clicks, IconState, icon_button, rule};
 use gui::{
     canvas::Rect,
-    components::{Clicks, IconState, icon_button, rule},
     input::{CursorIcon, PointerButton},
     ui::{Align, Anchor, Direction, Element, Length, ThemeSizes, Ui},
 };

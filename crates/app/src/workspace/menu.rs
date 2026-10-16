@@ -2,9 +2,9 @@
 //! by right clicking a tab: the dock's tabs, to show or close, over a map of
 //! every place to move the menu's tab to.
 
+use crate::components;
 use gui::{
     canvas::Rect,
-    components,
     input::{CursorIcon, PointerButton},
     ui::{Align, Anchor, Border, Element, Length, Ui},
 };

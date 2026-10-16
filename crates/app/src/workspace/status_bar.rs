@@ -1,10 +1,8 @@
 //! The strip along the window's bottom, with a toggle at its right end for
 //! each [`Side`]'s bands.
 
-use gui::{
-    components::{IconState, icon_button, spacer, toolbar},
-    ui::Ui,
-};
+use crate::components::{IconState, icon_button, spacer, toolbar};
+use gui::ui::Ui;
 
 use super::{Side, Workspace};
 use crate::assets::Icon;
