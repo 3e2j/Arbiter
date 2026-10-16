@@ -6,6 +6,13 @@
 //!
 //! A later row wins over an earlier one, so the user's bindings go on top of
 //! the defaults, and a row without an action unbinds the chord under it.
+//!
+//! A chord reads and writes as text, such as `ctrl+shift+c`, for a settings
+//! file to keep, and names its keys for the user with [`Chord::caps`].
+
+use std::borrow::Cow;
+use std::fmt;
+use std::str::FromStr;
 
 use crate::edit::{Edit, Motion};
 use crate::input::{Input, Key, KeyCode, KeyPress, Modifiers};
@@ -105,7 +112,214 @@ impl Chord {
             .modifiers
             .is_none_or(|modifiers| modifiers == self.held(press.modifiers))
     }
+
+    /// What `press` is as a chord, by what the layout types, or `None` for a
+    /// modifier alone, which is held with a key rather than bound itself.
+    #[must_use]
+    pub fn pressed(press: KeyPress) -> Option<Self> {
+        let alone = matches!(press.key, Key::Shift | Key::Ctrl | Key::Alt | Key::Super);
+        (!alone).then(|| Self::new(press.key, press.modifiers).normal())
+    }
+
+    /// With Shift left out where it's [`Self::caseless`], as it compares.
+    fn normal(self) -> Self {
+        let modifiers = self.modifiers.map(|modifiers| self.held(modifiers));
+        Self { modifiers, ..self }
+    }
+
+    /// Its keys as the user knows them, modifiers first, one to a cap.
+    pub fn caps(self) -> impl Iterator<Item = Cow<'static, str>> {
+        let held = self.modifiers.unwrap_or_default();
+        let modifiers = held.caps().map(Cow::Borrowed);
+        let key = match self.key {
+            ChordKey::Key(Key::F(n)) => Cow::Owned(format!("F{n}")),
+            ChordKey::Key(Key::Char(' ')) => Cow::Borrowed("Space"),
+            ChordKey::Key(Key::Char(c)) | ChordKey::Code(KeyCode(c)) => {
+                Cow::Owned(c.to_uppercase().collect())
+            }
+            ChordKey::Key(key) => Cow::Borrowed(cap(key).unwrap_or_default()),
+        };
+        modifiers.chain(std::iter::once(key))
+    }
 }
+
+/// The modifiers in the order a chord names them, by their caps. Their
+/// names in its text are the same, lowercased.
+const MODIFIERS: [(Modifiers, &str); 4] = [
+    (Modifiers::CTRL, "Ctrl"),
+    (Modifiers::ALT, "Alt"),
+    (Modifiers::SHIFT, "Shift"),
+    (Modifiers::SUPER, "Super"),
+];
+
+impl Modifiers {
+    /// Those held as the user knows them, in the order a chord names them,
+    /// one to a cap.
+    pub fn caps(self) -> impl Iterator<Item = &'static str> {
+        let mac = cfg!(target_os = "macos");
+        MODIFIERS.into_iter().filter_map(move |(modifier, name)| {
+            let name = match (modifier, mac) {
+                (Modifiers::ALT, true) => "Option",
+                (Modifiers::SUPER, true) => "Cmd",
+                _ => name,
+            };
+            self.contains(modifier).then_some(name)
+        })
+    }
+}
+
+/// A key without a character's cap. Its name in a chord's text is the same,
+/// lowercased.
+const fn cap(key: Key) -> Option<&'static str> {
+    Some(match key {
+        Key::Shift => "Shift",
+        Key::Ctrl => "Ctrl",
+        Key::Alt => "Alt",
+        Key::Super => "Super",
+        Key::Enter => "Enter",
+        Key::Escape => "Esc",
+        Key::Tab => "Tab",
+        Key::Backspace => "Backspace",
+        Key::Delete => "Delete",
+        Key::Insert => "Insert",
+        Key::Left => "Left",
+        Key::Right => "Right",
+        Key::Up => "Up",
+        Key::Down => "Down",
+        Key::Home => "Home",
+        Key::End => "End",
+        Key::PageUp => "PageUp",
+        Key::PageDown => "PageDown",
+        Key::F(_) | Key::Char(_) => return None,
+    })
+}
+
+/// The key `name` is in a chord's text, lowercased.
+fn named(name: &str) -> Option<Key> {
+    if let Some(key) = KEYS
+        .into_iter()
+        .find(|&key| cap(key).is_some_and(|cap| cap.eq_ignore_ascii_case(name)))
+    {
+        return Some(key);
+    }
+    match name {
+        "space" => return Some(Key::Char(' ')),
+        "escape" => return Some(Key::Escape),
+        _ => {}
+    }
+    if let Some(n) = name.strip_prefix('f').and_then(|n| n.parse().ok())
+        && (1..=12).contains(&n)
+    {
+        return Some(Key::F(n));
+    }
+    single(name).map(Key::Char)
+}
+
+/// The only character in `text`.
+fn single(text: &str) -> Option<char> {
+    let mut chars = text.chars();
+    let c = chars.next()?;
+    chars.next().is_none().then_some(c)
+}
+
+/// Text that doesn't read as a [`Chord`].
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ParseChordError(pub String);
+
+impl fmt::Display for ParseChordError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "`{}` isn't a key chord", self.0)
+    }
+}
+
+impl std::error::Error for ParseChordError {}
+
+impl fmt::Display for Chord {
+    /// Lowercase, joined by `+`: the modifiers, or `any`, then the key, or
+    /// `code:` and where it is for one bound by place.
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.modifiers {
+            None => f.write_str("any+")?,
+            Some(held) => {
+                for (modifier, name) in MODIFIERS {
+                    if held.contains(modifier) {
+                        write!(f, "{}+", name.to_lowercase())?;
+                    }
+                }
+            }
+        }
+        match self.key {
+            ChordKey::Code(KeyCode(c)) => write!(f, "code:{c}"),
+            ChordKey::Key(Key::F(n)) => write!(f, "f{n}"),
+            ChordKey::Key(Key::Char(' ')) => f.write_str("space"),
+            ChordKey::Key(Key::Char(c)) => write!(f, "{c}"),
+            ChordKey::Key(key) => f.write_str(&cap(key).unwrap_or_default().to_lowercase()),
+        }
+    }
+}
+
+impl FromStr for Chord {
+    type Err = ParseChordError;
+
+    /// As [`Display`](fmt::Display) writes it, in any case, and with `cmd`
+    /// for [`Modifiers::COMMAND`].
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let bad = || ParseChordError(text.to_owned());
+        let lower = text.to_lowercase();
+        // `+` is a key too, as in `ctrl++`.
+        let (held, key) = match lower.rsplit_once('+') {
+            Some((held, "")) => (held.strip_suffix('+').unwrap_or(held), "+"),
+            Some(split) => split,
+            None => ("", lower.as_str()),
+        };
+        let mut modifiers = Some(Modifiers::default());
+        for name in held.split('+').filter(|name| !name.is_empty()) {
+            let modifier = match name {
+                "any" => {
+                    modifiers = None;
+                    continue;
+                }
+                "cmd" => Modifiers::COMMAND,
+                _ => {
+                    MODIFIERS
+                        .into_iter()
+                        .find(|(_, known)| known.eq_ignore_ascii_case(name))
+                        .ok_or_else(bad)?
+                        .0
+                }
+            };
+            modifiers = modifiers.map(|held| held.with(modifier));
+        }
+        let key = if let Some(code) = key.strip_prefix("code:") {
+            ChordKey::Code(KeyCode(single(code).ok_or_else(bad)?))
+        } else {
+            ChordKey::Key(named(key).ok_or_else(bad)?)
+        };
+        Ok(Self { key, modifiers }.normal())
+    }
+}
+
+/// The keys [`cap`] names.
+const KEYS: [Key; 18] = [
+    Key::Shift,
+    Key::Ctrl,
+    Key::Alt,
+    Key::Super,
+    Key::Enter,
+    Key::Escape,
+    Key::Tab,
+    Key::Backspace,
+    Key::Delete,
+    Key::Insert,
+    Key::Left,
+    Key::Right,
+    Key::Up,
+    Key::Down,
+    Key::Home,
+    Key::End,
+    Key::PageUp,
+    Key::PageDown,
+];
 
 impl KeyContext {
     /// Anywhere, so it goes last among the contexts asked.
@@ -128,8 +342,7 @@ impl Keymap {
     /// Binds `chord` in `context` over whatever it did there, or unbinds it
     /// when `action` is `None`.
     pub fn bind(&mut self, chord: Chord, context: KeyContext, action: Option<ChordAction>) {
-        let modifiers = chord.modifiers.map(|modifiers| chord.held(modifiers));
-        self.chords.push(Chord { modifiers, ..chord });
+        self.chords.push(chord.normal());
         self.contexts.push(context);
         self.actions.push(action);
     }
@@ -320,6 +533,45 @@ mod tests {
         );
         let redo = press(Key::Char('z'), ctrl.with(shift));
         assert_eq!(keymap.resolve(redo, &global), None);
+    }
+
+    #[test]
+    fn a_chord_reads_back_as_written() {
+        let (ctrl, shift) = (Modifiers::CTRL, Modifiers::SHIFT);
+        let chords = [
+            (Chord::new(Key::Char('c'), ctrl.with(shift)), "ctrl+shift+c"),
+            (Chord::new(Key::Char('+'), ctrl), "ctrl++"),
+            (Chord::new(Key::Char('+'), Modifiers::default()), "+"),
+            (Chord::new(Key::PageDown, Modifiers::ALT), "alt+pagedown"),
+            (Chord::new(Key::F(5), Modifiers::default()), "f5"),
+            (Chord::new(Key::Char(' '), ctrl), "ctrl+space"),
+            (
+                Chord::at(KeyCode('w'), Modifiers::default()).any_modifiers(),
+                "any+code:w",
+            ),
+        ];
+        for (chord, text) in chords {
+            assert_eq!(chord.to_string(), text);
+            assert_eq!(text.parse(), Ok(chord), "{text}");
+        }
+        let command = Chord::new(Key::Char('f'), Modifiers::COMMAND);
+        assert_eq!("CMD+F".parse(), Ok(command));
+        assert_eq!("ctrl+esc".parse(), "ctrl+escape".parse::<Chord>());
+        for bad in ["", "hyper+c", "ctrl+ab", "f13", "code:ww"] {
+            assert!(bad.parse::<Chord>().is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_pressed_chord_leaves_out_shift_where_it_compares_without() {
+        let held = Modifiers::CTRL.with(Modifiers::SHIFT);
+        let plus = Chord::pressed(press(Key::Char('+'), held));
+        assert_eq!(plus, Some(Chord::new(Key::Char('+'), Modifiers::CTRL)));
+        let c = Chord::pressed(press(Key::Char('c'), held));
+        assert_eq!(c, Some(Chord::new(Key::Char('c'), held)));
+        assert_eq!(Chord::pressed(press(Key::Shift, Modifiers::SHIFT)), None);
+        let caps: Vec<_> = Chord::new(Key::PageUp, held).caps().collect();
+        assert_eq!(caps, ["Ctrl", "Shift", "PageUp"]);
     }
 
     #[test]
