@@ -37,14 +37,9 @@ const RESIZE_EDGE: f32 = 4.;
 
 /// Each panel's kind and place in a project without a session, in tab order.
 /// The View menu offers them, and adds another where it sits here.
-const LAYOUT: [(&str, Place); 7] = [
-    ("Messages", Place::Main),
+const LAYOUT: [(&str, Place); 2] = [
     (Files::KIND, Place::LeftInnerTop),
-    ("Search", Place::LeftInnerTop),
-    ("Outline", Place::LeftInnerBottom),
-    ("Inspector", Place::RightInnerTop),
     (Output::KIND, Place::BelowMain),
-    ("Diagnostics", Place::BelowMain),
 ];
 
 #[derive(Debug, thiserror::Error)]

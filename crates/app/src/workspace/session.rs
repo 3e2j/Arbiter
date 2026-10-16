@@ -174,8 +174,8 @@ mod tests {
 
     const LAYOUT: [(&str, Place); 3] = [
         ("files", Place::LeftInnerTop),
-        ("Search", Place::LeftInnerTop),
-        ("Inspector", Place::RightInnerTop),
+        ("output", Place::LeftInnerTop),
+        ("output", Place::RightInnerTop),
     ];
 
     fn titles(workspace: &Workspace, place: Place) -> Vec<&str> {
@@ -186,8 +186,8 @@ mod tests {
     #[test]
     fn a_layout_opens_its_panels_in_order() {
         let workspace = Workspace::new(&Session::of(&LAYOUT));
-        assert_eq!(titles(&workspace, Place::LeftInnerTop), ["Files", "Search"]);
-        assert_eq!(titles(&workspace, Place::RightInnerTop), ["Inspector"]);
+        assert_eq!(titles(&workspace, Place::LeftInnerTop), ["Files", "Output"]);
+        assert_eq!(titles(&workspace, Place::RightInnerTop), ["Output"]);
     }
 
     #[test]
@@ -212,7 +212,7 @@ mod tests {
         let session = Session::parse(&text).unwrap();
         assert_eq!(session, workspace.session());
         let restored = Workspace::new(&session);
-        assert_eq!(titles(&restored, Place::LeftInnerTop), ["Files", "Search"]);
+        assert_eq!(titles(&restored, Place::LeftInnerTop), ["Files", "Output"]);
         assert_eq!(titles(&restored, Place::BelowMain), ["Files", "Output"]);
         assert_eq!(titles(&restored, Place::RightInnerTop), [""; 0]);
         assert_eq!(restored.docks[Place::BelowMain.index()].active, 1);
@@ -246,10 +246,10 @@ mod tests {
         let text = r#"
             [[docks]]
             place = "main"
-            tabs = [{ kind = "file" }, { kind = "file", state = { view = "hex" } }, { kind = "Messages" }]
+            tabs = [{ kind = "file" }, { kind = "file", state = { view = "hex" } }, { kind = "file", state = { path = "a.bin", view = "hex", hex = { offset = 0 } } }]
         "#;
         let workspace = Workspace::new(&Session::parse(text).unwrap());
-        assert_eq!(titles(&workspace, Place::Main), ["Messages"]);
+        assert_eq!(titles(&workspace, Place::Main), ["a.bin"]);
     }
 
     #[test]
@@ -270,10 +270,10 @@ mod tests {
         let text = r#"
             [[docks]]
             place = "main"
-            tabs = [{ kind = "Search" }, { kind = "gone" }, { kind = "Messages" }]
+            tabs = [{ kind = "files" }, { kind = "gone" }, { kind = "file", state = { path = "a.bin", view = "hex", hex = { offset = 0 } } }]
         "#;
         let workspace = Workspace::new(&Session::parse(text).unwrap());
-        assert_eq!(titles(&workspace, Place::Main), ["Messages"]);
+        assert_eq!(titles(&workspace, Place::Main), ["a.bin"]);
     }
 
     #[test]
@@ -282,14 +282,11 @@ mod tests {
             [[docks]]
             place = "left-inner-top"
             active = 2
-            tabs = [{ kind = "gone" }, { kind = "Outline" }, { kind = "Search" }]
+            tabs = [{ kind = "gone" }, { kind = "files" }, { kind = "output" }]
         "#;
         let workspace = Workspace::new(&Session::parse(text).unwrap());
         let dock = &workspace.docks[Place::LeftInnerTop.index()];
-        assert_eq!(
-            titles(&workspace, Place::LeftInnerTop),
-            ["Outline", "Search"]
-        );
+        assert_eq!(titles(&workspace, Place::LeftInnerTop), ["Files", "Output"]);
         assert_eq!(dock.active, 1);
     }
 

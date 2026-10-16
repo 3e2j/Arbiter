@@ -4,7 +4,6 @@
 mod files;
 mod hex;
 mod output;
-mod placeholder;
 mod popover;
 
 use gui::ui::Ui;
@@ -14,14 +13,12 @@ use crate::workspace::Places;
 pub use files::Files;
 pub use hex::Hex;
 pub use output::{Capture, Output};
-pub use placeholder::Placeholder;
 
 /// Every panel, by type, so a tab holds one inline.
 pub enum Panel {
     Files(Files),
     Hex(Hex),
     Output(Output),
-    Placeholder(Placeholder),
 }
 
 impl Panel {
@@ -44,7 +41,7 @@ impl Panel {
                 };
             }
             Output::KIND => Self::Output(Output::new()),
-            _ => Self::Placeholder(Placeholder::open(kind)?),
+            _ => return None,
         };
         if let Some(state) = state {
             panel.restore(state.clone());
@@ -59,7 +56,6 @@ impl Panel {
             Self::Files(_) => Files::KIND,
             Self::Hex(_) => Hex::KIND,
             Self::Output(_) => Output::KIND,
-            Self::Placeholder(panel) => panel.title(),
         }
     }
 
@@ -72,7 +68,7 @@ impl Panel {
             Self::Hex(panel) => toml::Value::try_from(panel.state())
                 .inspect_err(|err| tracing::warn!("can't save {}'s tab: {err}", panel.path()))
                 .ok(),
-            Self::Output(_) | Self::Placeholder(_) => None,
+            Self::Output(_) => None,
         }
     }
 
@@ -84,7 +80,7 @@ impl Panel {
                 Ok(view) => panel.set_view(view),
                 Err(err) => tracing::warn!("the files panel's view isn't readable: {err}"),
             },
-            Self::Hex(_) | Self::Output(_) | Self::Placeholder(_) => {}
+            Self::Hex(_) | Self::Output(_) => {}
         }
     }
 
@@ -102,7 +98,6 @@ impl Panel {
             Self::Files(_) => Files::TITLE,
             Self::Hex(panel) => panel.title(),
             Self::Output(_) => Output::TITLE,
-            Self::Placeholder(panel) => panel.title(),
         }
     }
 
@@ -112,7 +107,6 @@ impl Panel {
             Self::Files(_) => Files::PLACES,
             Self::Hex(_) => Hex::PLACES,
             Self::Output(_) => Places::BANDS,
-            Self::Placeholder(panel) => panel.places(),
         }
     }
 
@@ -122,7 +116,6 @@ impl Panel {
             Self::Files(panel) => panel.ui(ui),
             Self::Hex(panel) => panel.ui(ui),
             Self::Output(panel) => panel.ui(ui),
-            Self::Placeholder(panel) => panel.ui(ui),
         }
     }
 }

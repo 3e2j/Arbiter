@@ -392,16 +392,18 @@ fn reach(place: Place, main: Option<Rect>, point: [f32; 2]) -> f32 {
 mod tests {
     use super::super::dock::Tab;
     use super::*;
-    use crate::panels::{Panel, Placeholder};
+    use crate::panels::{Hex, Panel};
 
     const GAP: f32 = 8.;
 
     /// The height of a tab bar's tabs.
     const TAB: f32 = 26.;
 
-    fn dock(titles: &[&'static str], rect: Rect) -> Dock {
+    /// A file tab for each of `titles`, which the drop rules don't stop
+    /// anywhere, since they're passed what's allowed.
+    fn dock(titles: &[&str], rect: Rect) -> Dock {
         let tabs = titles.iter().map(|&title| Tab {
-            panel: Panel::Placeholder(Placeholder::new(title, Places::ALL)),
+            panel: Panel::Hex(Hex::new(title.to_owned())),
         });
         let shown = (0..).zip(titles).map(|(i, _): (u16, _)| {
             let x = f32::from(i).mul_add(74., rect.x + 6.);
@@ -418,7 +420,7 @@ mod tests {
 
     /// `left` in [`Place::LeftInnerTop`], each tab 72 wide and 2 apart from
     /// 6, beside an empty main view, with everything else closed.
-    fn left_column(left: &[&'static str]) -> [Dock; Place::COUNT] {
+    fn left_column(left: &[&str]) -> [Dock; Place::COUNT] {
         let mut docks: [Dock; Place::COUNT] = Default::default();
         docks[Place::LeftInnerTop.index()] = dock(left, Rect::new(0., 0., 240., 900.));
         docks[Place::Main.index()] = dock(&[], Rect::new(248., 0., 1192., 900.));
@@ -456,7 +458,7 @@ mod tests {
 
     #[test]
     fn dropping_on_a_tab_bar_goes_between_tabs() {
-        let docks = left_column(&["Files", "Search"]);
+        let docks = left_column(&["a", "b"]);
         let landing = drops(&docks).at(DRAGGED, [100., 20.], Places::ALL);
         assert_eq!(
             landing,
@@ -479,7 +481,7 @@ mod tests {
 
     #[test]
     fn dropping_on_a_dock_body_goes_last() {
-        let docks = left_column(&["Files", "Search"]);
+        let docks = left_column(&["a", "b"]);
         let landing = drops(&docks).at(DRAGGED, [100., 100.], Places::ALL);
         assert_eq!(
             landing,
@@ -493,7 +495,7 @@ mod tests {
 
     #[test]
     fn dropping_on_an_empty_half_splits_the_band() {
-        let docks = left_column(&["Files", "Search"]);
+        let docks = left_column(&["a", "b"]);
         let landing = drops(&docks).at(DRAGGED, [100., 600.], Places::ALL);
         // Half of 900 less the gap each.
         assert_eq!(
@@ -508,7 +510,7 @@ mod tests {
 
     #[test]
     fn a_lone_tab_cant_split_its_own_band() {
-        let docks = left_column(&["Files"]);
+        let docks = left_column(&["a"]);
         let grip = Grip {
             place: Place::LeftInnerTop,
             ..DRAGGED
@@ -526,7 +528,7 @@ mod tests {
 
     #[test]
     fn the_main_view_opens_the_nearest_band_around_it() {
-        let docks = left_column(&["Files"]);
+        let docks = left_column(&["a"]);
         let landing = drops(&docks).at(DRAGGED, [1400., 400.], Places::ALL);
         assert_eq!(
             landing.map(|landing| (landing.place, landing.marker)),
@@ -558,7 +560,7 @@ mod tests {
 
     #[test]
     fn drops_stay_in_allowed_places() {
-        let docks = left_column(&["Files"]);
+        let docks = left_column(&["a"]);
         assert_eq!(land(&docks, [800., 300.], Places::BANDS), None);
         assert_eq!(
             land(&docks, [1400., 400.], Places::BANDS),
@@ -574,7 +576,7 @@ mod tests {
 
     #[test]
     fn nothing_lands_in_a_gap() {
-        let docks = left_column(&["Files"]);
+        let docks = left_column(&["a"]);
         assert_eq!(land(&docks, [244., 400.], Places::ALL), None);
     }
 
@@ -584,7 +586,7 @@ mod tests {
 
     #[test]
     fn moving_a_tab_along_its_bar_counts_it_where_it_was() {
-        let mut docks = left_column(&["Files", "Search", "Outline"]);
+        let mut docks = left_column(&["a", "b", "c"]);
         let grip = Grip {
             place: Place::LeftInnerTop,
             ..DRAGGED
@@ -595,13 +597,13 @@ mod tests {
             move_tab(&mut docks, grip, landing);
         }
         let left = &docks[Place::LeftInnerTop.index()];
-        assert_eq!(titles(left), ["Search", "Files", "Outline"]);
+        assert_eq!(titles(left), ["b", "a", "c"]);
         assert_eq!(left.active, 1);
     }
 
     #[test]
     fn moving_a_tab_out_shows_its_neighbour() {
-        let mut docks = left_column(&["Files", "Search", "Outline"]);
+        let mut docks = left_column(&["a", "b", "c"]);
         docks[Place::LeftInnerTop.index()].active = 2;
         let grip = Grip {
             place: Place::LeftInnerTop,
@@ -615,8 +617,8 @@ mod tests {
         };
         move_tab(&mut docks, grip, landing);
         let left = &docks[Place::LeftInnerTop.index()];
-        assert_eq!(titles(left), ["Files", "Search"]);
+        assert_eq!(titles(left), ["a", "b"]);
         assert_eq!(left.active, 1);
-        assert_eq!(titles(&docks[Place::Main.index()]), ["Outline"]);
+        assert_eq!(titles(&docks[Place::Main.index()]), ["c"]);
     }
 }
