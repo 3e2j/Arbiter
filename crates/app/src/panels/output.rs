@@ -11,7 +11,7 @@ use std::{
 use crate::components::{self, ListScroll, button, list, spacer, toolbar};
 use gui::{
     canvas::Color,
-    ui::{Align, Element, Length, TextStyle, ThemeColors, Ui},
+    ui::{Align, Element, Length, TextStyle, Ui},
 };
 use tracing::{
     Event, Subscriber,
@@ -20,6 +20,7 @@ use tracing::{
 use tracing_subscriber::layer::{Context, Layer};
 
 use crate::assets::Icon;
+use crate::theme::{self, ThemeColors};
 
 /// What [`Capture`] took in since the [`Output`] last looked. A static, since
 /// the subscriber is set up before the editor exists.
@@ -274,7 +275,7 @@ impl Output {
             self.rows.extend(shown);
             self.stale = false;
         }
-        let height = ui.theme().size.row;
+        let height = theme::current().size.row;
         ui.element(Element::column(), |ui| {
             let view = ui.rect().map(|rect| rect.h);
             if let Some(view) = view
@@ -319,7 +320,7 @@ impl Output {
 /// A level's icon and how many came in, filled while `on`. Returns whether
 /// it was clicked this pass.
 fn toggle(ui: &mut Ui, level: Level, count: u32, on: bool) -> bool {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let mut element = Element {
         padding: [s.gap / 2., 0., s.gap / 2., 0.],
@@ -343,7 +344,7 @@ fn toggle(ui: &mut Ui, level: Level, count: u32, on: bool) -> bool {
 /// Its level's icon, how many times it repeated, when, where from, and the
 /// first line of its message. `time` is scratch space for formatting.
 fn entry_ui(ui: &mut Ui, lines: &Lines, entry: &Entry, time: &mut String) {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let element = Element {
         padding: [s.gap / 2., 0., s.gap / 2., 0.],

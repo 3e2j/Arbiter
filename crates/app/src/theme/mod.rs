@@ -1,11 +1,33 @@
-//! The colours, sizes and fonts everything is drawn with, themes carry them.
+//! The colours, sizes and fonts everything is drawn with.
 //!
-//! Plain data the app fills in through [`Startup`](crate::host::Startup),
-//! read back with [`Ui::theme`](crate::ui::Ui::theme). gui has no values of
-//! its own, so components look however the app says.
+//! The editor [`set`]s the one in use, and components read it with
+//! [`current`] to fill in what they hand gui to paint.
 
-use super::layout::{Border, TextStyle};
-use crate::canvas::{Color, FontId, IconId};
+mod palette;
+
+use std::cell::Cell;
+
+use gui::{
+    canvas::{Color, FontId, IconId},
+    ui::{Border, TextStyle},
+};
+
+pub use palette::{HOVER_THUMB, Palette, theme};
+
+thread_local! {
+    static CURRENT: Cell<Theme> = Cell::new(Theme::default());
+}
+
+/// The theme in use.
+#[must_use]
+pub fn current() -> Theme {
+    CURRENT.get()
+}
+
+/// Draws with `theme` from now on, in place of the one before.
+pub fn set(theme: Theme) {
+    CURRENT.set(theme);
+}
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub struct Theme {

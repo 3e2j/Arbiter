@@ -2,6 +2,7 @@
 //! dot. Pressing anywhere on it moves the knob there, and dragging carries
 //! it along, so a press is its own small drag.
 
+use crate::theme;
 use gui::input::PointerButton;
 use gui::ui::{Align, Anchor, Element, Length, Ui};
 
@@ -25,7 +26,7 @@ const NOTCH: f32 = 7.;
 /// rail is filled up to the knob.
 #[track_caller]
 pub fn slider(ui: &mut Ui, notches: u16, at: u16) -> Slid {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let knob = s.icon;
     let element = Element {

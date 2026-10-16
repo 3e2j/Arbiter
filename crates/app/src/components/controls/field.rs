@@ -1,5 +1,6 @@
 //! A line of text the user types in.
 
+use crate::theme;
 use gui::canvas::IconId;
 use gui::clipboard::Clipboard;
 use gui::edit::{self, Edit, Lines, Selection};
@@ -111,7 +112,7 @@ pub fn text_field(
     icon: Option<IconId>,
     placeholder: &str,
 ) -> bool {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let element = Element {
         direction: Direction::LeftToRight,

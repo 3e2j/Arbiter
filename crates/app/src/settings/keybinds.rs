@@ -25,6 +25,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use super::widgets::{DOT, DOT_GAP, dot, key_cap, key_cap_width, row, sized};
 use crate::assets::Icon;
 use crate::commands::{self, Command};
+use crate::theme;
 
 /// How wide a cap is while recording, so it doesn't jump as keys go down.
 const RECORDING: f32 = 140.;
@@ -313,14 +314,14 @@ fn clash(all: &[Vec<Chord>], command: &Command, chords: &[Chord]) -> Option<(&'s
 
 /// A group's name over its rows, lined up with their names.
 fn heading(ui: &mut Ui, name: &str) {
-    let theme = ui.theme();
+    let theme = theme::current();
     let element = Element {
         size: [Length::Grow, Length::Fit],
         padding: [0., 18., 0., 2.],
         ..Element::DEFAULT
     };
     ui.element(element, |ui| {
-        ui.text(sized(theme, -1., theme.color.accent), name);
+        ui.text(sized(&theme, -1., theme.color.accent), name);
     });
 }
 
@@ -371,7 +372,7 @@ const fn line() -> Element {
 /// A command's name after its changed dot, and what it clashes with under
 /// it, cut off rather than pushing on its chords.
 fn name(ui: &mut Ui, name: &str, clash: Option<&str>, changed: bool) {
-    let theme = ui.theme();
+    let theme = theme::current();
     let c = theme.color;
     let cell = Element {
         size: [Length::Grow, Length::Fit],
@@ -395,7 +396,7 @@ fn name(ui: &mut Ui, name: &str, clash: Option<&str>, changed: bool) {
             ui.text(theme.ui_text(c.text), name);
         });
         if let Some(clash) = clash {
-            ui.element(under, |ui| ui.text(sized(theme, -1., c.warn), clash));
+            ui.element(under, |ui| ui.text(sized(&theme, -1., c.warn), clash));
         }
     });
 }
@@ -403,7 +404,7 @@ fn name(ui: &mut Ui, name: &str, clash: Option<&str>, changed: bool) {
 /// The `+` and the reset while `changed`, shown while the row is `hot`, and
 /// holes their size otherwise so they stay put. Returns which was pressed.
 fn actions(ui: &mut Ui, hot: bool, changed: bool) -> (bool, bool) {
-    let row = ui.theme().size.row;
+    let row = theme::current().size.row;
     let hole = Element {
         size: [Length::Fixed(row); 2],
         ..Element::DEFAULT
@@ -440,7 +441,7 @@ fn caps(
     opening: &mut bool,
     warned: Option<Chord>,
 ) -> (Option<Change>, Option<Cap>) {
-    let theme = ui.theme();
+    let theme = theme::current();
     let c = theme.color;
     let cell = Element {
         size: [Length::Grow, Length::Fit],
@@ -457,11 +458,11 @@ fn caps(
     let adding = was == Some(Cap::More);
     ui.element(cell, |ui| {
         let room = ui.rect().map_or(f32::INFINITY, |rect| rect.w);
-        let or = ui.measure(sized(theme, -2., c.dim), "or")[0] + 2. * OR_GAP;
+        let or = ui.measure(sized(&theme, -2., c.dim), "or")[0] + 2. * OR_GAP;
         let mut change = None;
         let mut recording = None;
         if chords.is_empty() && !adding {
-            ui.text(sized(theme, -1., c.dim), "Not bound");
+            ui.text(sized(&theme, -1., c.dim), "Not bound");
         }
         let slots = (0..)
             .zip(chords)
@@ -485,7 +486,7 @@ fn caps(
                 let mut first = true;
                 for (slot, chord) in rest.by_ref().take(count) {
                     if !first {
-                        ui.text(sized(theme, -2., c.dim), "or");
+                        ui.text(sized(&theme, -2., c.dim), "or");
                     }
                     first = false;
                     let warn = chord.is_some() && chord == warned;
@@ -515,7 +516,7 @@ const fn cap(slot: Option<usize>) -> Cap {
 
 /// How wide [`recorder`] makes `chord`, or its field while `live`.
 fn width(ui: &mut Ui, chord: Option<Chord>, live: bool) -> f32 {
-    let row = ui.theme().size.row;
+    let row = theme::current().size.row;
     let mut caps = 0.;
     let mut count = 0u16;
     for cap in chord.into_iter().flat_map(Chord::caps) {
@@ -542,7 +543,7 @@ fn recorder(
     warn: bool,
     open: bool,
 ) -> Recorded {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let element = Element {
         direction: Direction::LeftToRight,
@@ -592,7 +593,7 @@ fn recorder(
         if let Some(chord) = *pending {
             chord.caps().for_each(|cap| key_cap(ui, &cap, c.text));
         } else if held == Modifiers::default() {
-            ui.text(sized(theme, -1., c.dim), "Press keys…");
+            ui.text(sized(&theme, -1., c.dim), "Press keys…");
         } else {
             held.caps().for_each(|cap| key_cap(ui, cap, c.text));
         }

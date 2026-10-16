@@ -10,6 +10,7 @@ use super::dock::{Dock, TAB_GAP, TAB_PADDING, dock_radius, tab_height};
 use super::layout::{Divider, cut, extent};
 use super::place::{Band, Place, Places};
 use super::{GUTTER, MIN_DOCK, MIN_MAIN, Workspace};
+use crate::theme;
 
 /// How far a held tab has to move, in logical pixels, before it's dragged
 /// rather than clicked.
@@ -85,7 +86,7 @@ impl Workspace {
         else {
             return;
         };
-        let size = ui.theme().size;
+        let size = theme::current().size;
         let drops = Drops {
             docks: &self.docks,
             sizes: &self.sizes,
@@ -128,7 +129,7 @@ impl Workspace {
         let Some(tab) = self.docks[grip.place.index()].tabs.get(grip.index) else {
             return;
         };
-        let size = ui.theme().size;
+        let size = theme::current().size;
         let drops = Drops {
             docks: &self.docks,
             sizes: &self.sizes,
@@ -156,7 +157,7 @@ fn drag_marks(
     title: &str,
     window: Option<Rect>,
 ) {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (color, size) = (theme.color, theme.size);
     let float = |rect: Rect| Element {
         size: [Length::Fixed(rect.w), Length::Fixed(rect.h)],

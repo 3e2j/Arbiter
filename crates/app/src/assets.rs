@@ -3,10 +3,9 @@
 
 use std::sync::OnceLock;
 
-use gui::{
-    canvas::{FontFile, GlyphError, Glyphs, IconId},
-    ui::ThemeFonts,
-};
+use gui::canvas::{FontFile, GlyphError, Glyphs, IconId};
+
+use crate::theme::ThemeFonts;
 
 /// Every [`Icon`]'s id, set by [`load_icons`].
 static ICONS: OnceLock<[IconId; Icon::ALL.len()]> = OnceLock::new();

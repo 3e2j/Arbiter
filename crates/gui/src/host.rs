@@ -9,7 +9,7 @@ use crate::clipboard::Clipboard;
 use crate::input::{Event, Input, WindowRequest};
 use crate::keymap::Keymap;
 use crate::ui::layout::Layout;
-use crate::ui::{Memory, Slots, Theme, Ui};
+use crate::ui::{Border, Memory, Slots, Ui};
 
 /// The app's side of the host.
 pub trait App: Sized {
@@ -35,11 +35,9 @@ pub trait App: Sized {
     /// is already in place when the boxes are declared. Where shortcuts that
     /// aren't asked of a box go, such as Escape closing a menu.
     fn input(&mut self, _input: &Input) {}
-    /// A theme to draw with from now on, in place of the one before. Asked
-    /// once a frame, after [`App::input`] and before any pass.
-    fn take_theme(&mut self) -> Option<Theme> {
-        None
-    }
+    /// What the window's own box looks like, under everything. Asked each
+    /// pass.
+    fn window_style(&self) -> WindowStyle;
     /// A zoom to draw at from now on, as [`Startup::zoom`] says. Asked once
     /// a frame, before [`App::input`], so the frame is drawn at it.
     fn take_zoom(&mut self) -> Option<f32> {
@@ -72,11 +70,18 @@ impl Wake {
     }
 }
 
+/// What the window's own box looks like, from [`App::window_style`].
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct WindowStyle {
+    /// What the window is cleared to.
+    pub background: Color,
+    /// Drawn only when the window is rounded.
+    pub border: Border,
+    pub radius: f32,
+}
+
 /// What the app sets up before the first pass.
 pub struct Startup<'a> {
-    /// What everything is drawn with, and the window cleared to. Black and
-    /// zero sized until the app fills it in.
-    pub theme: Theme,
     /// Where the app adds its fonts and icons.
     pub glyphs: &'a mut Glyphs,
     /// The default keys, for the app to bind its own over.
@@ -90,7 +95,6 @@ pub struct Startup<'a> {
 
 pub struct Host<A> {
     app: A,
-    theme: Theme,
     zoom: f32,
     glyphs: Glyphs,
     input: Input,
@@ -109,22 +113,15 @@ impl<A: App> Host<A> {
     pub fn new(args: A::Args, wake: Wake) -> Result<Self, Box<dyn Error>> {
         let mut glyphs = Glyphs::default();
         let mut start = Startup {
-            theme: Theme::default(),
             glyphs: &mut glyphs,
             keymap: Keymap::default(),
             wake,
             zoom: 1.,
         };
         let app = A::new(&mut start, args)?;
-        let Startup {
-            theme,
-            keymap,
-            zoom,
-            ..
-        } = start;
+        let Startup { keymap, zoom, .. } = start;
         Ok(Self {
             app,
-            theme,
             zoom,
             glyphs,
             input: Input::default(),
@@ -156,8 +153,7 @@ impl<A: App> Host<A> {
 
     /// Draws a frame over `rect`, the window in logical pixels, with `scale`
     /// physical pixels per logical one, zoom included, from the events pushed since the last.
-    /// `rounded` draws the page with the theme's
-    /// [`window_radius`](crate::ui::ThemeSizes::window_radius) and a border,
+    /// `rounded` draws the page with the [`WindowStyle`]'s radius and border,
     /// clear past its corners. `elapsed` is the time since the last frame.
     pub fn draw(
         &mut self,
@@ -177,9 +173,6 @@ impl<A: App> Host<A> {
 
         // Act on input before any pass
         self.app.input(&self.input);
-        if let Some(theme) = self.app.take_theme() {
-            self.theme = theme;
-        }
 
         // 1st pass
         let mut out = self.pass(rounded);
@@ -202,7 +195,7 @@ impl<A: App> Host<A> {
         canvas.background = if rounded {
             Color::TRANSPARENT
         } else {
-            self.theme.color.page
+            self.app.window_style().background
         };
         self.layout.emit(canvas, &mut self.glyphs);
         if let Some(cursor) = self.layout.cursor(self.input.pointer()) {
@@ -219,7 +212,6 @@ impl<A: App> Host<A> {
         let mut out = WindowRequest::default();
         self.layout.clear();
         let mut ui = Ui::root(
-            &self.theme,
             &mut self.layout,
             &mut self.glyphs,
             &self.input,
@@ -228,10 +220,11 @@ impl<A: App> Host<A> {
             &mut self.memory,
         );
         if rounded {
+            let style = self.app.window_style();
             let window = ui.style();
-            window.background = Some(self.theme.color.page);
-            window.border = Some(self.theme.border());
-            window.radius = [self.theme.size.window_radius; 4];
+            window.background = Some(style.background);
+            window.border = Some(style.border);
+            window.radius = [style.radius; 4];
         }
         self.app.ui(&mut ui);
         self.memory.end(&self.input);

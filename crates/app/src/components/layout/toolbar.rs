@@ -1,12 +1,13 @@
 //! A strip of controls along the top of a panel.
 
+use crate::theme;
 use gui::ui::{Align, Direction, Element, Length, Ui};
 
 /// Fills the open box across, as tall as what `body` declares, which sits
 /// left to right with half a gap around and between.
 #[track_caller]
 pub fn toolbar<R>(ui: &mut Ui, body: impl FnOnce(&mut Ui) -> R) -> R {
-    let s = ui.theme().size;
+    let s = theme::current().size;
     let element = Element {
         direction: Direction::LeftToRight,
         size: [Length::Grow, Length::Fit],

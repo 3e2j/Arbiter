@@ -1,5 +1,4 @@
-//! Basic components with no data model, drawn from the
-//! [`Theme`](gui::ui::Theme).
+//! Basic components with no data model, drawn from the current theme.
 //!
 //! Each is a function that declares its boxes into the open one and returns
 //! what the user did, plus a state struct for the ones that remember

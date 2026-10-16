@@ -36,6 +36,7 @@ use gui::{
 
 use crate::panels::Panel;
 
+use crate::theme;
 use dock::{Dock, Tab, dock_radius};
 use drag::{Grip, TabDrag};
 use layout::{Divider, Drag, Pass, fit};
@@ -245,7 +246,7 @@ impl Workspace {
     }
 
     fn dock(&mut self, ui: &mut Ui, place: Place, size: [Length; 2]) {
-        let theme = ui.theme();
+        let theme = theme::current();
         // Its border is the padding, so the tab bar meets it.
         let element = Element {
             size,

@@ -17,7 +17,6 @@
 pub(crate) mod layout;
 #[cfg(any(test, feature = "test-util"))]
 pub mod testing;
-mod theme;
 pub mod window;
 
 use std::collections::HashMap;
@@ -33,11 +32,9 @@ use layout::{Layout, Slot};
 pub use layout::{
     Align, Anchor, Border, Direction, Element, Length, TextCaret, TextHighlight, TextStyle,
 };
-pub use theme::{Theme, ThemeColors, ThemeFonts, ThemeIcons, ThemeSizes};
 
 pub struct Ui<'a> {
     open: Open,
-    theme: &'a Theme,
     layout: &'a mut Layout,
     glyphs: &'a mut Glyphs,
     input: &'a Input,
@@ -143,7 +140,6 @@ struct Open {
 impl<'a> Ui<'a> {
     /// In the window's box, which `layout` has open.
     pub(crate) fn root(
-        theme: &'a Theme,
         layout: &'a mut Layout,
         glyphs: &'a mut Glyphs,
         input: &'a Input,
@@ -162,7 +158,6 @@ impl<'a> Ui<'a> {
                 rect: None,
                 sites: 0,
             },
-            theme,
             layout,
             glyphs,
             input,
@@ -170,12 +165,6 @@ impl<'a> Ui<'a> {
             slots,
             memory,
         }
-    }
-
-    /// What everything is drawn with.
-    #[must_use]
-    pub const fn theme(&self) -> &'a Theme {
-        self.theme
     }
 
     /// What the user did since the last pass.

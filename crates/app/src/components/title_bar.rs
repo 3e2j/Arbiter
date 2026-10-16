@@ -4,12 +4,13 @@ use gui::ui::Ui;
 use gui::ui::window::window_drag;
 
 use super::toolbar;
+use crate::theme;
 
 /// A [`toolbar`] that moves the window as [`window_drag`] says, shaded while
 /// held.
 #[track_caller]
 pub fn title_bar<R>(ui: &mut Ui, body: impl FnOnce(&mut Ui) -> R) -> R {
-    let (c, s) = (ui.theme().color, ui.theme().size);
+    let (c, s) = (theme::current().color, theme::current().size);
     toolbar(ui, |ui| {
         let out = body(ui);
         let held = window_drag(ui);

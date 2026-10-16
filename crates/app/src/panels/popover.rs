@@ -5,13 +5,14 @@ use crate::components;
 use gui::ui::{Align, Element, Length, Ui};
 
 use crate::assets::Icon;
+use crate::theme;
 
 /// Of every popover.
 pub const WIDTH: f32 = 220.;
 
 /// A dim line naming the checks below it in a popover.
 pub fn heading(ui: &mut Ui, text: &str) {
-    let theme = ui.theme();
+    let theme = theme::current();
     let s = theme.size;
     let element = Element {
         size: [Length::Grow, Length::Fixed(s.row)],
@@ -27,7 +28,7 @@ pub fn heading(ui: &mut Ui, text: &str) {
 /// A line in a popover: a tick while `on`, then `label`. Returns whether it
 /// was clicked this pass.
 pub fn check(ui: &mut Ui, label: &str, on: bool) -> bool {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let element = Element {
         padding: [s.icon_gap, 0., s.icon_gap, 0.],

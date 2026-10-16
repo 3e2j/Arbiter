@@ -6,6 +6,15 @@ use gui::input::{Event, Key, PointerButton, WindowAction};
 use gui::ui::testing::Kept;
 use gui::ui::{Element, Length};
 
+use crate::theme::{self, ThemeSizes};
+
+/// Changes the sizes of the theme the test's passes draw with.
+fn sizes(edit: impl FnOnce(&mut ThemeSizes)) {
+    let mut theme = theme::current();
+    edit(&mut theme.size);
+    theme::set(theme);
+}
+
 fn fixed(w: f32, h: f32) -> Element {
     Element {
         size: [Length::Fixed(w), Length::Fixed(h)],
@@ -63,9 +72,9 @@ fn a_list_stops_at_both_ends() {
 #[test]
 fn dragging_the_thumb_scrolls_as_far_as_it_moves() {
     let mut kept = Kept::default();
-    kept.theme.size.scroll_bar = 6.;
+    sizes(|size| size.scroll_bar = 6.);
     // The thumb is never shorter than a row.
-    kept.theme.size.row = 10.;
+    sizes(|size| size.row = 10.);
     let mut state = ListScroll::TOP;
     for _ in 0..3 {
         list_pass(&mut kept, &mut state);
@@ -171,8 +180,10 @@ fn only_the_innermost_scroll_box_takes_the_wheel() {
 #[test]
 fn a_button_reports_a_click_over_it() {
     let mut kept = Kept::default();
-    kept.theme.size.row = 20.;
-    kept.theme.size.gap = 8.;
+    sizes(|size| {
+        size.row = 20.;
+        size.gap = 8.;
+    });
     let pass = |kept: &mut Kept| kept.pass(|ui| button(ui, "Open"));
     kept.input.push(Event::Pointer(Some([1., 1.])));
     pass(&mut kept);
@@ -230,7 +241,7 @@ fn title_bar_pass(kept: &mut Kept) -> Option<WindowAction> {
 #[test]
 fn dragging_a_title_bar_moves_the_window_but_not_from_its_buttons() {
     let mut kept = Kept::default();
-    kept.theme.size.row = 20.;
+    sizes(|size| size.row = 20.);
     kept.input.push(Event::Pointer(Some([5., 5.])));
     title_bar_pass(&mut kept);
     kept.input.push(Event::Pressed(PointerButton::Left));
@@ -262,7 +273,7 @@ fn click_title_bar(kept: &mut Kept, press: Event<'static>) -> Option<WindowActio
 #[test]
 fn double_clicking_a_title_bar_toggles_maximized() {
     let mut kept = Kept::default();
-    kept.theme.size.row = 20.;
+    sizes(|size| size.row = 20.);
     kept.input.push(Event::Pointer(Some([200., 5.])));
     title_bar_pass(&mut kept);
     let first = Event::Pressed(PointerButton::Left);
@@ -301,8 +312,10 @@ fn menu_pass(
 
 /// A menu opened at `[20, 20]`, its rows ten tall from there, laid out.
 fn open_menu(kept: &mut Kept, state: &mut ContextMenu, disabled: bool) {
-    kept.theme.size.row = 10.;
-    kept.theme.size.gap = 0.;
+    sizes(|size| {
+        size.row = 10.;
+        size.gap = 0.;
+    });
     menu_pass(kept, state, disabled);
     kept.input.push(Event::Pointer(Some([20., 20.])));
     menu_pass(kept, state, disabled);
@@ -396,8 +409,10 @@ fn dropdown_typing(kept: &mut Kept, state: &mut Dropdown) -> (Chosen, bool) {
 /// A dropdown pressed open, its list laid out with its rows ten tall from
 /// `[0, 14]`, and holding the keyboard.
 fn open_dropdown(kept: &mut Kept, state: &mut Dropdown) {
-    kept.theme.size.row = 10.;
-    kept.theme.size.gap = 0.;
+    sizes(|size| {
+        size.row = 10.;
+        size.gap = 0.;
+    });
     dropdown_pass(kept, state);
     press_dropdown(kept, state, [50., 5.]);
     dropdown_pass(kept, state);
@@ -481,8 +496,10 @@ fn a_dropdown_holds_the_keyboard_only_while_open() {
 /// A slider a hundred and ten across with five notches, its knob ten across,
 /// so the notches sit at 5, 30, 55, 80 and 105.
 fn slider_pass(kept: &mut Kept) -> Slid {
-    kept.theme.size.row = 10.;
-    kept.theme.size.icon = 10.;
+    sizes(|size| {
+        size.row = 10.;
+        size.icon = 10.;
+    });
     kept.pass(|ui| ui.element(fixed(110., 10.), |ui| slider(ui, 5, 2)))
 }
 
@@ -522,7 +539,7 @@ fn a_slider_ignores_a_press_elsewhere() {
 #[test]
 fn a_switch_says_when_its_clicked_and_not_when_the_press_was_elsewhere() {
     let mut kept = Kept::default();
-    kept.theme.size.icon = 10.;
+    sizes(|size| size.icon = 10.);
     let pass = |kept: &mut Kept| kept.pass(|ui| switch(ui, 0.));
     pass(&mut kept);
     kept.input.push(Event::Pointer(Some([5., 5.])));
@@ -541,7 +558,7 @@ fn a_switch_says_when_its_clicked_and_not_when_the_press_was_elsewhere() {
 #[test]
 fn a_segmented_picker_says_which_segment_was_clicked() {
     let mut kept = Kept::default();
-    kept.theme.size.row = 20.;
+    sizes(|size| size.row = 20.);
     // Three segments 32 across, at 2, 36 and 70.
     let pass = |kept: &mut Kept| {
         kept.pass(|ui| ui.element(fixed(104., 20.), |ui| segmented(ui, &[""; 3], 0)))

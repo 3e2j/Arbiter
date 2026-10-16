@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use super::file::lenient;
 use super::widgets::{beside, label, row, sized};
 use crate::assets::Icon;
+use crate::theme;
 use crate::theme::Palette;
 
 /// Fits a theme's name under its picture.
@@ -227,7 +228,7 @@ impl Appearance {
 /// A theme as a picture of the workspace in its colours, then its name.
 /// Returns whether it's under the pointer, and whether it was clicked.
 fn card(ui: &mut Ui, palette: Palette, on: bool) -> (bool, bool) {
-    let theme = ui.theme();
+    let theme = theme::current();
     let c = theme.color;
     let p = palette.colors();
     let pad = 6.;
@@ -311,7 +312,7 @@ fn card(ui: &mut Ui, palette: Palette, on: bool) -> (bool, bool) {
             });
         });
         ui.element(name, |ui| {
-            ui.text(sized(theme, -1., c.text), palette.name());
+            ui.text(sized(&theme, -1., c.text), palette.name());
             spacer(ui);
             ui.element(tick, |ui| {
                 if on {

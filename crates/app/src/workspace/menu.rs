@@ -14,6 +14,7 @@ use crate::assets::Icon;
 use super::Workspace;
 use super::dock::{Dock, TAB_GAP, TAB_PADDING, dock_radius, tab_height};
 use super::place::{Band, Place, Places};
+use crate::theme;
 
 /// The open menu.
 #[derive(Clone, Copy, Debug)]
@@ -146,7 +147,7 @@ impl Workspace {
 /// the places, as [`tab_row`] and [`map_cell`] draw them. Returns what was
 /// clicked.
 fn menu_ui(ui: &mut Ui, menu: Menu, docks: &[Dock; Place::COUNT], window: Rect) -> Option<Choice> {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (color, size) = (theme.color, theme.size);
     let dock = &docks[menu.place.index()];
     let allowed = dock
@@ -231,7 +232,7 @@ enum RowClick {
 /// `selected` one is lit. A close button shows at its right end while the
 /// pointer is on the row.
 fn tab_row(ui: &mut Ui, title: &str, selected: bool) -> Option<RowClick> {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (color, size) = (theme.color, theme.size);
     let row = tab_height(size);
     let element = Element {
@@ -285,7 +286,7 @@ enum CellState {
 /// A place on the map at `rect`, from the map's top left. Returns whether it
 /// was clicked, never for [`CellState::Own`] or [`CellState::Blocked`].
 fn map_cell(ui: &mut Ui, rect: Rect, state: CellState) -> bool {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (color, size) = (theme.color, theme.size);
     let enabled = matches!(state, CellState::Occupied | CellState::Empty);
     let element = Element {

@@ -17,15 +17,16 @@ use std::sync::Arc;
 
 use disk::{Loader, TreeReader, Watch};
 use gui::{
-    host::{App, Startup, Wake},
+    host::{App, Startup, Wake, WindowStyle},
     input::Input,
     platform::window,
-    ui::{Element, Theme, ThemeFonts, Ui, window::window_edges},
+    ui::{Element, Ui, window::window_edges},
 };
 pub use panels::Capture;
 use panels::{Files, Hex, Output, Panel};
 use project::{Log, Project};
 use settings::Settings;
+use theme::ThemeFonts;
 use workspace::{Place, Session, Workspace, status_bar, title_bar};
 
 /// How far in from the window's edges a drag resizes it, in logical pixels.
@@ -161,7 +162,7 @@ impl App for Editor {
         let settings = Settings::load();
         let fonts = assets::fonts(start.glyphs)?;
         assets::load_icons(start.glyphs)?;
-        start.theme = theme::theme(settings.palette(), fonts);
+        theme::set(theme::theme(settings.palette(), fonts));
         start.zoom = settings.zoom().factor();
         start.keymap = settings.keymap();
         let session = project
@@ -218,11 +219,18 @@ impl App for Editor {
             }
         }
         self.workspace.input(input);
+        if let Some(palette) = self.settings.take_changed() {
+            theme::set(theme::theme(palette, self.fonts));
+        }
     }
 
-    fn take_theme(&mut self) -> Option<Theme> {
-        let palette = self.settings.take_changed()?;
-        Some(theme::theme(palette, self.fonts))
+    fn window_style(&self) -> WindowStyle {
+        let theme = theme::current();
+        WindowStyle {
+            background: theme.color.page,
+            border: theme.border(),
+            radius: theme.size.window_radius,
+        }
     }
 
     fn take_zoom(&mut self) -> Option<f32> {

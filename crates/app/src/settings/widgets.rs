@@ -3,10 +3,11 @@
 use crate::components::{IconState, icon_button};
 use gui::{
     canvas::Color,
-    ui::{Align, Direction, Element, Length, TextStyle, Theme, Ui},
+    ui::{Align, Direction, Element, Length, TextStyle, Ui},
 };
 
 use crate::assets::Icon;
+use crate::theme::{self, Theme};
 
 /// Text in the UI font, `by` pixels off the text size.
 pub const fn sized(theme: &Theme, by: f32, color: Color) -> TextStyle {
@@ -22,7 +23,7 @@ const CAP_PAD: f32 = 6.;
 
 /// A key, raised, as in a chord or beside what it does, named in `color`.
 pub fn key_cap(ui: &mut Ui, name: &str, color: Color) {
-    let theme = ui.theme();
+    let theme = theme::current();
     let c = theme.color;
     let element = Element {
         min: [CAP, CAP],
@@ -33,13 +34,13 @@ pub fn key_cap(ui: &mut Ui, name: &str, color: Color) {
         radius: [5.; 4],
         ..Element::DEFAULT
     };
-    ui.element(element, |ui| ui.text(sized(theme, -2., color), name));
+    ui.element(element, |ui| ui.text(sized(&theme, -2., color), name));
 }
 
 /// How wide [`key_cap`] makes `name`.
 pub fn key_cap_width(ui: &mut Ui, name: &str) -> f32 {
-    let theme = ui.theme();
-    let [width, _] = ui.measure(sized(theme, -2., theme.color.text), name);
+    let theme = theme::current();
+    let [width, _] = ui.measure(sized(&theme, -2., theme.color.text), name);
     (width + 2. * CAP_PAD).max(CAP)
 }
 
@@ -84,7 +85,7 @@ pub fn beside<R>(
     changed: bool,
     control: impl FnOnce(&mut Ui) -> R,
 ) -> (bool, R) {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let wrap = Element {
         size: [Length::Grow, Length::Fit],
@@ -101,7 +102,7 @@ pub fn beside<R>(
     // The name's dot is counted whether it's shown or not, so setting one
     // doesn't move the control.
     let [named, _] = ui.measure(theme.ui_text(c.text), name);
-    let said = desc.map_or(0., |desc| ui.measure(sized(theme, -1., c.dim), desc)[0]);
+    let said = desc.map_or(0., |desc| ui.measure(sized(&theme, -1., c.dim), desc)[0]);
     let need = (named + DOT_GAP + DOT).max(said) + 2. * GAP + CONTROL + s.row;
     ui.element(wrap, |ui| {
         if ui.rect().is_none_or(|rect| rect.w >= need) {
@@ -127,7 +128,7 @@ const fn line() -> Element {
 }
 
 fn words(ui: &mut Ui, name: &str, desc: Option<&str>, changed: bool) {
-    let theme = ui.theme();
+    let theme = theme::current();
     let c = theme.color;
     let words = Element {
         size: [Length::Grow, Length::Fit],
@@ -148,7 +149,7 @@ fn words(ui: &mut Ui, name: &str, desc: Option<&str>, changed: bool) {
             }
         });
         if let Some(desc) = desc {
-            ui.text(sized(theme, -1., c.dim), desc);
+            ui.text(sized(&theme, -1., c.dim), desc);
         }
     });
 }
@@ -157,7 +158,7 @@ fn words(ui: &mut Ui, name: &str, desc: Option<&str>, changed: bool) {
 /// it was clicked.
 fn reset(ui: &mut Ui, changed: bool) -> bool {
     let hole = Element {
-        size: [Length::Fixed(ui.theme().size.row); 2],
+        size: [Length::Fixed(theme::current().size.row); 2],
         ..Element::DEFAULT
     };
     if changed {
@@ -169,7 +170,7 @@ fn reset(ui: &mut Ui, changed: bool) -> bool {
 
 /// The changed dot while `shown`, else a hole its size.
 pub fn dot(ui: &mut Ui, shown: bool) {
-    let accent = ui.theme().color.accent;
+    let accent = theme::current().color.accent;
     let element = Element {
         size: [Length::Fixed(DOT); 2],
         background: shown.then_some(accent),

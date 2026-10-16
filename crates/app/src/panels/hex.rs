@@ -19,6 +19,7 @@ use gui::{
 use serde::{Deserialize, Serialize};
 
 use crate::commands::Command;
+use crate::theme;
 use crate::workspace::Places;
 
 /// Bytes to a row.
@@ -213,7 +214,7 @@ impl Hex {
             Bytes::Read(bytes) if bytes.is_empty() => return notice(ui, "Empty file"),
             Bytes::Read(bytes) => bytes,
         };
-        let theme = ui.theme();
+        let theme = theme::current();
         let (c, s) = (theme.color, theme.size);
         let style = |color| TextStyle {
             font: theme.font.buffer,
@@ -535,7 +536,7 @@ fn line(
     hover: bool,
     selected: Option<Range<usize>>,
 ) -> Option<[f32; 2]> {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let element = Element {
         padding: [s.gap / 2., 0., s.gap / 2., 0.],

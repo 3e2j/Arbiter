@@ -1,6 +1,7 @@
 //! A line of a list or menu that can be clicked, lit while selected or under
 //! the pointer.
 
+use crate::theme;
 use gui::input::{CursorIcon, PointerButton};
 use gui::ui::{Element, Ui};
 
@@ -14,7 +15,7 @@ pub fn row<R>(
     selected: bool,
     body: impl FnOnce(&mut Ui) -> R,
 ) -> (bool, R) {
-    let c = ui.theme().color;
+    let c = theme::current().color;
     let element = Element {
         cursor: Some(CursorIcon::Pointer),
         ..element

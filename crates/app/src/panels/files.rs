@@ -27,6 +27,7 @@ use crate::theme::HOVER_THUMB;
 use crate::workspace::Places;
 
 use super::popover::{WIDTH as POPOVER, check, heading};
+use crate::theme;
 
 /// Width of the gutter's bar.
 const BAR: f32 = 3.;
@@ -378,7 +379,7 @@ impl Files {
         if view.rows.is_empty() {
             return notice(ui, "No matches");
         }
-        let height = ui.theme().size.row;
+        let height = theme::current().size.row;
         let columns = Columns {
             gutter: self.tab == Tab::Game,
             letters: self.letters,
@@ -531,7 +532,7 @@ impl Files {
     /// A tab for each tree along the top, the shown one underlined, over a
     /// line across the panel.
     fn tabs(&mut self, ui: &mut Ui) {
-        let theme = ui.theme();
+        let theme = theme::current();
         let (c, s) = (theme.color, theme.size);
         let strip = Element {
             direction: Direction::LeftToRight,
@@ -607,7 +608,7 @@ fn row_ui(
     selected: bool,
     columns: Columns,
 ) -> bool {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     // The gutter stands in for the left padding when there's one.
     let left = if columns.gutter { 0. } else { s.gap / 2. };
@@ -683,7 +684,7 @@ fn row_ui(
 /// A bar for what the mod does to a node: solid where it changes a file,
 /// outlined where it adds one, faint on a folder with either inside.
 fn gutter(ui: &mut Ui, status: NodeStatus) {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (s, color) = (theme.size, theme.color.accent);
     let pad = [(s.gap - BAR) / 2., (s.row - s.icon) / 2.];
     let gutter = Element {
@@ -728,7 +729,7 @@ fn regions(ui: &mut Ui, tree: &Tree, editions: u32) {
     if editions == 0 || editions == tree.every_edition() {
         return;
     }
-    let theme = ui.theme();
+    let theme = theme::current();
     let s = theme.size;
     // Monospaced, so each letter fills the same cell whatever its shape.
     let style = TextStyle {

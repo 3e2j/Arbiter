@@ -1,16 +1,10 @@
-//! The editor's look, handed to gui at startup and again whenever the user
-//! picks a [`Palette`]. Panels read it back from
-//! [`Ui::theme`](gui::ui::Ui::theme).
+//! The editor's palettes, and the [`Theme`] each one makes.
 
-use crate::components::ThumbShow;
-use gui::{
-    canvas::Color,
-    ui::{Theme, ThemeColors, ThemeFonts, ThemeIcons, ThemeSizes},
-};
-
+use gui::canvas::Color;
 use serde::{Deserialize, Serialize};
 
-use crate::assets::Icon;
+use super::{Theme, ThemeColors, ThemeFonts, ThemeIcons, ThemeSizes};
+use crate::{assets::Icon, components::ThumbShow};
 
 /// A set of colours the user picks in Settings.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]

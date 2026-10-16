@@ -21,6 +21,7 @@ use gui::{
 
 use crate::assets::Icon;
 use crate::commands::Command;
+use crate::theme;
 use crate::theme::{HOVER_THUMB, Palette};
 use appearance::Appearance;
 pub use appearance::Zoom;
@@ -275,7 +276,7 @@ impl Settings {
             return;
         }
         let Some(room) = ui.rect() else { return };
-        let theme = ui.theme();
+        let theme = theme::current();
         let (c, s) = (theme.color, theme.size);
         let shown = ease_out(self.opening.step(ui, OPEN_SECONDS));
         self.lift.go(self.appearance.previewing());
@@ -326,7 +327,7 @@ impl Settings {
 
     /// The pages, under the panel's title.
     fn sidebar(&mut self, ui: &mut Ui, radius: f32) {
-        let theme = ui.theme();
+        let theme = theme::current();
         let (c, s) = (theme.color, theme.size);
         let element = Element {
             size: [Length::Fixed(SIDEBAR), Length::Grow],
@@ -370,7 +371,7 @@ impl Settings {
         ui.element(element, |ui| {
             ui.element(title, |ui| {
                 ui.icon(Icon::Settings, s.icon, c.dim);
-                ui.text(sized(theme, 3., c.text), "Settings");
+                ui.text(sized(&theme, 3., c.text), "Settings");
             });
             for page in Page::ALL {
                 let on = page == self.page;
@@ -407,7 +408,7 @@ impl Settings {
     /// The open page: what it is, then its rows. Returns whether its close
     /// button was clicked.
     fn main(&mut self, ui: &mut Ui) -> bool {
-        let theme = ui.theme();
+        let theme = theme::current();
         let (c, s) = (theme.color, theme.size);
         let head = Element {
             direction: Direction::LeftToRight,
@@ -434,7 +435,7 @@ impl Settings {
         ui.element(Element::column(), |ui| {
             let close = ui.element(head, |ui| {
                 ui.element(badge, |ui| ui.icon(page.icon(), s.icon, c.accent));
-                ui.text(sized(theme, 3., c.text), page.name());
+                ui.text(sized(&theme, 3., c.text), page.name());
                 spacer(ui);
                 icon_button(ui, Icon::Close, IconState::Normal).clicked
             });
@@ -457,7 +458,7 @@ impl Settings {
 
 /// The keys that work, along the panel's bottom.
 fn footer(ui: &mut Ui, radius: f32) {
-    let theme = ui.theme();
+    let theme = theme::current();
     let c = theme.color;
     let element = Element {
         padding: [10., 0., 10., 0.],
@@ -468,8 +469,8 @@ fn footer(ui: &mut Ui, radius: f32) {
     };
     ui.element(element, |ui| {
         spacer(ui);
-        key_cap(ui, "Esc", ui.theme().color.text);
-        ui.text(sized(theme, -1., c.dim), "Close");
+        key_cap(ui, "Esc", theme::current().color.text);
+        ui.text(sized(&theme, -1., c.dim), "Close");
     });
 }
 
@@ -481,7 +482,7 @@ fn fade_in(ui: &mut Ui, shown: f32) {
     };
     let cover = Element {
         size: [Length::Fixed(rect.w), Length::Fixed(rect.h)],
-        background: Some(ui.theme().color.surface.faded(1. - shown)),
+        background: Some(theme::current().color.surface.faded(1. - shown)),
         float: Some(Anchor::Parent {
             parent: [Align::Start; 2],
             own: [Align::Start; 2],

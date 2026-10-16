@@ -1,5 +1,6 @@
 //! Things to press.
 
+use crate::theme;
 use gui::canvas::IconId;
 use gui::input::{CursorIcon, PointerButton};
 use gui::ui::{Align, Element, Length, Ui};
@@ -7,7 +8,7 @@ use gui::ui::{Align, Element, Length, Ui};
 /// A line of text on a raised box. Returns whether it was clicked this pass.
 #[track_caller]
 pub fn button(ui: &mut Ui, label: &str) -> bool {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let element = Element {
         size: [Length::Fit, Length::Fixed(s.row)],
@@ -48,7 +49,7 @@ pub struct Clicks {
 /// An icon in a square box.
 #[track_caller]
 pub fn icon_button(ui: &mut Ui, icon: impl Into<IconId>, state: IconState) -> Clicks {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let enabled = state != IconState::Disabled;
     let element = Element {

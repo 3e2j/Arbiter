@@ -2,9 +2,10 @@
 //! Picking one closes it, as does a press anywhere else or Escape. While it's
 //! open it has the keyboard: Up and Down mark a choice, Enter picks it.
 
+use crate::theme::{self, Theme};
 use gui::canvas::FontId;
 use gui::input::{CursorIcon, Key, PointerButton};
-use gui::ui::{Align, Anchor, Border, Direction, Element, Length, TextStyle, Theme, Ui};
+use gui::ui::{Align, Anchor, Border, Direction, Element, Length, TextStyle, Ui};
 
 /// Whether a [`dropdown`] is open, owned by the caller.
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
@@ -103,7 +104,7 @@ impl<'a> Choice<'a> {
 /// over everything else, with a check by the selected one.
 #[track_caller]
 pub fn dropdown(ui: &mut Ui, state: &mut Dropdown, choices: &[Choice], selected: usize) -> Chosen {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let element = Element {
         direction: Direction::LeftToRight,
@@ -123,7 +124,7 @@ pub fn dropdown(ui: &mut Ui, state: &mut Dropdown, choices: &[Choice], selected:
     };
     ui.element(element, |ui| {
         if let Some(choice) = choices.get(selected) {
-            ui.element(label, |ui| ui.text(text(theme, choice), choice.label));
+            ui.element(label, |ui| ui.text(text(&theme, choice), choice.label));
         }
         ui.icon(theme.icon.down, s.icon, c.dim);
         let mut chosen = Chosen::default();
@@ -185,7 +186,7 @@ fn list(
     width: f32,
     offset: [f32; 2],
 ) -> (bool, Option<usize>, Option<usize>) {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     // Its anchor ignores the parent's padding, so it's offset by it.
     let left = ui.style().padding[0];
@@ -231,7 +232,7 @@ fn list(
                     hovered = Some(index);
                 }
                 ui.style().background = (over || marked == Some(index)).then_some(c.hover);
-                ui.element(label, |ui| ui.text(text(theme, choice), choice.label));
+                ui.element(label, |ui| ui.text(text(&theme, choice), choice.label));
                 ui.element(tick, |ui| {
                     if index == selected {
                         ui.icon(theme.icon.check, s.icon, c.accent);

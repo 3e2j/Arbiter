@@ -4,13 +4,14 @@ use crate::components::{Clicks, IconState, icon_button, rule};
 use gui::{
     canvas::Rect,
     input::{CursorIcon, PointerButton},
-    ui::{Align, Anchor, Direction, Element, Length, ThemeSizes, Ui},
+    ui::{Align, Anchor, Direction, Element, Length, Ui},
 };
 
 use std::ops::Range;
 
 use crate::assets::Icon;
 use crate::panels::Panel;
+use crate::theme::{self, ThemeSizes};
 
 pub(super) struct Tab {
     pub(super) panel: Panel,
@@ -61,7 +62,7 @@ impl Dock {
         if self.tabs.is_empty() {
             return out;
         }
-        let theme = ui.theme();
+        let theme = theme::current();
         let (color, size) = (theme.color, theme.size);
         let tab_height = tab_height(size);
         let top = dock_radius(size) - size.line;
@@ -178,7 +179,7 @@ impl Dock {
     /// While the pointer is on it, a close button floats over its right end,
     /// in the room set aside for it, so the title doesn't move.
     fn tab(ui: &mut Ui, key: u32, title: &str, width: f32, active: bool) -> TabState {
-        let theme = ui.theme();
+        let theme = theme::current();
         let (color, size) = (theme.color, theme.size);
         let radius = [size.radius, size.radius, 0., 0.];
         let element = Element {
@@ -281,7 +282,7 @@ pub(super) struct DockOut {
 /// A tab's close button, floating over the right end of the open tab and
 /// centred on the tab above the bar's line.
 fn close_button(ui: &mut Ui) -> Clicks {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (color, size) = (theme.color, theme.size);
     let element = Element {
         size: [Length::Fixed(size.row); 2],
@@ -310,7 +311,7 @@ fn close_button(ui: &mut Ui) -> Clicks {
 /// under what `body` declares.
 #[track_caller]
 fn on_line(ui: &mut Ui, width: Length, body: impl FnOnce(&mut Ui)) {
-    let theme = ui.theme();
+    let theme = theme::current();
     let size = theme.size;
     let cell = Element {
         size: [width, Length::Fixed(tab_height(size))],

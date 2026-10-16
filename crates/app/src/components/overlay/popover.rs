@@ -3,6 +3,7 @@
 //!
 //! If picking something should close it, use a menu instead.
 
+use crate::theme;
 use gui::input::PointerButton;
 use gui::ui::{Align, Anchor, Element, Length, Ui};
 
@@ -13,7 +14,7 @@ use gui::ui::{Align, Anchor, Element, Length, Ui};
 /// the click reopens it.
 #[track_caller]
 pub fn popover<R>(ui: &mut Ui, width: f32, body: impl FnOnce(&mut Ui) -> R) -> (R, bool) {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     // Its anchor ignores the parent's padding, so it's offset by it.
     let right = ui.style().padding[2];

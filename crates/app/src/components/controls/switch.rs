@@ -1,6 +1,7 @@
 //! A knob in a rounded track that flips a setting on or off when clicked.
 //! On, the knob sits at the right end and the track takes the accent.
 
+use crate::theme;
 use gui::input::{CursorIcon, PointerButton};
 use gui::ui::{Align, Anchor, Element, Length, Ui};
 
@@ -13,7 +14,7 @@ const INSET: f32 = 3.;
 /// Returns whether it was clicked.
 #[track_caller]
 pub fn switch(ui: &mut Ui, on: f32) -> bool {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let knob = s.icon;
     let tall = knob + 2. * INSET;

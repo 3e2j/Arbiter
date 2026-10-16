@@ -1,6 +1,7 @@
 //! Boxes taller than the space they're given, moved by the wheel while the
 //! pointer is over them, with a thumb along the right edge showing where.
 
+use crate::theme;
 use gui::input::PointerButton;
 use gui::ui::{Align, Anchor, Element, Length, Ui};
 
@@ -160,7 +161,7 @@ fn thumb(
     if scrolls <= 0. || view <= 0. {
         return 0.;
     }
-    let theme = ui.theme();
+    let theme = theme::current();
     let width = theme.size.scroll_bar;
     let inset = width / 2.;
     let track = view - 2. * inset;

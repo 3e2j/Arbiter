@@ -4,6 +4,7 @@
 //! The box that's right clicked opens its [`ContextMenu`], then declares
 //! [`context_menu`] each pass with what it offers there.
 
+use crate::theme;
 use gui::input::{Key, PointerButton};
 use gui::ui::{Anchor, Element, Length, Ui};
 
@@ -72,7 +73,7 @@ impl<'a> MenuItem<'a> {
 #[track_caller]
 pub fn context_menu(ui: &mut Ui, state: &mut ContextMenu, items: &[MenuItem]) -> Option<usize> {
     let at = state.at?;
-    let theme = ui.theme();
+    let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     // Takes the press that closes it, so it doesn't land on what's under.
     // The pass it opens, the cover isn't under the pointer yet.

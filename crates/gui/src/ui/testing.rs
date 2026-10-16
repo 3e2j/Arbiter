@@ -2,7 +2,7 @@
 //! [`Ui`].
 
 use super::layout::Layout;
-use super::{Memory, Slots, Theme, Ui};
+use super::{Memory, Slots, Ui};
 use crate::canvas::{Glyphs, Rect};
 use crate::input::{Input, WindowRequest};
 
@@ -11,7 +11,6 @@ pub const WINDOW: Rect = Rect::new(0., 0., 300., 100.);
 /// What the host keeps between passes.
 #[derive(Default)]
 pub struct Kept {
-    pub theme: Theme,
     pub(crate) layout: Layout,
     pub glyphs: Glyphs,
     pub input: Input,
@@ -33,7 +32,6 @@ impl Kept {
         self.layout.clear();
         self.out = WindowRequest::default();
         let mut ui = Ui::root(
-            &self.theme,
             &mut self.layout,
             &mut self.glyphs,
             &self.input,

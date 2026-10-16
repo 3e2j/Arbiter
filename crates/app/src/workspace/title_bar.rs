@@ -10,10 +10,11 @@ use gui::{
 
 use crate::assets::Icon;
 use crate::settings::Settings;
+use crate::theme;
 
 /// `title`, then the settings and the window's buttons at the right end.
 pub fn ui(ui: &mut Ui, title: &str, settings: &mut Settings) {
-    let theme = ui.theme();
+    let theme = theme::current();
     title_bar(ui, |ui| {
         // With the bar's own half gap, two gaps in, about where the panels'
         // contents start.

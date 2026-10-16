@@ -1,6 +1,7 @@
 //! A row of choices sharing one sunken track, the chosen one raised in it,
 //! for picking one of a few fixed values such as a zoom level.
 
+use crate::theme;
 use gui::input::{CursorIcon, PointerButton};
 use gui::ui::{Align, Element, Length, TextStyle, Ui};
 
@@ -14,7 +15,7 @@ const TALLER: f32 = 2.;
 /// between them, and the one at `at` raised. Returns the segment clicked.
 #[track_caller]
 pub fn segmented(ui: &mut Ui, labels: &[&str], at: u16) -> Option<u16> {
-    let theme = ui.theme();
+    let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     // Its corners follow its segments', a gap further out.
     let element = Element {

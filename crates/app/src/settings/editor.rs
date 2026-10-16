@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use super::file::{OnByDefault, lenient};
 use super::widgets::{beside, row, sized};
+use crate::theme;
 
 /// How long the switch's knob takes to cross.
 const SLIDE_SECONDS: f32 = 0.16;
@@ -71,8 +72,8 @@ impl Editor {
             let desc = Some("Pastes the primary selection.");
             let (reset, flipped) = beside(ui, "Middle-click paste", desc, changed, |ui| {
                 ui.element(end, |ui| {
-                    let theme = ui.theme();
-                    ui.text(sized(theme, -1., theme.color.dim), state);
+                    let theme = theme::current();
+                    ui.text(sized(&theme, -1., theme.color.dim), state);
                     switch(ui, on)
                 })
             });
