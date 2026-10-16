@@ -1,10 +1,10 @@
 //! A line of text the user types in.
 
+use crate::edit::{self, Edit, Lines, Selection};
 use crate::keymap::{self, ChordAction, KeyContext};
 use crate::theme;
 use gui::canvas::IconId;
 use gui::clipboard::Clipboard;
-use gui::edit::{self, Edit, Lines, Selection};
 use gui::input::{CursorIcon, Input, Modifiers, PointerButton, TypedInput};
 use gui::ui::{Align, Direction, Element, Length, TextCaret, TextHighlight, TextStyle, Ui};
 

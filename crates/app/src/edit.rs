@@ -1,6 +1,6 @@
 //! Editing text, shared by everything that does: a field, and later the code
-//! editor. Keys become [`Edit`]s through the app's keymap,
-//! and [`apply`] carries one out on a string and its [`Selection`].
+//! editor. Keys become [`Edit`]s through the [`keymap`](crate::keymap), and
+//! [`apply`] carries one out on a string and its [`Selection`].
 //!
 //! Every position is a byte offset into the text, between graphemes, so an
 //! emoji or a letter with its accent moves and deletes as one.
@@ -9,7 +9,7 @@ use std::ops::Range;
 
 use unicode_segmentation::{GraphemeCursor, UnicodeSegmentation};
 
-use crate::clipboard::Clipboard;
+use gui::clipboard::Clipboard;
 
 /// What's selected, or just where typing goes when both ends are the same.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]

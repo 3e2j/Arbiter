@@ -8,7 +8,6 @@
 pub mod anim;
 pub mod canvas;
 pub mod clipboard;
-pub mod edit;
 pub mod host;
 pub mod input;
 pub mod platform;

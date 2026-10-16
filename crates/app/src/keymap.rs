@@ -15,7 +15,7 @@ use std::cell::RefCell;
 use std::fmt;
 use std::str::FromStr;
 
-use gui::edit::{Edit, Motion};
+use crate::edit::{Edit, Motion};
 use gui::input::{Input, Key, KeyCode, KeyPress, Modifiers};
 
 thread_local! {

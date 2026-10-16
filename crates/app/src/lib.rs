@@ -8,6 +8,7 @@ mod assets;
 mod commands;
 pub mod components;
 mod disk;
+pub mod edit;
 pub mod keymap;
 mod panels;
 mod settings;
