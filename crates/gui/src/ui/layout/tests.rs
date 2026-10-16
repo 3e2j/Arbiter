@@ -526,7 +526,7 @@ fn a_custom_box_paints_from_where_it_is_this_pass() {
 
 const SANS: FontFile = FontFile {
     name: "Noto Sans",
-    data: include_bytes!("../../../../assets/fonts/noto-sans/NotoSans[wdth,wght].ttf"),
+    data: include_bytes!("../../../../../assets/fonts/noto-sans/NotoSans[wdth,wght].ttf"),
 };
 
 #[test]

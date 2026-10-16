@@ -14,6 +14,9 @@
 //! - Each item of a list that can insert or reorder goes in [`Ui::keyed`].
 //! - A component called from several places can take `#[track_caller]`.
 
+pub(crate) mod layout;
+mod theme;
+
 use std::collections::HashMap;
 use std::panic::Location;
 use std::time::Duration;
@@ -22,12 +25,12 @@ use crate::canvas::{Color, Glyphs, IconId, Quad, Rect, Vertex};
 use crate::clipboard::Clipboard;
 use crate::input::{CursorIcon, Input, PointerButton, WindowAction, WindowRequest};
 use crate::keymap::Keymap;
-use crate::layout::{Layout, Slot};
+use layout::{Layout, Slot};
 
-pub use crate::layout::{
+pub use layout::{
     Align, Anchor, Border, Direction, Element, Length, TextCaret, TextHighlight, TextStyle,
 };
-pub use crate::theme::{Theme, ThemeColors, ThemeFonts, ThemeIcons, ThemeSizes};
+pub use theme::{Theme, ThemeColors, ThemeFonts, ThemeIcons, ThemeSizes};
 
 pub struct Ui<'a> {
     open: Open,

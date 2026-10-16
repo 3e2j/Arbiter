@@ -4,8 +4,8 @@
 //! read back with [`Ui::theme`](crate::ui::Ui::theme). gui has no values of
 //! its own, so [`components`](crate::components) look however the app says.
 
+use super::layout::{Border, TextStyle};
 use crate::canvas::{Color, FontId, IconId};
-use crate::layout::{Border, TextStyle};
 
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub struct Theme {

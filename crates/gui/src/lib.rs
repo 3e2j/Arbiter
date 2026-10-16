@@ -14,8 +14,6 @@ pub mod edit;
 pub mod host;
 pub mod input;
 pub mod keymap;
-mod layout;
 pub mod platform;
 pub mod render;
-mod theme;
 pub mod ui;

@@ -8,7 +8,7 @@ use crate::canvas::{AtlasUpdate, Canvas, Color, Glyphs, Rect};
 use crate::clipboard::Clipboard;
 use crate::input::{Event, Input, WindowRequest};
 use crate::keymap::Keymap;
-use crate::layout::Layout;
+use crate::ui::layout::Layout;
 use crate::ui::{Memory, Slots, Theme, Ui};
 
 /// The app's side of the host.
