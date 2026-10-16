@@ -23,7 +23,7 @@ Each crate uses only the crates below it.
 - **`formats`**: bytes to structs and back. Game-data agnostic.
 - **`diag`**: the diagnostic types and the sink.
 - **`app`**: the editor. Everything the user sees, drawn through `gui`.
-- **`gui`**: windowing, input, layout, and drawing. Knows nothing of Arbiter.
+- **`gui`**: the engine. Windowing, input, layout, and drawing. Knows nothing of Arbiter.
 
 The workspace denies clippy `pedantic` and every way to panic. `formats` also
 bans native-endian byte conversions in its own `clippy.toml`.
