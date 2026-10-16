@@ -1,7 +1,6 @@
 //! Boxes taller than the space they're given, moved by the wheel while the
 //! pointer is over them, with a thumb along the right edge showing where.
 
-use crate::cast::count;
 use crate::input::PointerButton;
 use crate::ui::{Align, Anchor, Element, Length, Ui};
 
@@ -297,4 +296,11 @@ fn end(view: f32, height: f32, len: usize) -> (usize, f32) {
         }
     }
     (0, 0.)
+}
+
+/// `len` rows as a length, to multiply by their height. Exact up to 2^24,
+/// far past any list's length.
+#[allow(clippy::cast_precision_loss)]
+const fn count(len: usize) -> f32 {
+    len as f32
 }

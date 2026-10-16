@@ -15,7 +15,6 @@ use unicode_script::{Script, UnicodeScript};
 use super::FontId;
 use super::fonts::Fonts;
 use super::ink::Ink;
-use crate::cast::narrow;
 
 /// Shaped lines, kept while they're drawn every frame. A line held elsewhere,
 /// such as by a text element, is shaped here and kept by its holder.
@@ -265,6 +264,13 @@ fn line_hash(font: FontId, pixels: u16, text: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     (font, pixels, text).hash(&mut hasher);
     hasher.finish()
+}
+
+// harfrust positions are i32 font units, which f32 can't take exactly, so
+// they're scaled in f64. The pixels they come to fit f32 easily.
+#[allow(clippy::cast_possible_truncation)]
+fn narrow(v: f64) -> f32 {
+    v as f32
 }
 
 #[cfg(test)]

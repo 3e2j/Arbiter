@@ -15,8 +15,6 @@ pub use glyphs::{
     ShapedLine,
 };
 
-use crate::cast::{byte, sixteenths};
-
 /// In logical pixels, from the window's top left.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rect {
@@ -367,6 +365,18 @@ impl Canvas {
             _ => self.batches.push(batch),
         }
     }
+}
+
+/// `v` from 0 to 255 as a [`Color`] channel. Out of range saturates.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn byte(v: f32) -> u8 {
+    v.round() as u8
+}
+
+/// `v` in sixteenths, as a [`Quad`] stores its radii. Out of range saturates.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+const fn sixteenths(v: f32) -> u16 {
+    (v * 16.).round() as u16
 }
 
 #[cfg(test)]

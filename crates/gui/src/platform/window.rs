@@ -9,7 +9,6 @@ use std::{
 use super::pacer::Pacer;
 use crate::{
     canvas::{Canvas, Rect},
-    cast::narrow,
     host::{App, Host, Wake},
     input::{CursorIcon, Event, Key, KeyCode, Modifiers, PointerButton, WindowAction, WindowEdge},
     render::{self, Gpu},
@@ -649,4 +648,10 @@ fn compositor_paced(event_loop: &ActiveEventLoop) -> bool {
 )))]
 const fn compositor_paced(_: &ActiveEventLoop) -> bool {
     false
+}
+
+/// winit's f64 positions and scale as the f32 the rest of the crate takes.
+#[allow(clippy::cast_possible_truncation)]
+fn narrow(v: f64) -> f32 {
+    v as f32
 }

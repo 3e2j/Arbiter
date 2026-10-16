@@ -7,7 +7,6 @@
 
 pub mod anim;
 pub mod canvas;
-mod cast;
 pub mod clipboard;
 pub mod components;
 pub mod edit;

@@ -30,7 +30,6 @@ use shape::Lines;
 pub use shape::ShapedLine;
 
 use super::{Canvas, Color, Quad, Rect};
-use crate::cast::pixel;
 
 /// How tall the box for a character that couldn't be drawn is, as a share of
 /// the text size, so it sits on the baseline about as tall as a capital.
@@ -327,9 +326,10 @@ impl Glyphs {
         place(canvas, self.scale, ink, [x, y], missing, color);
     }
 
-    /// `size` logical pixels in whole physical pixels.
+    /// `size` logical pixels in whole physical pixels. Out of range saturates.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn pixels(&self, size: f32) -> u16 {
-        u16::try_from(pixel(f64::from(size * self.scale))).unwrap_or(u16::MAX)
+        (size * self.scale).round() as u16
     }
 
     /// Rounds a logical position to the nearest physical pixel, in physical

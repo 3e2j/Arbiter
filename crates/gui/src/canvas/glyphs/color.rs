@@ -8,7 +8,6 @@ use skrifa::{FontRef, GlyphId};
 
 use super::atlas::Format;
 use super::ink::Bitmap;
-use crate::cast::{pixel, pixel_offset};
 
 /// Glyph `id` from `face`'s images at `pixels` per em, as straight sRGB
 /// colour. `None` when the font has no image for it.
@@ -21,8 +20,8 @@ pub(super) fn rasterize(face: &FontRef, id: GlyphId, pixels: u16) -> Option<Bitm
     }
     let image = decode(&glyph)?;
     let scale = f64::from(pixels) / f64::from(glyph.ppem_y);
-    let scaled = |n: u32| u16::try_from(pixel(f64::from(n) * scale)).ok();
-    let offset = |n: f32| i16::try_from(pixel_offset(f64::from(n) * scale)).ok();
+    let scaled = |n: u32| u16::try_from(whole(f64::from(n) * scale)).ok();
+    let offset = |n: f32| i16::try_from(whole_signed(f64::from(n) * scale)).ok();
     let width = scaled(image.width())?;
     let height = scaled(image.height())?;
     Some(Bitmap {
@@ -85,7 +84,7 @@ fn span(at: u16, from: u32, to: u16) -> Vec<(u32, f64)> {
     let step = f64::from(from) / f64::from(to);
     let start = f64::from(at) * step;
     let end = start + step;
-    (pixel(start.floor())..pixel(end.ceil()))
+    (whole(start.floor())..whole(end.ceil()))
         .map(|texel| {
             let left = f64::from(texel);
             let covered = end.min(left + 1.) - start.max(left);
@@ -96,12 +95,24 @@ fn span(at: u16, from: u32, to: u16) -> Vec<(u32, f64)> {
 
 /// Premultiplied channels back to straight bytes.
 fn straight([r, g, b, a]: [f64; 4]) -> [u8; 4] {
-    let byte = |value: f64| u8::try_from(pixel(value)).unwrap_or(u8::MAX);
+    let byte = |value: f64| u8::try_from(whole(value)).unwrap_or(u8::MAX);
     if a <= 0. {
         return [0; 4];
     }
     let [r, g, b] = [r, g, b].map(|channel| byte(channel / a * 255.));
     [r, g, b, byte(a)]
+}
+
+/// `v` rounded, saturating at `u32`'s ends.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn whole(v: f64) -> u32 {
+    v.round() as u32
+}
+
+/// `v` rounded, saturating at `i32`'s ends.
+#[allow(clippy::cast_possible_truncation)]
+fn whole_signed(v: f64) -> i32 {
+    v.round() as i32
 }
 
 #[cfg(test)]

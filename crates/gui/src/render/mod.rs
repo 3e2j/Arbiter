@@ -11,7 +11,6 @@ use std::ops::Range;
 use wgpu::{CurrentSurfaceTexture, SurfaceTarget};
 
 use crate::canvas::{AtlasUpdate, Canvas, Format, Kind, Quad, Rect, Vertex};
-use crate::cast::{narrow, pixel};
 
 const QUAD_SIZE: wgpu::BufferAddress = size_of::<Quad>() as wgpu::BufferAddress;
 const VERTEX_SIZE: wgpu::BufferAddress = size_of::<Vertex>() as wgpu::BufferAddress;
@@ -572,4 +571,16 @@ fn atlas_bind_group(
             },
         ],
     })
+}
+
+// The scale comes from winit as f64, while the viewport takes f32 and the
+// scissor whole pixels. Out of range saturates.
+#[allow(clippy::cast_possible_truncation)]
+fn narrow(v: f64) -> f32 {
+    v as f32
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn pixel(v: f64) -> u32 {
+    v.round() as u32
 }
