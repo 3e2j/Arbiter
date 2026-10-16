@@ -5,6 +5,7 @@
 mod appearance;
 mod editor;
 mod file;
+mod keybinds;
 mod widgets;
 
 use std::path::PathBuf;
@@ -14,8 +15,8 @@ use gui::{
     canvas::Color,
     components::{IconState, Scroll, icon_button, notice, rule, scroll, spacer},
     input::{CursorIcon, Key, Modifiers, PointerButton},
-    keymap::{AppCommand, Chord, ChordAction, KeyContext},
-    ui::{Align, Anchor, Direction, Element, Length, TextStyle, Ui},
+    keymap::{AppCommand, Chord, ChordAction, KeyContext, Keymap},
+    ui::{Align, Anchor, Direction, Element, Length, Ui},
 };
 
 use crate::assets::Icon;
@@ -24,7 +25,8 @@ use crate::theme::{HOVER_THUMB, Palette};
 use appearance::Appearance;
 pub use appearance::Zoom;
 use editor::Editor;
-use widgets::sized;
+use keybinds::Keybinds;
+use widgets::{key_cap, sized};
 
 const TOGGLE: AppCommand = AppCommand("settings.toggle");
 const ZOOM_IN: AppCommand = AppCommand("zoom.in");
@@ -70,6 +72,7 @@ pub struct Settings {
     left: Page,
     appearance: Appearance,
     editor: Editor,
+    keybinds: Keybinds,
     /// The panel coming in.
     opening: Tween,
     /// The open page coming in.
@@ -126,6 +129,11 @@ impl Settings {
         ]
     };
 
+    /// What keys do: the editing keys, then each command's chords.
+    pub fn keymap(&self) -> Keymap {
+        self.keybinds.keymap()
+    }
+
     /// As the settings file left them.
     pub fn load() -> Self {
         let path = file::path();
@@ -135,26 +143,30 @@ impl Settings {
         let written = path.as_deref().map(file::read).unwrap_or_default();
         Self {
             path,
-            written,
             appearance: Appearance::new(written.appearance),
             editor: Editor::new(written.editor),
+            keybinds: Keybinds::new(&written.keybinds),
+            written,
             ..Self::default()
         }
     }
 
     /// Writes the settings file, if anything changed since it was last.
     pub fn save(&mut self) {
-        let saved = file::Saved {
-            appearance: self.appearance.saved(),
-            editor: self.editor.saved(),
-        };
-        if saved == self.written {
+        let (appearance, editor) = (self.appearance.saved(), self.editor.saved());
+        let same = appearance == self.written.appearance && editor == self.written.editor;
+        // Built only once they change, as it allocates.
+        if !self.keybinds.take_unsaved() && same {
             return;
         }
         // Even if it fails, so it's tried once a change rather than a pass.
-        self.written = saved;
+        self.written = file::Saved {
+            appearance,
+            editor,
+            keybinds: self.keybinds.saved(),
+        };
         if let Some(path) = &self.path
-            && let Err(err) = file::write(path, saved)
+            && let Err(err) = file::write(path, &self.written)
         {
             tracing::warn!("can't save the settings: {err}");
         }
@@ -210,8 +222,16 @@ impl Settings {
     /// and what gui keeps is handed to it, before the boxes that read it.
     pub fn gear(&mut self, ui: &mut Ui) {
         self.editor.apply(ui);
+        if let Some(keymap) = self.keybinds.take_keymap() {
+            *ui.keymap() = keymap;
+        }
         let mut toggled = false;
-        for &press in ui.input().keys() {
+        let keys = if self.keybinds.recording() {
+            &[][..]
+        } else {
+            ui.input().keys()
+        };
+        for &press in keys {
             let Some(ChordAction::Command(command)) =
                 ui.keymap().resolve(press, &[KeyContext::GLOBAL])
             else {
@@ -423,7 +443,8 @@ impl Settings {
                 match page {
                     Page::Appearance => self.appearance.ui(ui),
                     Page::Editor => self.editor.ui(ui),
-                    Page::Tools | Page::Keybinds => {
+                    Page::Keybinds => self.keybinds.ui(ui),
+                    Page::Tools => {
                         notice(ui, "Nothing to set here yet.");
                     }
                 }
@@ -445,22 +466,9 @@ fn footer(ui: &mut Ui, radius: f32) {
         radius: [0., 0., radius, radius],
         ..Element::line(FOOTER)
     };
-    let key = Element {
-        min: [20., 20.],
-        padding: [5., 0., 5., 0.],
-        align: [Align::Center; 2],
-        background: Some(c.surface),
-        border: Some(theme.border()),
-        radius: [4.; 4],
-        ..Element::DEFAULT
-    };
-    let mono = TextStyle {
-        font: theme.font.buffer,
-        ..sized(theme, -3., c.text)
-    };
     ui.element(element, |ui| {
         spacer(ui);
-        ui.element(key, |ui| ui.text(mono, "Esc"));
+        key_cap(ui, "Esc", ui.theme().color.text);
         ui.text(sized(theme, -1., c.dim), "Close");
     });
 }

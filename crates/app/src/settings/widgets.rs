@@ -16,6 +16,33 @@ pub const fn sized(theme: &Theme, by: f32, color: Color) -> TextStyle {
     }
 }
 
+/// A key cap's least width and height, and the room either side of its name.
+const CAP: f32 = 22.;
+const CAP_PAD: f32 = 6.;
+
+/// A key, raised, as in a chord or beside what it does, named in `color`.
+pub fn key_cap(ui: &mut Ui, name: &str, color: Color) {
+    let theme = ui.theme();
+    let c = theme.color;
+    let element = Element {
+        min: [CAP, CAP],
+        padding: [CAP_PAD, 0., CAP_PAD, 0.],
+        align: [Align::Center; 2],
+        background: Some(c.hover),
+        border: Some(theme.border()),
+        radius: [5.; 4],
+        ..Element::DEFAULT
+    };
+    ui.element(element, |ui| ui.text(sized(theme, -2., color), name));
+}
+
+/// How wide [`key_cap`] makes `name`.
+pub fn key_cap_width(ui: &mut Ui, name: &str) -> f32 {
+    let theme = ui.theme();
+    let [width, _] = ui.measure(sized(theme, -2., theme.color.text), name);
+    (width + 2. * CAP_PAD).max(CAP)
+}
+
 /// A setting: its label, then its control under it or beside. Its words
 /// line up with the [`rule`](gui::components::rule)s a page puts between
 /// rows.
@@ -32,9 +59,9 @@ pub fn row(ui: &mut Ui, body: impl FnOnce(&mut Ui)) {
 const CONTROL: f32 = 250.;
 /// Between a line's words, control and reset button.
 const GAP: f32 = 16.;
-/// The changed dot after a setting's name, and the gap before it.
-const DOT: f32 = 6.;
-const DOT_GAP: f32 = 6.;
+/// The changed dot by a setting's name, and the gap between them.
+pub const DOT: f32 = 6.;
+pub const DOT_GAP: f32 = 6.;
 
 /// A setting's name and what it does if it needs saying, with a dot after
 /// the name and a reset button at the end while it's `changed`. Returns
@@ -113,17 +140,11 @@ fn words(ui: &mut Ui, name: &str, desc: Option<&str>, changed: bool) {
         align: [Align::Start, Align::Center],
         ..Element::DEFAULT
     };
-    let dot = Element {
-        size: [Length::Fixed(DOT); 2],
-        background: Some(c.accent),
-        radius: [DOT / 2.; 4],
-        ..Element::DEFAULT
-    };
     ui.element(words, |ui| {
         ui.element(named, |ui| {
             ui.text(theme.ui_text(c.text), name);
             if changed {
-                ui.element(dot, |_| ());
+                dot(ui, true);
             }
         });
         if let Some(desc) = desc {
@@ -144,4 +165,16 @@ fn reset(ui: &mut Ui, changed: bool) -> bool {
     } else {
         ui.element(hole, |_| false)
     }
+}
+
+/// The changed dot while `shown`, else a hole its size.
+pub fn dot(ui: &mut Ui, shown: bool) {
+    let accent = ui.theme().color.accent;
+    let element = Element {
+        size: [Length::Fixed(DOT); 2],
+        background: shown.then_some(accent),
+        radius: [DOT / 2.; 4],
+        ..Element::DEFAULT
+    };
+    ui.element(element, |_| ());
 }

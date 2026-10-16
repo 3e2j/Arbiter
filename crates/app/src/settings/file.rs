@@ -13,17 +13,19 @@ use std::{fs, io};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use super::{appearance, editor};
+use super::{appearance, editor, keybinds};
 
 const NAME: &str = "settings.toml";
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, Default)]
 #[serde(default)]
 pub struct Saved {
     #[serde(deserialize_with = "lenient")]
     pub appearance: appearance::Saved,
     #[serde(deserialize_with = "lenient")]
     pub editor: editor::Saved,
+    #[serde(deserialize_with = "lenient")]
+    pub keybinds: keybinds::Saved,
 }
 
 /// A switch that's on until it's turned off, which a plain `bool` can't
@@ -70,8 +72,8 @@ pub fn read(path: &Path) -> Saved {
 /// # Errors
 ///
 /// If its folder can't be made, or the file can't be written.
-pub fn write(path: &Path, saved: Saved) -> Result<(), String> {
-    let text = toml::to_string(&saved).map_err(|err| err.to_string())?;
+pub fn write(path: &Path, saved: &Saved) -> Result<(), String> {
+    let text = toml::to_string(saved).map_err(|err| err.to_string())?;
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).map_err(|err| format!("{}: {err}", dir.display()))?;
     }
@@ -106,7 +108,7 @@ mod tests {
         assert_eq!(read(&path), Saved::default());
         let mut saved = Saved::default();
         saved.appearance.theme = Palette::Twilight;
-        write(&path, saved).unwrap();
+        write(&path, &saved).unwrap();
         assert_eq!(read(&path), saved);
     }
 

@@ -170,7 +170,7 @@ impl App for Editor {
         assets::load_icons(start.glyphs)?;
         start.theme = theme::theme(settings.palette(), fonts);
         start.zoom = settings.zoom().factor();
-        start.keymap = commands::keymap(commands::all().map(|command| command.chords));
+        start.keymap = settings.keymap();
         let session = project
             .as_ref()
             .and_then(session)
