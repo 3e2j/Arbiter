@@ -41,6 +41,12 @@ impl ContextMenu {
         at.is_some()
     }
 
+    /// Opens it with its top left at `at`, such as under the button that
+    /// opens it.
+    pub const fn open_at(&mut self, at: [f32; 2]) {
+        self.at = Some(at);
+    }
+
     #[must_use]
     pub const fn is_open(self) -> bool {
         self.at.is_some()

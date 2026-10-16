@@ -18,6 +18,7 @@ use crate::{
 };
 
 /// Both of a project's trees, read together since both need the target's paths.
+#[derive(Clone)]
 pub struct Trees {
     pub game: Tree,
     pub project: Tree,

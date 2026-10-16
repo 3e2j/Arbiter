@@ -17,6 +17,7 @@ mod workspace;
 
 use std::sync::Arc;
 
+use components::ContextMenu;
 use disk::{Loader, TreeReader, Watch};
 use gui::{
     host::{App, Startup, Wake, WindowStyle},
@@ -35,6 +36,7 @@ use workspace::{Place, Session, Workspace, status_bar, title_bar};
 const RESIZE_EDGE: f32 = 4.;
 
 /// Each panel's kind and place in a project without a session, in tab order.
+/// The View menu offers them, and adds another where it sits here.
 const LAYOUT: [(&str, Place); 7] = [
     ("Messages", Place::Main),
     (Files::KIND, Place::LeftInnerTop),
@@ -66,6 +68,7 @@ pub fn run(log: Arc<Log>, project: Option<Project>) -> Result<(), AppError> {
 struct Editor {
     workspace: Workspace,
     settings: Settings,
+    view: ContextMenu,
     /// Kept for each theme the settings pick.
     fonts: ThemeFonts,
     log: Arc<Log>,
@@ -97,7 +100,7 @@ impl Editor {
                 None
             }
         };
-        if let Some(files) = self.files() {
+        for files in self.files() {
             files.close();
         }
         // The session's file tabs, which open before the project does.
@@ -143,8 +146,8 @@ impl Editor {
             .add(Place::Main, Panel::Hex(Hex::new(path.to_owned())));
     }
 
-    fn files(&mut self) -> Option<&mut Files> {
-        self.workspace.panels_mut().find_map(|panel| match panel {
+    fn files(&mut self) -> impl Iterator<Item = &mut Files> {
+        self.workspace.panels_mut().filter_map(|panel| match panel {
             Panel::Files(files) => Some(files),
             _ => None,
         })
@@ -174,6 +177,7 @@ impl App for Editor {
         let mut app = Self {
             workspace: Workspace::new(&session),
             settings,
+            view: ContextMenu::CLOSED,
             fonts,
             log,
             project: None,
@@ -200,8 +204,14 @@ impl App for Editor {
         }
         match self.reader.as_ref().and_then(TreeReader::take) {
             Some(Ok(trees)) => {
-                if let Some(files) = self.files() {
-                    files.refresh(trees);
+                // Each sorts its own, so each takes a copy but the last.
+                let mut files = self.files().peekable();
+                while let Some(panel) = files.next() {
+                    if files.peek().is_none() {
+                        panel.refresh(trees);
+                        break;
+                    }
+                    panel.refresh(trees.clone());
                 }
             }
             Some(Err(err)) => tracing::warn!("can't read the project's files: {err}"),
@@ -255,9 +265,13 @@ impl App for Editor {
 
     fn ui(&mut self, ui: &mut Ui) {
         ui.element(Element::column(), |ui| {
-            title_bar::ui(ui, Self::TITLE, &mut self.settings);
+            title_bar::ui(ui, Self::TITLE, &mut self.settings, &mut self.view);
             // Settings covers everything under the title bar.
             ui.element(Element::column(), |ui| {
+                Output::deliver(self.workspace.panels_mut().filter_map(|panel| match panel {
+                    Panel::Output(output) => Some(output),
+                    _ => None,
+                }));
                 self.workspace.ui(ui);
                 let picked: Vec<_> = self
                     .workspace
@@ -274,6 +288,14 @@ impl App for Editor {
                 status_bar::ui(ui, &mut self.workspace);
                 self.settings.panel(ui);
             });
+            let added = title_bar::view_menu(ui, &mut self.view, &mut self.workspace, &LAYOUT);
+            if let Some(kind) = added {
+                // A new files panel has no tree until it's read.
+                if kind == Files::KIND {
+                    self.read_trees();
+                }
+                ui.stale();
+            }
             window_edges(ui, RESIZE_EDGE);
         });
     }

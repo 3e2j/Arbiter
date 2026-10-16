@@ -95,11 +95,14 @@ impl Workspace {
         false
     }
 
-    /// Adds `panel` as the last tab at `place`, and shows it.
+    /// Adds `panel` as the last tab at `place`, and shows it and its band.
     pub fn add(&mut self, place: Place, panel: Panel) {
         let dock = &mut self.docks[place.index()];
         dock.active = dock.tabs.len();
         dock.tabs.push(Tab { panel });
+        if let Some(band) = Band::of(place) {
+            self.hidden[band.index()] = false;
+        }
     }
 
     /// Escape closes the menu.
@@ -282,6 +285,7 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::panels::Files;
 
     #[test]
     fn a_side_hides_only_bands_with_tabs_and_shows_them_again() {
@@ -297,5 +301,16 @@ mod tests {
 
         workspace.toggle_side(Side::Left);
         assert!(workspace.in_use(Band::LeftInner));
+    }
+
+    #[test]
+    fn adding_to_a_hidden_band_shows_it() {
+        let session = Session::of(&[("files", Place::LeftInnerTop)]);
+        let mut workspace = Workspace::new(&session);
+        workspace.toggle_side(Side::Left);
+        assert!(!workspace.in_use(Band::LeftInner));
+        workspace.add(Place::LeftInnerBottom, Panel::Files(Files::new()));
+        assert!(workspace.in_use(Band::LeftInner));
+        assert_eq!(workspace.panels_mut().count(), 2);
     }
 }

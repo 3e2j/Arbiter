@@ -135,6 +135,7 @@ pub struct Node {
     pub git: GitStatus,
 }
 
+#[derive(Clone)]
 pub struct Tree {
     nodes: Vec<Node>,
     names: String,

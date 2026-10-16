@@ -88,6 +88,15 @@ impl Panel {
         }
     }
 
+    /// The title a panel of `kind` opens with.
+    pub fn title_of(kind: &str) -> &str {
+        match kind {
+            Files::KIND => Files::TITLE,
+            Output::KIND => Output::TITLE,
+            _ => kind,
+        }
+    }
+
     pub fn title(&self) -> &str {
         match self {
             Self::Files(_) => Files::TITLE,

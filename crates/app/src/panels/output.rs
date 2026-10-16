@@ -22,8 +22,8 @@ use tracing_subscriber::layer::{Context, Layer};
 use crate::assets::Icon;
 use crate::theme::{self, ThemeColors};
 
-/// What [`Capture`] took in since the [`Output`] last looked. A static, since
-/// the subscriber is set up before the editor exists.
+/// What [`Capture`] took in since it was last handed to each [`Output`]. A
+/// static, since the subscriber is set up before the editor exists.
 static FEED: Mutex<Lines> = Mutex::new(Lines::new());
 
 /// How many entries are kept before the oldest half are dropped.
@@ -171,17 +171,15 @@ impl Lines {
         }
     }
 
-    /// Moves `from`'s entries onto the end, leaving it empty.
-    fn take(&mut self, from: &mut Self) {
-        for entry in from.entries.drain(..) {
-            let text = from.text.get(entry.text).unwrap_or_default();
-            self.push(entry.level, entry.target, entry.at, text);
+    /// Copies `from`'s entries onto the end.
+    fn append(&mut self, from: &Self) {
+        for entry in &from.entries {
+            self.push(entry.level, entry.target, entry.at, from.text(entry));
             if let Some(last) = self.entries.last_mut() {
                 last.repeats += entry.repeats - 1;
             }
             self.counts[entry.level as usize] += entry.repeats - 1;
         }
-        from.clear();
     }
 
     fn clear(&mut self) {
@@ -255,16 +253,27 @@ impl Output {
         }
     }
 
+    /// Copies what [`Capture`] took in to each of `outputs`, then empties
+    /// it. With none open it keeps it, for the next one opened.
     // TODO: entries logged later in the pass, or off the main thread, wait
     // for the next input to show, until something can wake the window.
-    pub fn ui(&mut self, ui: &mut Ui) {
-        {
-            let mut feed = feed();
-            if !feed.entries.is_empty() {
-                self.lines.take(&mut feed);
-                self.stale = true;
-            }
+    pub fn deliver<'a>(outputs: impl IntoIterator<Item = &'a mut Self>) {
+        let mut feed = feed();
+        if feed.entries.is_empty() {
+            return;
         }
+        let mut delivered = false;
+        for output in outputs {
+            output.lines.append(&feed);
+            output.stale = true;
+            delivered = true;
+        }
+        if delivered {
+            feed.clear();
+        }
+    }
+
+    pub fn ui(&mut self, ui: &mut Ui) {
         self.toolbar(ui);
         if self.stale {
             self.rows.clear();
@@ -413,17 +422,17 @@ mod tests {
     }
 
     #[test]
-    fn taking_merges_across_and_keeps_repeats() {
+    fn appending_merges_across_and_keeps_repeats() {
         let (mut lines, mut feed) = (Lines::new(), Lines::new());
         lines.push(Level::Info, "a", AT, "x");
         feed.push(Level::Info, "a", AT, "x");
         feed.push(Level::Info, "a", AT, "x");
         feed.push(Level::Error, "a", AT, "y");
-        lines.take(&mut feed);
+        lines.append(&feed);
         let repeats: Vec<_> = lines.entries.iter().map(|entry| entry.repeats).collect();
         assert_eq!(repeats, [3, 1]);
         assert_eq!(lines.counts, [1, 0, 3, 0]);
-        assert!(feed.entries.is_empty() && feed.text.is_empty());
+        assert_eq!(feed.entries.len(), 2);
     }
 
     #[test]
