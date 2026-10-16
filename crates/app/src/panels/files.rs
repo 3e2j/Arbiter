@@ -24,9 +24,10 @@ use project::{
 
 use crate::assets::Icon;
 use crate::commands::Command;
-use crate::popover::{WIDTH as POPOVER, check, heading};
 use crate::theme::HOVER_THUMB;
 use crate::workspace::Places;
+
+use super::popover::{WIDTH as POPOVER, check, heading};
 
 /// Width of the gutter's bar.
 const BAR: f32 = 3.;

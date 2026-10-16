@@ -26,6 +26,8 @@ mod layout;
 mod menu;
 mod place;
 mod session;
+pub mod status_bar;
+pub mod title_bar;
 
 use gui::{
     input::{Input, Key},

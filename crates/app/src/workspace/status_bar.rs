@@ -6,8 +6,8 @@ use gui::{
     ui::Ui,
 };
 
+use super::{Side, Workspace};
 use crate::assets::Icon;
-use crate::workspace::{Side, Workspace};
 
 pub fn ui(ui: &mut Ui, workspace: &mut Workspace) {
     toolbar(ui, |ui| {

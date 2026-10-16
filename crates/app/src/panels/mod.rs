@@ -5,6 +5,7 @@ mod files;
 mod hex;
 mod output;
 mod placeholder;
+mod popover;
 
 use gui::ui::Ui;
 

@@ -6,19 +6,15 @@
 
 mod assets;
 mod commands;
-mod loader;
+mod disk;
 mod panels;
-mod popover;
-mod reader;
 mod settings;
-mod status_bar;
 mod theme;
-mod title_bar;
-mod watch;
 mod workspace;
 
 use std::sync::Arc;
 
+use disk::{Loader, TreeReader, Watch};
 use gui::{
     components::window_edges,
     host::{App, Startup, Wake},
@@ -26,14 +22,11 @@ use gui::{
     platform::window,
     ui::{Element, Theme, ThemeFonts, Ui},
 };
-use loader::Loader;
 pub use panels::Capture;
 use panels::{Files, Hex, Output, Panel};
 use project::{Log, Project};
-use reader::TreeReader;
 use settings::Settings;
-use watch::Watch;
-use workspace::{Place, Session, Workspace};
+use workspace::{Place, Session, Workspace, status_bar, title_bar};
 
 /// How far in from the window's edges a drag resizes it, in logical pixels.
 const RESIZE_EDGE: f32 = 4.;

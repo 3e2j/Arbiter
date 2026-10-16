@@ -33,7 +33,7 @@ const COPY_HEX: AppCommand = AppCommand("hex.copy-hex");
 const SELECT_ALL: AppCommand = AppCommand("hex.select-all");
 
 enum Bytes {
-    /// Asked of the [`Loader`](crate::loader::Loader), not back yet.
+    /// Asked of the [`Loader`](crate::disk::Loader), not back yet.
     Loading,
     Read(Vec<u8>),
     /// Why it couldn't be read.
