@@ -3,7 +3,7 @@
 
 use std::{fs, io};
 
-use crate::{Project, ProjectError, base};
+use crate::{Project, ProjectError, disk};
 
 /// Under the project root.
 const PATH: &str = ".arbiter/session";
@@ -19,7 +19,7 @@ impl Project {
         match fs::read_to_string(&path) {
             Ok(text) => Ok(Some(text)),
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(err) => Err(base::io_err(&path)(err).into()),
+            Err(err) => Err(disk::io_err(&path)(err).into()),
         }
     }
 
@@ -31,9 +31,9 @@ impl Project {
     pub fn write_session(&self, text: &str) -> Result<(), ProjectError> {
         let path = self.root.join(PATH);
         if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir).map_err(base::io_err(dir))?;
+            fs::create_dir_all(dir).map_err(disk::io_err(dir))?;
         }
-        base::write_atomic(&path, text.as_bytes())?;
+        disk::write_atomic(&path, text.as_bytes())?;
         Ok(())
     }
 }

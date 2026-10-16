@@ -13,12 +13,9 @@ use gui::{
 };
 use serde::{Deserialize, Serialize};
 
-use project::{
-    git::GitStatus,
-    tree::{
-        Narrowed, NodeId, NodeKind, NodeStatus, SortKey, SortOrder, Tree, TreeFilter, TreeRow,
-        Trees,
-    },
+use project::tree::{
+    GitStatus, Narrowed, NodeId, NodeKind, NodeStatus, SortKey, SortOrder, Tree, TreeFilter,
+    TreeRow, Trees,
 };
 
 use crate::assets::Icon;

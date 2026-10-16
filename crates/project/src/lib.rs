@@ -17,47 +17,25 @@
 pub mod base;
 pub mod changes;
 pub mod config;
-pub mod git;
+mod create;
+mod disk;
 pub mod hash;
-mod log;
-mod session;
+mod local;
 pub mod tree;
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    ffi::OsString,
     fs, io,
-    path::{self, Path, PathBuf},
-    process::Command,
+    path::{Path, PathBuf},
 };
 
 pub use base::{PeekedDisc, StagedDisc};
 pub use config::EditionChange;
 use config::{Edition, ProjectConfig, ProjectKind};
+pub use create::DraftProject;
 use diag::Diagnostics;
 pub use game::edition::{DumpVerdict, Game};
 use hash::Hash;
-pub use log::{Log, LogWriter};
-
-/// Every directory a mod project owns.
-const MOD_DIRS: &[&str] = &[
-    base::DIR,
-    changes::DIR,
-    "assets",
-    "textures",
-    "code",
-    ".arbiter",
-];
-
-/// Working files in `changes/` stay local: only their `.toml` and `.patch` are committed.
-const MOD_GITIGNORE: &str = "\
-/base/
-/.arbiter/
-/changes/**
-!/changes/**/
-!/changes/**/*.toml
-!/changes/**/*.patch
-";
+pub use local::{Log, LogWriter};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
@@ -90,121 +68,7 @@ pub struct Project {
     pub config: ProjectConfig,
 }
 
-/// A mod project built in `.<name>.partial/` beside its root, leaving the root
-/// as it was until `finish` moves it in. Dropping it removes the partial tree.
-pub struct DraftProject {
-    pub project: Project,
-    root: PathBuf,
-    partial: Partial,
-}
-
-impl DraftProject {
-    /// Replaces the root with the project. The old root waits at
-    /// `.<name>.old/` until the new one is in, and goes back if it can't be.
-    ///
-    /// # Errors
-    ///
-    /// If a tree can't be moved, or the old root can't be removed.
-    pub fn finish(self) -> Result<Project, ProjectError> {
-        let Self {
-            mut project,
-            root,
-            partial,
-        } = self;
-        let old = beside(&root, "old");
-        base::remove_tree(&old)?;
-        if let Err(err) = fs::rename(&root, &old)
-            && err.kind() != io::ErrorKind::NotFound
-        {
-            return Err(base::io_err(&root)(err).into());
-        }
-        if let Err(err) = fs::rename(&partial.0, &root) {
-            // Fails harmlessly when there was no old root.
-            let _ = fs::rename(&old, &root);
-            return Err(base::io_err(&root)(err).into());
-        }
-        base::remove_tree(&old)?;
-        project.root = root;
-        Ok(project)
-    }
-}
-
-struct Partial(PathBuf);
-
-impl Drop for Partial {
-    fn drop(&mut self) {
-        // Can't report from here. A leftover is cleared by the next `create`.
-        let _ = base::remove_tree(&self.0);
-    }
-}
-
-/// `<parent>/.<name>.<suffix>`, on the same file system so a rename can swap them.
-fn beside(root: &Path, suffix: &str) -> PathBuf {
-    let mut name = OsString::from(".");
-    name.push(root.file_name().unwrap_or_default());
-    name.push(".");
-    name.push(suffix);
-    root.with_file_name(name)
-}
-
 impl Project {
-    /// Builds a mod project for `root` and runs `git init` in it. Nothing
-    /// in `root` changes until `DraftProject::finish`. A directory that isn't empty
-    /// is replaced only if `force`.
-    ///
-    /// # Errors
-    ///
-    /// If `root` has no name, isn't empty and `force` isn't set, a file can't
-    /// be written, or `git init` fails.
-    pub fn create(root: &Path, force: bool) -> Result<DraftProject, ProjectError> {
-        let root = path::absolute(root).map_err(base::io_err(root))?;
-        if root.file_name().is_none() {
-            return Err(ProjectError::NoName(root));
-        }
-        let empty = match fs::read_dir(&root) {
-            Ok(mut entries) => entries.next().is_none(),
-            Err(err) if err.kind() == io::ErrorKind::NotFound => true,
-            Err(err) => return Err(base::io_err(&root)(err).into()),
-        };
-        if !empty && !force {
-            return Err(ProjectError::NotEmpty(root));
-        }
-
-        let partial = Partial(beside(&root, "partial"));
-        base::remove_tree(&partial.0)?;
-        for dir in MOD_DIRS {
-            let path = partial.0.join(dir);
-            fs::create_dir_all(&path).map_err(base::io_err(&path))?;
-        }
-        let gitignore = partial.0.join(".gitignore");
-        fs::write(&gitignore, MOD_GITIGNORE).map_err(base::io_err(&gitignore))?;
-        let project = Self {
-            root: partial.0.clone(),
-            config: ProjectConfig {
-                kind: ProjectKind::Mod,
-                target: Some(BTreeSet::new()),
-                editions: BTreeMap::new(),
-            },
-        };
-        project.save()?;
-
-        let out = Command::new("git")
-            .args(["init", "--quiet"])
-            .current_dir(&partial.0)
-            .output()
-            .map_err(|err| ProjectError::Git(err.to_string()))?;
-        if !out.status.success() {
-            return Err(ProjectError::Git(
-                String::from_utf8_lossy(&out.stderr).trim().to_owned(),
-            ));
-        }
-        Ok(DraftProject {
-            project,
-            root,
-            partial,
-        })
-    }
-
     /// # Errors
     ///
     /// If `root` has no `arbiter.toml` or it can't be read.
@@ -214,7 +78,7 @@ impl Project {
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
                 return Err(ProjectError::NotAProject(root.to_path_buf()));
             }
-            text => text.map_err(base::io_err(&path))?,
+            text => text.map_err(disk::io_err(&path))?,
         };
         let config =
             toml::from_str(&text).map_err(|source| ProjectError::Config { path, source })?;
@@ -314,13 +178,15 @@ impl Project {
             path: path.clone(),
             source,
         })?;
-        base::write_atomic(&path, text.as_bytes())?;
+        disk::write_atomic(&path, text.as_bytes())?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
     use crate::config::Platform;
 
@@ -337,7 +203,7 @@ mod tests {
     #[test]
     fn creates_a_mod_layout() {
         let (dir, project) = fresh();
-        for d in MOD_DIRS.iter().chain(&[".git"]) {
+        for d in create::MOD_DIRS.iter().chain(&[".git"]) {
             assert!(project.root.join(d).is_dir(), "{d}");
         }
         assert_eq!(
