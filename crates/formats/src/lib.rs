@@ -9,6 +9,7 @@
 //! Fixed tables are [`record!`] structs, borrowed and copied whole. The types
 //! their fields can be are listed on [`Record`].
 
+pub mod bmg;
 pub mod compression;
 pub mod rarc;
 
