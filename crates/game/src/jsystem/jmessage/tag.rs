@@ -1,5 +1,5 @@
 //! Inline text tags: what each group and code does, and what arguments it
-//! takes. The group and code are the ones `formats::bmg::TextSegment::Tag`
+//! takes. The group and code are the ones `formats::jsystem::jmessage::TextSegment::Tag`
 //! holds.
 
 use crate::{Entry, Versions};

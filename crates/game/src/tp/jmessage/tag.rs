@@ -2,7 +2,7 @@
 //! `jmessage_tRenderingProcessor`.
 
 use super::color::COLORS;
-use crate::libs::jsystem::jmessage::{Args, Tag, tag};
+use crate::jsystem::jmessage::{Args, Tag, tag};
 use crate::tp::{ALL, GCN_PAL, JPN};
 
 /// Sorted by group, then code.

@@ -3,7 +3,7 @@
 //! see `unit.rs`.
 
 use crate::entry::entry;
-use crate::libs::jsystem::jmessage::{Field, Layout, field};
+use crate::jsystem::jmessage::{Field, Layout, field};
 use crate::tp::{ALL, JPN};
 use crate::{Entry, Versions};
 

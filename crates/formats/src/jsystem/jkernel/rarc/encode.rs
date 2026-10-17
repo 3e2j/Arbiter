@@ -4,7 +4,7 @@ use super::{
     ALIGN, DIR_SIZE, DOT_AT, DOT_DOT_AT, Entry, Header, INFO_AT, Info, NO_ID, NO_NODE, Node,
     Preload, Rarc, flag, is_plain, name_hash, next_id,
 };
-use crate::compression::Compression;
+use crate::jsystem::jkernel::compression::Compression;
 use crate::{Be16, Be32, ByteWriter, Flag, FormatError, Record, Result};
 
 struct Dir {

@@ -6,7 +6,7 @@ mod record;
 mod tag;
 mod unit;
 
-use crate::libs::jsystem::jmessage::Rows;
+use crate::jsystem::jmessage::Rows;
 
 pub(crate) static ROWS: Rows = Rows {
     layouts: &[record::LAYOUT, unit::LAYOUT, unit::JPN_LAYOUT],

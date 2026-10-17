@@ -98,7 +98,7 @@ pub struct ManifestEntry {
     pub compression: Option<Compression>,
 }
 
-/// Mirrors `formats::compression::Compression`. The discriminants feed the
+/// Mirrors `formats::jsystem::jkernel::compression::Compression`. The discriminants feed the
 /// files digest, so they're fixed apart from the variant order. 0 is none.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -108,11 +108,11 @@ pub enum Compression {
     Yay0 = 2,
 }
 
-impl From<formats::compression::Compression> for Compression {
-    fn from(compression: formats::compression::Compression) -> Self {
+impl From<formats::jsystem::jkernel::compression::Compression> for Compression {
+    fn from(compression: formats::jsystem::jkernel::compression::Compression) -> Self {
         match compression {
-            formats::compression::Compression::Yaz0 => Self::Yaz0,
-            formats::compression::Compression::Yay0 => Self::Yay0,
+            formats::jsystem::jkernel::compression::Compression::Yaz0 => Self::Yaz0,
+            formats::jsystem::jkernel::compression::Compression::Yay0 => Self::Yay0,
         }
     }
 }
@@ -370,7 +370,8 @@ mod tests {
     use super::*;
 
     fn archive(files: &[(&str, &[u8])]) -> Vec<u8> {
-        use formats::{ByteWriter, Encode, rarc};
+        use formats::jsystem::jkernel::rarc;
+        use formats::{ByteWriter, Encode};
         let rarc = rarc::Rarc {
             root: "archive".to_owned(),
             files: files
@@ -391,7 +392,7 @@ mod tests {
     fn yaz0(data: &[u8]) -> Vec<u8> {
         use formats::ByteWriter;
         let mut out = ByteWriter::new();
-        formats::compression::Compression::Yaz0
+        formats::jsystem::jkernel::compression::Compression::Yaz0
             .compress(data, &mut out)
             .unwrap();
         out.finish()

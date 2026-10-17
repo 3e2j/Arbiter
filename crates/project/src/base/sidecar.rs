@@ -10,7 +10,7 @@
 use std::{collections::HashMap, mem};
 
 use diag::{Address, AddressStep, Diagnostic, DiagnosticCode, Diagnostics, Location, Severity};
-use formats::rarc::{self, Rarc};
+use formats::jsystem::jkernel::rarc::{self, Rarc};
 use serde::{Deserialize, Serialize};
 
 use super::Compression;
@@ -25,7 +25,7 @@ pub const MISSING_MEMBER: DiagnosticCode = DiagnosticCode {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Sidecar {
-    /// See `formats::rarc::Rarc::root`.
+    /// See `formats::jsystem::jkernel::rarc::Rarc::root`.
     pub root: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compression: Option<Compression>,
@@ -46,7 +46,7 @@ pub struct Member {
     pub preload: Preload,
 }
 
-/// Mirrors `formats::rarc::Preload`.
+/// Mirrors `formats::jsystem::jkernel::rarc::Preload`.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Preload {

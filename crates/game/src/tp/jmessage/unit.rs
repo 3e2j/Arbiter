@@ -6,7 +6,7 @@
 
 use crate::Entry;
 use crate::entry::entry;
-use crate::libs::jsystem::jmessage::{Layout, field};
+use crate::jsystem::jmessage::{Layout, field};
 use crate::tp::{ALL, JPN};
 
 /// Units, by the record position the game passes to `dMsgUnit_setTag`. The

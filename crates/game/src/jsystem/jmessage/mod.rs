@@ -1,4 +1,4 @@
-//! `JMessage`: what the raw values in a [`formats::bmg::Bmg`] mean to the
+//! `JMessage`: what the raw values in a [`formats::jsystem::jmessage::Bmg`] mean to the
 //! game.
 //!
 //! [`tables`] is the way in. It finds the game a disc holds and returns its

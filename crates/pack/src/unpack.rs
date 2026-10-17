@@ -21,7 +21,8 @@
 use std::borrow::Cow;
 
 use diag::Diagnostics;
-use formats::{Decode, compression::Compression, rarc::Rarc};
+use formats::Decode;
+use formats::jsystem::jkernel::{compression::Compression, rarc::Rarc};
 
 use crate::disc::is_plain;
 
@@ -153,7 +154,7 @@ pub fn peel(bytes: &[u8]) -> formats::Result<Peeled<'_>> {
 
 #[cfg(test)]
 mod tests {
-    use formats::rarc::RarcFile;
+    use formats::jsystem::jkernel::rarc::RarcFile;
     use formats::{ByteWriter, Encode};
 
     use super::*;
