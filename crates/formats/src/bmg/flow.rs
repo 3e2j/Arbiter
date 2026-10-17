@@ -254,10 +254,6 @@ pub(super) fn read(flw1: &[u8], fli1: &[u8]) -> Result<Flow> {
 
 /// FLW1 and FLI1. Edges, roots and text nodes' messages are written as
 /// positions. The table fills in node order, which is where retail puts it.
-#[expect(
-    clippy::similar_names,
-    reason = "named after the FLW1 and FLI1 sections"
-)]
 pub(super) fn write(flow: &Flow, messages: &HashMap<MessageId, u16>) -> Result<(Vec<u8>, Vec<u8>)> {
     let node_at = positions(
         flow.nodes.iter().map(Node::id),
@@ -346,15 +342,18 @@ pub(super) fn write(flow: &Flow, messages: &HashMap<MessageId, u16>) -> Result<(
         flw1.u8(mask(e));
     }
 
-    let mut fli1 = ByteWriter::with_capacity(Fli1Header::LEN + flow.roots.len() * Fli1Entry::LEN);
+    Ok((flw1.finish(), write_roots(&flow.roots, position)?))
+}
+
+/// FLI1, each root's node written as its position.
+fn write_roots(roots: &[Root], position: impl Fn(NodeId) -> Result<u16>) -> Result<Vec<u8>> {
+    let mut fli1 = ByteWriter::with_capacity(Fli1Header::LEN + roots.len() * Fli1Entry::LEN);
     fli1.record(&Fli1Header {
-        count: Be16::new(
-            u16::try_from(flow.roots.len()).map_err(|_| too_large("the flow root count"))?,
-        ),
+        count: Be16::new(u16::try_from(roots.len()).map_err(|_| too_large("the flow root count"))?),
         entry_len: u8::try_from(Fli1Entry::LEN).map_err(|_| too_large("a flow root"))?,
         pad: [0; 5],
     });
-    for root in &flow.roots {
+    for root in roots {
         fli1.record(&Fli1Entry {
             flow_id: Be16::new(root.public_id),
             pad_2: [0; 2],
@@ -362,7 +361,7 @@ pub(super) fn write(flow: &Flow, messages: &HashMap<MessageId, u16>) -> Result<(
             pad_6: [0; 2],
         });
     }
-    Ok((flw1.finish(), fli1.finish()))
+    Ok(fli1.finish())
 }
 
 /// Where the next table entry lands.
