@@ -14,7 +14,7 @@ use gui::{
 };
 
 use crate::assets::Icon;
-use crate::panels::Panel;
+use crate::panels::{Panel, PanelKind};
 use crate::settings::Settings;
 use crate::theme;
 
@@ -89,14 +89,14 @@ pub fn view_menu(
     ui: &mut Ui,
     menu: &mut ContextMenu,
     workspace: &mut Workspace,
-    panels: &[(&'static str, Place)],
-) -> Option<&'static str> {
+    panels: &[(PanelKind, Place)],
+) -> Option<PanelKind> {
     if !menu.is_open() {
         return None;
     }
     let items: Vec<_> = panels
         .iter()
-        .map(|&(kind, _)| MenuItem::new(Panel::title_of(kind)))
+        .map(|&(kind, _)| MenuItem::new(kind.title()))
         .collect();
     let &(kind, place) = panels.get(context_menu(ui, menu, &items)?)?;
     workspace.add(place, Panel::open(kind, None)?);

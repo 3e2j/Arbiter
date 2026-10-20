@@ -26,7 +26,7 @@ use gui::{
     ui::{Element, Ui, window::window_edges},
 };
 pub use panels::Capture;
-use panels::{File, Files, Output, Panel};
+use panels::{File, Files, Output, Panel, PanelKind};
 use project::{Log, Project};
 use settings::Settings;
 use theme::ThemeFonts;
@@ -37,9 +37,9 @@ const RESIZE_EDGE: f32 = 4.;
 
 /// Each panel's kind and place in a project without a session, in tab order.
 /// The View menu offers them, and adds another where it sits here.
-const LAYOUT: [(&str, Place); 2] = [
-    (Files::KIND, Place::LeftInnerTop),
-    (Output::KIND, Place::BelowMain),
+const LAYOUT: [(PanelKind, Place); 2] = [
+    (PanelKind::Files, Place::LeftInnerTop),
+    (PanelKind::Output, Place::BelowMain),
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -286,7 +286,7 @@ impl App for Editor {
             let added = title_bar::view_menu(ui, &mut self.view, &mut self.workspace, &LAYOUT);
             if let Some(kind) = added {
                 // A new files panel has no tree until it's read.
-                if kind == Files::KIND {
+                if kind == PanelKind::Files {
                     self.read_trees();
                 }
                 ui.stale();

@@ -239,7 +239,6 @@ impl Visit for Fields {
 }
 
 impl Output {
-    pub const KIND: &str = "output";
     pub const TITLE: &str = "Output";
 
     pub const fn new() -> Self {

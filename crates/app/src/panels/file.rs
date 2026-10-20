@@ -63,7 +63,6 @@ pub struct FileState {
 }
 
 impl File {
-    pub const KIND: &str = "file";
     pub const PLACES: Places = Places::MAIN;
 
     /// Shows `path`, relative to the project's root, once it's

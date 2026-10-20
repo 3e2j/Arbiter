@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::panels::Panel;
+use crate::panels::{Panel, PanelKind};
 
 use super::dock::Tab;
 use super::place::{Band, Place};
@@ -35,9 +35,18 @@ struct SavedDock {
 /// One panel, and what it keeps of itself, read by the panel alone.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct SavedTab {
-    kind: String,
+    kind: SavedKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     state: Option<toml::Value>,
+}
+
+/// A kind no panel is any more, such as one from a newer Arbiter, reads as
+/// its name, so its tab is left out rather than the whole session.
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[serde(untagged)]
+enum SavedKind {
+    Known(PanelKind),
+    Gone(String),
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -53,11 +62,11 @@ struct SavedBand {
 impl Session {
     /// A panel of each kind in `layout` in its place, in order, every band
     /// at its default size.
-    pub fn of(layout: &[(&str, Place)]) -> Self {
+    pub fn of(layout: &[(PanelKind, Place)]) -> Self {
         let mut docks: Vec<SavedDock> = Vec::new();
         for &(kind, place) in layout {
             let tab = SavedTab {
-                kind: kind.to_owned(),
+                kind: SavedKind::Known(kind),
                 state: None,
             };
             match docks.iter_mut().find(|dock| dock.place == place) {
@@ -107,12 +116,19 @@ impl Workspace {
         for saved in &session.docks {
             let dock = &mut workspace.docks[saved.place.index()];
             for (at, tab) in (0..).zip(&saved.tabs) {
-                let Some(panel) = Panel::open(&tab.kind, tab.state.as_ref()) else {
-                    tracing::warn!("the session's {} panel can't open", tab.kind);
+                let kind = match &tab.kind {
+                    SavedKind::Known(kind) => *kind,
+                    SavedKind::Gone(name) => {
+                        tracing::warn!("the session has a {name} panel, which no panel is");
+                        continue;
+                    }
+                };
+                let Some(panel) = Panel::open(kind, tab.state.as_ref()) else {
+                    tracing::warn!("the session's {kind:?} panel can't open");
                     continue;
                 };
                 if !panel.places().contains(saved.place) {
-                    tracing::warn!("a {} panel can't sit at {:?}", tab.kind, saved.place);
+                    tracing::warn!("a {kind:?} panel can't sit at {:?}", saved.place);
                     continue;
                 }
                 if at == saved.active {
@@ -147,7 +163,7 @@ impl Workspace {
                         .tabs
                         .iter()
                         .map(|tab| SavedTab {
-                            kind: tab.panel.kind().to_owned(),
+                            kind: SavedKind::Known(tab.panel.kind()),
                             state: tab.panel.state(),
                         })
                         .collect(),
@@ -172,15 +188,29 @@ mod tests {
     use crate::panels::{Files, Output};
     use crate::workspace::Side;
 
-    const LAYOUT: [(&str, Place); 3] = [
-        ("files", Place::LeftInnerTop),
-        ("output", Place::LeftInnerTop),
-        ("output", Place::RightInnerTop),
+    const LAYOUT: [(PanelKind, Place); 3] = [
+        (PanelKind::Files, Place::LeftInnerTop),
+        (PanelKind::Output, Place::LeftInnerTop),
+        (PanelKind::Output, Place::RightInnerTop),
     ];
 
     fn titles(workspace: &Workspace, place: Place) -> Vec<&str> {
         let dock = &workspace.docks[place.index()];
         dock.tabs.iter().map(|tab| tab.panel.title()).collect()
+    }
+
+    #[test]
+    fn a_kind_no_panel_is_leaves_out_only_its_tab() {
+        let text = r#"
+            [[docks]]
+            place = "left-inner-top"
+            tabs = [{ kind = "files" }, { kind = "gone" }, { kind = "output" }]
+        "#;
+        let session = Session::parse(text).unwrap();
+        let workspace = Workspace::new(&session);
+        assert_eq!(titles(&workspace, Place::LeftInnerTop), ["Files", "Output"]);
+        let saved = workspace.session().to_text().unwrap();
+        assert!(saved.contains(r#"kind = "files""#), "{saved}");
     }
 
     #[test]

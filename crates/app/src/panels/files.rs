@@ -207,7 +207,6 @@ impl View {
 }
 
 impl Files {
-    pub const KIND: &str = "files";
     pub const TITLE: &str = "Files";
     pub const PLACES: Places = Places::BANDS;
 

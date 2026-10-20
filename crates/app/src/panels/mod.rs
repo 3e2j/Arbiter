@@ -9,6 +9,7 @@ mod output;
 mod popover;
 
 use gui::ui::Ui;
+use serde::{Deserialize, Serialize};
 
 use crate::workspace::Places;
 
@@ -16,6 +17,26 @@ pub use file::File;
 pub use files::Files;
 pub use hex::Hex;
 pub use output::{Capture, Output};
+
+/// What a panel is, as the session saves its tab.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "kebab-case")]
+pub enum PanelKind {
+    Files,
+    File,
+    Output,
+}
+
+impl PanelKind {
+    /// The title a panel of this kind opens with.
+    pub const fn title(self) -> &'static str {
+        match self {
+            Self::Files => Files::TITLE,
+            Self::File => "File",
+            Self::Output => Output::TITLE,
+        }
+    }
+}
 
 /// Every panel, by type, so a tab holds one inline.
 pub enum Panel {
@@ -27,10 +48,10 @@ pub enum Panel {
 impl Panel {
     /// A panel of `kind` given back what [`Self::state`] kept, or `None`
     /// when no panel is. A file's tab can't open without its state.
-    pub fn open(kind: &str, state: Option<&toml::Value>) -> Option<Self> {
+    pub fn open(kind: PanelKind, state: Option<&toml::Value>) -> Option<Self> {
         let mut panel = match kind {
-            Files::KIND => Self::Files(Files::new()),
-            File::KIND => {
+            PanelKind::Files => Self::Files(Files::new()),
+            PanelKind::File => {
                 let Some(state) = state else {
                     tracing::warn!("the session has a file tab without its file");
                     return None;
@@ -43,8 +64,7 @@ impl Panel {
                     }
                 };
             }
-            Output::KIND => Self::Output(Output::new()),
-            _ => return None,
+            PanelKind::Output => Self::Output(Output::new()),
         };
         if let Some(state) = state {
             panel.restore(state.clone());
@@ -54,11 +74,11 @@ impl Panel {
 
     /// What [`Self::open`] makes it from, which stays put when its title
     /// changes.
-    pub const fn kind(&self) -> &'static str {
+    pub const fn kind(&self) -> PanelKind {
         match self {
-            Self::Files(_) => Files::KIND,
-            Self::File(_) => File::KIND,
-            Self::Output(_) => Output::KIND,
+            Self::Files(_) => PanelKind::Files,
+            Self::File(_) => PanelKind::File,
+            Self::Output(_) => PanelKind::Output,
         }
     }
 
@@ -84,15 +104,6 @@ impl Panel {
                 Err(err) => tracing::warn!("the files panel's view isn't readable: {err}"),
             },
             Self::File(_) | Self::Output(_) => {}
-        }
-    }
-
-    /// The title a panel of `kind` opens with.
-    pub fn title_of(kind: &str) -> &str {
-        match kind {
-            Files::KIND => Files::TITLE,
-            Output::KIND => Output::TITLE,
-            _ => kind,
         }
     }
 
