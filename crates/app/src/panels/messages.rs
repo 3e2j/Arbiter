@@ -4,6 +4,9 @@
 //!
 //! The game's tables name the tags and boxes. Without them, a tag shows as
 //! its raw `group.code` and no box is marked.
+//!
+//! Find above narrows the list to the messages whose text holds the query,
+//! never counting a tag's.
 
 use std::fmt::Write;
 
@@ -12,9 +15,11 @@ use formats::jsystem::jmessage::games::{Args, Layout, Tables, Tag};
 use gui::canvas::Color;
 use gui::ui::{Element, TextStyle, Ui};
 
-use crate::components::{self, ListScroll, indexed_list, notice};
+use crate::components::{
+    self, ListScroll, TextField, indexed_list, notice, text_field, toggle, toolbar,
+};
 use crate::theme;
-use crate::views::{self, Lines};
+use crate::views::{self, Find, Lines};
 
 pub struct Messages {
     bmg: Bmg,
@@ -28,6 +33,15 @@ pub struct Messages {
     scroll: ListScroll,
     /// By position.
     selected: Option<usize>,
+    search: TextField,
+    /// Find matches case.
+    case: bool,
+    /// Find matches whole words only.
+    word: bool,
+    /// The positions find leaves in the list, in order.
+    shown: Vec<usize>,
+    /// What find found, or how many messages there are.
+    count: String,
 }
 
 impl Messages {
@@ -40,14 +54,46 @@ impl Messages {
                 .collect(),
             None => (0..bmg.messages.len()).collect(),
         };
-        Self {
+        let mut messages = Self {
             digits: ids.iter().max().map_or(1, |max| max.to_string().len()),
             ids,
             lines: lines(&bmg, tables),
             bmg,
             scroll: ListScroll::TOP,
             selected: None,
+            search: TextField::default(),
+            case: false,
+            word: false,
+            shown: Vec::new(),
+            count: String::new(),
+        };
+        messages.refind();
+        messages
+    }
+
+    /// Narrows the list to what find now finds, from the top.
+    fn refind(&mut self) {
+        let len = self.bmg.messages.len();
+        let mut find = Find::new(&self.search.text, self.case, self.word);
+        self.shown.clear();
+        self.count.clear();
+        self.scroll = ListScroll::TOP;
+        if find.is_empty() {
+            self.shown.extend(0..len);
+            let _ = write!(self.count, "{len} messages");
+            return;
         }
+        let mut hits = 0;
+        for index in 0..len {
+            let found = find.count(&self.lines, index);
+            if found > 0 {
+                self.shown.push(index);
+                hits += found;
+            }
+        }
+        let rows = self.shown.len();
+        let plural = if rows == 1 { "" } else { "s" };
+        let _ = write!(self.count, "{hits} in {rows} message{plural}");
     }
 
     pub fn ui(&mut self, ui: &mut Ui) {
@@ -67,10 +113,29 @@ impl Messages {
             clip: true,
             ..Element::line(s.row)
         };
+        let refind = toolbar(ui, |ui| {
+            let typed = text_field(ui, &mut self.search, None, "Find in every message");
+            let case = toggle(ui, "Aa", self.case);
+            let word = toggle(ui, "W", self.word);
+            ui.text(theme.ui_text(c.dim), &self.count);
+            self.case ^= case;
+            self.word ^= word;
+            typed || case || word
+        });
+        if refind {
+            self.refind();
+        }
+        if self.shown.is_empty() {
+            return notice(ui, "Nothing found");
+        }
         let digits = self.digits;
         let mut id = String::new();
         let mut clicked = None;
-        indexed_list(ui, &mut self.scroll, len, s.row, |ui, index| {
+        let shown = &self.shown;
+        indexed_list(ui, &mut self.scroll, shown.len(), s.row, |ui, row| {
+            let Some(&index) = shown.get(row) else {
+                return;
+            };
             let Some(at) = self.ids.get(index) else {
                 return;
             };
@@ -248,5 +313,17 @@ mod tests {
     fn without_tables_tags_are_raw() {
         let lines = lines(&bmg(&[&[tag(255, 0, &[1])]]), None);
         assert_eq!(lines.get(0).collect::<Vec<_>>(), [(TAG, "255.0")]);
+    }
+
+    #[test]
+    fn find_narrows_the_list_and_counts() {
+        let file = bmg(&[&[text(b"a cat")], &[text(b"dog")], &[text(b"cat, cat")]]);
+        let mut messages = Messages::new(file, None);
+        assert_eq!(messages.shown, [0, 1, 2]);
+        assert_eq!(messages.count, "3 messages");
+        messages.search.text = "cat".to_owned();
+        messages.refind();
+        assert_eq!(messages.shown, [0, 2]);
+        assert_eq!(messages.count, "3 in 2 messages");
     }
 }

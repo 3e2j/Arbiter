@@ -111,6 +111,68 @@ impl Lines {
     }
 }
 
+/// What to look for in [`Lines`]' text.
+pub struct Find {
+    /// Lowercase unless `case`.
+    needle: String,
+    case: bool,
+    word: bool,
+    /// A run lowercased, kept to reuse.
+    folded: String,
+}
+
+impl Find {
+    /// `query`, matching case when `case`, and only as a whole word when
+    /// `word`.
+    pub fn new(query: &str, case: bool, word: bool) -> Self {
+        let mut needle = String::new();
+        fold(&mut needle, query, case);
+        Self {
+            needle,
+            case,
+            word,
+            folded: String::new(),
+        }
+    }
+
+    pub const fn is_empty(&self) -> bool {
+        self.needle.is_empty()
+    }
+
+    /// How many times it's in the text of the line at `index`, never across
+    /// a chip.
+    pub fn count(&mut self, lines: &Lines, index: usize) -> usize {
+        let mut count = 0;
+        for (kind, run) in lines.get(index) {
+            if kind != RunKind::Text {
+                continue;
+            }
+            fold(&mut self.folded, run, self.case);
+            let text = self.folded.as_str();
+            let word = |at: Option<char>| at.is_some_and(char::is_alphanumeric);
+            count += text
+                .match_indices(self.needle.as_str())
+                .filter(|&(at, found)| {
+                    let before = text.get(..at).and_then(|s| s.chars().next_back());
+                    let after = text.get(at + found.len()..).and_then(|s| s.chars().next());
+                    !self.word || !(word(before) || word(after))
+                })
+                .count();
+        }
+        count
+    }
+}
+
+/// `text` into `out` in place of what it held, lowercased unless `case`.
+fn fold(out: &mut String, text: &str, case: bool) {
+    out.clear();
+    if case {
+        out.push_str(text);
+    } else {
+        out.extend(text.chars().flat_map(char::to_lowercase));
+    }
+}
+
 /// The line at `index` into the open row: its text and chips, cut off where
 /// they run out of room, then its badge. A dim "empty" for a line without
 /// runs.
@@ -172,5 +234,19 @@ mod tests {
             ]
         );
         assert_eq!(line(3), []);
+    }
+
+    #[test]
+    fn find_matches_text_only_by_case_and_word() {
+        let mut lines = Lines::default();
+        lines.text("Cat cat concat ca");
+        lines.chip(None, |out| out.push_str("t cat"));
+        lines.end();
+        let count = |query, case, word| Find::new(query, case, word).count(&lines, 0);
+        assert_eq!(count("cat", false, false), 3, "never across the chip");
+        assert_eq!(count("cat", true, false), 2);
+        assert_eq!(count("cat", false, true), 2);
+        assert_eq!(count("Cat", true, true), 1);
+        assert_eq!(count("cat cat", false, false), 1);
     }
 }

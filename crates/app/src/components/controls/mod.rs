@@ -7,7 +7,7 @@ mod segmented;
 mod slider;
 mod switch;
 
-pub use button::{Clicks, IconState, button, icon_button};
+pub use button::{Clicks, IconState, button, icon_button, toggle};
 pub use dropdown::{Choice, Chosen, Dropdown, dropdown};
 pub use field::{TextField, text_field};
 pub use segmented::segmented;

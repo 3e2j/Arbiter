@@ -26,6 +26,36 @@ pub fn button(ui: &mut Ui, label: &str) -> bool {
     })
 }
 
+/// A short label that's on or off, in the accent while on. Returns whether
+/// it was clicked this pass.
+#[track_caller]
+pub fn toggle(ui: &mut Ui, label: &str, on: bool) -> bool {
+    let theme = theme::current();
+    let (c, s) = (theme.color, theme.size);
+    let element = Element {
+        size: [Length::Fit, Length::Fixed(s.row)],
+        min: [s.row, 0.],
+        padding: [s.gap / 2., 0., s.gap / 2., 0.],
+        align: [Align::Center; 2],
+        radius: [s.radius; 4],
+        cursor: Some(CursorIcon::Pointer),
+        ..Element::DEFAULT
+    };
+    ui.element(element, |ui| {
+        let hovered = ui.hovered();
+        ui.style().background = hovered.then_some(c.hover);
+        let color = if on {
+            c.accent
+        } else if hovered {
+            c.text
+        } else {
+            c.dim
+        };
+        ui.text(theme.ui_text(color), label);
+        ui.clicked(PointerButton::Left)
+    })
+}
+
 /// How an [`icon_button`] shows.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum IconState {

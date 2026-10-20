@@ -5,4 +5,4 @@ mod lines;
 
 #[cfg(test)]
 pub use lines::RunKind;
-pub use lines::{Lines, line};
+pub use lines::{Find, Lines, line};
