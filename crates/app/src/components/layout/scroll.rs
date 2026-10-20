@@ -40,6 +40,9 @@ pub struct ListScroll {
     /// Seconds a [`ThumbShow::Hover`] thumb has left to show, its hold and
     /// fade together.
     shown: f32,
+    /// A [`fit_list`] scrolled to its end, kept there as its rows are
+    /// measured.
+    pinned: bool,
 }
 
 /// A box clipped to `element`'s size, its children moved up by `state`.
@@ -145,6 +148,79 @@ pub fn indexed_list(
     });
 }
 
+/// [`indexed_list`] for rows as tall as they fit, such as wrapped text.
+/// Only the rows in view are measured, from last pass, so the thumb places
+/// by row rather than by pixel.
+#[track_caller]
+pub fn fit_list(
+    ui: &mut Ui,
+    state: &mut ListScroll,
+    len: usize,
+    mut row: impl FnMut(&mut Ui, usize),
+) {
+    let element = Element {
+        clip: true,
+        ..Element::column()
+    };
+    let slot = Element {
+        size: [Length::Grow, Length::Fit],
+        ..Element::DEFAULT
+    };
+    // A row's height until it's been measured.
+    let guess = theme::current().size.row;
+    ui.element(element, |ui| {
+        let wheel = ui.wheel()[1];
+        let Some(view) = ui.rect() else { return };
+        // From the row above the top, so scrolling up knows its height.
+        let first = state.top.saturating_sub(1);
+        let mut heights = Vec::new();
+        let mut bottom = -state.offset;
+        for index in first..len {
+            let Ok(key) = u32::try_from(index) else { break };
+            if bottom >= view.h {
+                break;
+            }
+            let height = ui.keyed(key, slot, |ui| {
+                let height = ui.rect().map_or(guess, |rect| rect.h);
+                row(ui, index);
+                height
+            });
+            heights.push(height);
+            if index >= state.top {
+                bottom += height;
+            }
+        }
+        let height = |index: usize| {
+            let at = index.checked_sub(first).and_then(|at| heights.get(at));
+            at.copied().unwrap_or(guess)
+        };
+        let average = heights.iter().sum::<f32>() / count(heights.len()).max(1.);
+        let at = count(state.top) + state.offset / height(state.top);
+        let pixels = -wheel
+            + thumb(
+                ui,
+                state.thumb,
+                &mut state.shown,
+                at * average,
+                count(len) * average,
+                view.h,
+            );
+        state.step(pixels, len, height);
+        if pixels != 0. {
+            state.pinned = false;
+        }
+        if first + heights.len() == len {
+            let shown: f32 = (state.top..len).map(height).sum::<f32>() - state.offset;
+            state.pinned |= shown < view.h;
+        }
+        if state.pinned {
+            (state.top, state.offset) = end(view.h, len, height);
+        }
+        let above: f32 = (first..state.top).map(height).sum();
+        ui.style().offset[1] = -(above + state.offset);
+    });
+}
+
 /// Along the right edge of the open box, as long as `view` is a share of
 /// `content`, and as far down as `offset` is a share of how far it scrolls.
 /// Dragged, it moves the content as far as it moves itself. Returns how far
@@ -240,6 +316,7 @@ impl ListScroll {
             offset: 0.,
             thumb: ThumbShow::Always,
             shown: 0.,
+            pinned: false,
         }
     }
 
@@ -257,41 +334,47 @@ impl ListScroll {
     /// Scrolls as far down as `len` rows `height` tall go in a `view` that
     /// tall, with the last at its bottom. To the top when they don't fill it.
     pub fn jump_to_end(&mut self, view: f32, height: f32, len: usize) {
-        (self.top, self.offset) = end(view, height, len);
+        (self.top, self.offset) = end(view, len, |_| height);
     }
 
     /// Whether the last of `len` rows sits at the bottom of `view`, or they
     /// all fit in it.
     #[must_use]
     pub fn at_end(self, view: f32, height: f32, len: usize) -> bool {
-        (self.top, self.offset) == end(view, height, len)
+        (self.top, self.offset) == end(view, len, |_| height)
     }
 
     /// Scrolls `pixels` down, or up when negative, stopping at either end.
     fn by(&mut self, view: f32, height: f32, pixels: f32, len: usize) {
-        self.offset += pixels;
-        while self.offset >= height && self.top + 1 < len {
-            self.top += 1;
-            self.offset -= height;
-        }
-        while self.offset < 0. && self.top > 0 {
-            self.top -= 1;
-            self.offset += height;
-        }
-        self.offset = self.offset.clamp(0., height);
-        let end = end(view, height, len);
+        self.step(pixels, len, |_| height);
+        let end = end(view, len, |_| height);
         if (self.top, self.offset) > end {
             (self.top, self.offset) = end;
         }
     }
+
+    /// Scrolls `pixels` down, or up when negative, over `len` rows as tall
+    /// as `height` says, stopping at the top and in the last row.
+    fn step(&mut self, pixels: f32, len: usize, height: impl Fn(usize) -> f32) {
+        self.offset += pixels;
+        while self.offset >= height(self.top) && self.top + 1 < len {
+            self.offset -= height(self.top);
+            self.top += 1;
+        }
+        while self.offset < 0. && self.top > 0 {
+            self.top -= 1;
+            self.offset += height(self.top);
+        }
+        self.offset = self.offset.clamp(0., height(self.top));
+    }
 }
 
-/// The top row and offset scrolled as far down as `len` rows `height` tall go
-/// in a `view` that tall.
-fn end(view: f32, height: f32, len: usize) -> (usize, f32) {
+/// The top row and offset scrolled as far down as `len` rows, as tall as
+/// `height` says, go in a `view` that tall.
+fn end(view: f32, len: usize, height: impl Fn(usize) -> f32) -> (usize, f32) {
     let mut filled = 0.;
     for top in (0..len).rev() {
-        filled += height;
+        filled += height(top);
         if filled >= view {
             return (top, filled - view);
         }

@@ -1,6 +1,6 @@
 //! A message file's messages, one to a row: the id the game looks it up by,
-//! then its text on one line, its tags as chips, and the box it shows in
-//! when that's not the ordinary one.
+//! then its text wrapped, its tags as chips, and the box it shows in when
+//! that's not the ordinary one.
 //!
 //! The game's tables name the tags and boxes. Without them, a tag shows as
 //! its raw `group.code` and no box is marked.
@@ -13,10 +13,10 @@ use std::fmt::Write;
 use formats::jsystem::jmessage::bmg::{Bmg, Message, TextSegment};
 use formats::jsystem::jmessage::games::{Args, Layout, Tables, Tag};
 use gui::canvas::Color;
-use gui::ui::{Element, TextStyle, Ui};
+use gui::ui::{Direction, Element, Length, TextStyle, Ui};
 
 use crate::components::{
-    self, ListScroll, TextField, indexed_list, notice, text_field, toggle, toolbar,
+    self, ListScroll, TextField, fit_list, line_box, notice, text_field, toggle, toolbar,
 };
 use crate::theme;
 use crate::views::{self, Find, Lines};
@@ -107,11 +107,14 @@ impl Messages {
             font: theme.font.buffer,
             ..theme.ui_text(c.dim)
         };
+        let line = s.row - s.gap / 2.;
         let element = Element {
-            padding: [s.gap / 2., 0., s.gap / 2., 0.],
+            direction: Direction::LeftToRight,
+            size: [Length::Grow, Length::Fit],
+            padding: [s.gap / 2., s.gap / 2., 2. * s.scroll_bar, s.gap / 2.],
             gap: 2. * s.gap,
             clip: true,
-            ..Element::line(s.row)
+            ..Element::DEFAULT
         };
         let refind = toolbar(ui, |ui| {
             let typed = text_field(ui, &mut self.search, None, "Find in every message");
@@ -132,7 +135,7 @@ impl Messages {
         let mut id = String::new();
         let mut clicked = None;
         let shown = &self.shown;
-        indexed_list(ui, &mut self.scroll, shown.len(), s.row, |ui, row| {
+        fit_list(ui, &mut self.scroll, shown.len(), |ui, row| {
             let Some(&index) = shown.get(row) else {
                 return;
             };
@@ -143,8 +146,8 @@ impl Messages {
             let _ = write!(id, "{at:>digits$}");
             let selected = self.selected == Some(index);
             let (click, ()) = components::row(ui, element, selected, |ui| {
-                ui.text(id_style, &id);
-                views::line(ui, &self.lines, index);
+                ui.element(line_box(line), |ui| ui.text(id_style, &id));
+                views::line(ui, &self.lines, index, line);
             });
             if click {
                 clicked = Some(index);

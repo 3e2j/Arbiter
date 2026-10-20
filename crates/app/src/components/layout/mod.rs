@@ -9,5 +9,5 @@ mod toolbar;
 pub use notice::notice;
 pub use row::row;
 pub use rule::rule;
-pub use scroll::{ListScroll, Scroll, ThumbShow, indexed_list, list, scroll};
+pub use scroll::{ListScroll, Scroll, ThumbShow, fit_list, indexed_list, list, scroll};
 pub use toolbar::{spacer, toolbar};

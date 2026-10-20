@@ -1,11 +1,11 @@
-//! Many one-line rows of text with chips in it, such as tags, and a badge at
+//! Many rows of text with chips in it, such as tags, wrapped, and a badge at
 //! the row's end. Built once, end to end, so a row slices rather than
 //! rebuilds each pass.
 
 use gui::canvas::Color;
-use gui::ui::{Element, Ui};
+use gui::ui::Ui;
 
-use crate::components::chip;
+use crate::components::{self, Chip, chip, line_box, wrapped};
 use crate::theme;
 
 #[derive(Default)]
@@ -173,36 +173,30 @@ fn fold(out: &mut String, text: &str, case: bool) {
     }
 }
 
-/// The line at `index` into the open row: its text and chips, cut off where
-/// they run out of room, then its badge. A dim "empty" for a line without
-/// runs.
+/// The line at `index` into the open row, wrapped onto lines `height` tall,
+/// then its badge beside the first. A dim "empty" for a line without runs.
 #[track_caller]
-pub fn line(ui: &mut Ui, lines: &Lines, index: usize) {
+pub fn line(ui: &mut Ui, lines: &Lines, index: usize, height: f32) {
     let theme = theme::current();
     let c = theme.color;
+    let beside = line_box(height);
     let mut runs = lines.get(index).peekable();
     if runs.peek().is_none() {
-        ui.text(theme.ui_text(c.dim), "empty");
+        ui.element(beside, |ui| ui.text(theme.ui_text(c.dim), "empty"));
         return;
     }
-    let element = Element {
-        clip: true,
-        ..Element::line(theme.size.row)
-    };
     let mut badge = None;
-    ui.element(element, |ui| {
-        for (kind, run) in runs {
-            match kind {
-                RunKind::Text => {
-                    ui.text(theme.ui_text(c.text), run);
-                }
-                RunKind::Chip(swatch) => chip(ui, run, swatch),
-                RunKind::Badge => badge = Some(run),
-            }
+    let text = runs.filter_map(|(kind, run)| match kind {
+        RunKind::Text => Some(components::Run::Text(run)),
+        RunKind::Chip(swatch) => Some(components::Run::Atom(Chip(swatch), run)),
+        RunKind::Badge => {
+            badge = Some(run);
+            None
         }
     });
+    wrapped(ui, theme.ui_text(c.text), height, text);
     if let Some(label) = badge {
-        chip(ui, label, None);
+        ui.element(beside, |ui| chip(ui, label, None));
     }
 }
 

@@ -53,6 +53,48 @@ fn a_list_declares_only_the_rows_in_view() {
     assert_eq!((state.top, state.offset), (2, 5.));
 }
 
+/// Twenty rows, ten and thirty tall in turn, in a window a hundred tall.
+/// Returns the rows declared.
+fn fit_list_pass(kept: &mut Kept, state: &mut ListScroll) -> Vec<usize> {
+    let mut shown = Vec::new();
+    kept.pass(|ui| {
+        fit_list(ui, state, 20, |ui, index| {
+            let height = if index % 2 == 0 { 10. } else { 30. };
+            ui.element(fixed(10., height), |_| {});
+            shown.push(index);
+        });
+    });
+    shown
+}
+
+#[test]
+fn a_fit_list_scrolls_by_each_rows_height() {
+    // What it guesses a row it hasn't measured is.
+    sizes(|size| size.row = 20.);
+    let mut kept = Kept::default();
+    let mut state = ListScroll::TOP;
+    for _ in 0..3 {
+        fit_list_pass(&mut kept, &mut state);
+    }
+    kept.input.push(Event::Pointer(Some([5., 5.])));
+    fit_list_pass(&mut kept, &mut state);
+    kept.input.push(Event::Scroll([0., -15.]));
+    fit_list_pass(&mut kept, &mut state);
+    assert_eq!((state.top, state.offset), (1, 5.));
+    kept.input.push(Event::Scroll([0., 10.]));
+    // The row above the top is declared, so scrolling up knows its height.
+    assert_eq!(
+        fit_list_pass(&mut kept, &mut state),
+        (0..6).collect::<Vec<_>>()
+    );
+    assert_eq!((state.top, state.offset), (0, 5.));
+    kept.input.push(Event::Scroll([0., -10_000.]));
+    for _ in 0..5 {
+        fit_list_pass(&mut kept, &mut state);
+    }
+    assert_eq!((state.top, state.offset), (15, 10.));
+}
+
 #[test]
 fn a_list_stops_at_both_ends() {
     let mut kept = Kept::default();
