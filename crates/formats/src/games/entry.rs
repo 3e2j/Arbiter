@@ -36,7 +36,7 @@ impl Entry {
 }
 
 /// A set of one game's versions. Each game numbers its own bits, see
-/// [`crate::tp::Version`].
+/// [`crate::games::tp::Version`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Versions(u16);
 

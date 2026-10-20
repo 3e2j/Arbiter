@@ -3,15 +3,14 @@
 
 use std::fmt::Write;
 
+use formats::jsystem::jmessage::bmg::{Bmg, TextSegment};
 use gui::ui::{Element, TextStyle, Ui};
-use project::Document;
-use project::jsystem::jmessage::{Bmg, TextSegment};
 
 use crate::components::{self, ListScroll, indexed_list, notice};
 use crate::theme;
 
 pub struct Messages {
-    doc: Document<Bmg>,
+    bmg: Bmg,
     /// What each row shows as its id, by position. A file without MID1 is
     /// addressed by position, so that's its id.
     ids: Vec<usize>,
@@ -33,8 +32,7 @@ struct Lines {
 }
 
 impl Messages {
-    pub fn new(doc: Document<Bmg>) -> Self {
-        let bmg = doc.get();
+    pub fn new(bmg: Bmg) -> Self {
         let ids: Vec<usize> = match bmg.mid1 {
             Some(_) => bmg
                 .messages
@@ -46,15 +44,15 @@ impl Messages {
         Self {
             digits: ids.iter().max().map_or(1, |max| max.to_string().len()),
             ids,
-            lines: Lines::of(bmg),
-            doc,
+            lines: Lines::of(&bmg),
+            bmg,
             scroll: ListScroll::TOP,
             selected: None,
         }
     }
 
     pub fn ui(&mut self, ui: &mut Ui) {
-        let len = self.doc.get().messages.len();
+        let len = self.bmg.messages.len();
         if len == 0 {
             return notice(ui, "No messages");
         }
@@ -146,7 +144,7 @@ fn push_flat(out: &mut String, start: usize, text: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use project::jsystem::jmessage::{Encoding, Message, MessageId};
+    use formats::jsystem::jmessage::bmg::{Encoding, Message, MessageId};
 
     fn bmg(texts: &[&[TextSegment]]) -> Bmg {
         Bmg {

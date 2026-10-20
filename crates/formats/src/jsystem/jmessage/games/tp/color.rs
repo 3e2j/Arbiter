@@ -1,7 +1,7 @@
 //! The palette the color tag indexes, see `getFontCCColorTable`.
 
-use crate::Entry;
-use crate::entry::entry;
+use crate::games::Entry;
+use crate::games::entry::entry;
 
 #[rustfmt::skip]
 pub(super) static COLORS: &[Entry] = &[

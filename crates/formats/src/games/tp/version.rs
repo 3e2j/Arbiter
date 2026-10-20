@@ -3,7 +3,7 @@
 //! The decomp branches on `REGION_*`, `PLATFORM_*` and `VERSION`. Region and
 //! platform are both sets of versions, so every split here is a [`Versions`].
 
-use crate::Versions;
+use crate::games::Versions;
 
 /// One build of the game, the decomp's `VERSION_*`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -93,7 +93,7 @@ const fn of(versions: &[Version]) -> Versions {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::edition::{EDITIONS, Game};
+    use crate::games::edition::{EDITIONS, Game};
 
     #[test]
     fn only_rzde_reads_the_revision() {

@@ -1,4 +1,5 @@
-//! Twilight Princess's message tables, as rows.
+//! Twilight Princess's message tables: what its attribute bytes, text tags,
+//! colors, flow nodes and unit words mean.
 
 mod color;
 mod flow;
@@ -6,7 +7,7 @@ mod record;
 mod tag;
 mod unit;
 
-use crate::jsystem::jmessage::Rows;
+use super::Rows;
 
 pub(crate) static ROWS: Rows = Rows {
     layouts: &[record::LAYOUT, unit::LAYOUT, unit::JPN_LAYOUT],

@@ -1,4 +1,4 @@
-//! Both project kinds and every operation the front ends call: open, save, undo, check, build.
+//! Both project kinds, and how their files are stored: open, save, check, build.
 //!
 //! A mod project, as `Project::create` writes it. The root is also the git root.
 //!
@@ -19,9 +19,7 @@ pub mod changes;
 pub mod config;
 mod create;
 mod disk;
-mod document;
 pub mod hash;
-pub mod jsystem;
 mod local;
 pub mod tree;
 
@@ -35,8 +33,7 @@ pub use config::EditionChange;
 use config::{Edition, ProjectConfig, ProjectKind};
 pub use create::DraftProject;
 use diag::Diagnostics;
-pub use document::Document;
-pub use game::edition::{DumpVerdict, Game};
+pub use formats::games::edition::{DumpVerdict, Game};
 use hash::Hash;
 pub use local::{Log, LogWriter};
 
@@ -340,7 +337,6 @@ mod tests {
         assert_eq!(id("base/GZ2E01"), None);
         assert_eq!(id("changes/res/Msgus/zel_00.bmg"), None);
         assert_eq!(id("based/GZ2E01/a.bmg"), None);
-        assert!(jsystem::jmessage::tables(&project, "base/GZ2E01/a.bmg").is_some());
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! The shape of an INF1 record: which attribute bytes are which.
 
-use crate::{Entry, Versions};
+use crate::games::{Entry, Versions};
 
 /// A record struct the game reads INF1 with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

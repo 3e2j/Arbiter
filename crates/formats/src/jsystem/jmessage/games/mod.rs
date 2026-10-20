@@ -1,10 +1,8 @@
-//! `JMessage`: what the raw values in a [`formats::jsystem::jmessage::Bmg`] mean to the
-//! game.
+//! What the raw values in a [`Bmg`](super::bmg::Bmg) mean to each game.
 //!
 //! [`tables`] is the way in. It finds the game a disc holds and returns its
 //! [`Tables`], which every lookup goes through. Each game fills in one
-//! `Rows` in its own folder (`tp/jmessage`), and only the code here
-//! searches them.
+//! `Rows` in its own folder (`tp/`), and only the code here searches them.
 //!
 //! ```text
 //! record layout   Tables::layout, by INF1 record width
@@ -17,8 +15,9 @@
 
 mod layout;
 mod tag;
+mod tp;
 
-use crate::{Entry, Versions};
+use crate::games::{Entry, Versions};
 
 pub use layout::{Field, Layout};
 pub use tag::{Args, Tag};
@@ -30,7 +29,7 @@ pub(crate) use tag::tag;
 /// read it.
 #[must_use]
 pub fn tables(id: &str, revision: u8) -> Option<Tables> {
-    crate::tp::Version::from_disc(id, revision).map(Tables::tp)
+    crate::games::tp::Version::from_disc(id, revision).map(Tables::tp)
 }
 
 /// Everything one game names, as plain rows. A game without a table leaves
@@ -63,9 +62,9 @@ pub struct Tables {
 
 impl Tables {
     #[must_use]
-    pub const fn tp(version: crate::tp::Version) -> Self {
+    pub const fn tp(version: crate::games::tp::Version) -> Self {
         Self {
-            rows: &crate::tp::jmessage::ROWS,
+            rows: &tp::ROWS,
             version: version.versions(),
         }
     }

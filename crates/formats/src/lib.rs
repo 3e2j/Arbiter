@@ -1,4 +1,11 @@
-//! The game's file formats as plain structures. Knows no game or project.
+//! The game's file formats as plain structures, and what each game reads
+//! their raw values as. Knows no project.
+//!
+//! Formats are grouped by the engine library that defines them ([`jsystem`]).
+//! A library holds one folder per format, which knows no game, and a `games`
+//! folder beside them for the tables that name their raw values. The
+//! top-level [`games`] holds the editions and versions those tables are keyed
+//! by.
 //!
 //! Every format implements [`Decode`] and [`Encode`].
 //! One that can be edited implements:
@@ -9,6 +16,7 @@
 //! Fixed tables are [`record!`] structs, borrowed and copied whole. The types
 //! their fields can be are listed on [`Record`].
 
+pub mod games;
 pub mod jsystem;
 
 mod reader;

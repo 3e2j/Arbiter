@@ -1,6 +1,6 @@
 [package]
 name = "arbiter-project"
-description = "Project layouts, and every operation the front ends call."
+description = "Project layouts, and how their files are stored."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,7 +12,6 @@ name = "project"
 arbiter-diag.workspace = true
 arbiter-formats.workspace = true
 arbiter-pack.workspace = true
-arbiter-game.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 toml.workspace = true

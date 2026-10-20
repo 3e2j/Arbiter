@@ -155,6 +155,8 @@ dependencies = [
 name = "arbiter-app"
 version = "0.1.0"
 dependencies = [
+ "arbiter-diag",
+ "arbiter-formats",
  "arbiter-gui",
  "arbiter-project",
  "dirs",
@@ -180,14 +182,6 @@ dependencies = [
  "encoding_rs",
  "serde",
  "thiserror 2.0.21",
-]
-
-[[package]]
-name = "arbiter-game"
-version = "0.1.0"
-dependencies = [
- "arbiter-diag",
- "arbiter-formats",
 ]
 
 [[package]]
@@ -225,7 +219,6 @@ version = "0.1.0"
 dependencies = [
  "arbiter-diag",
  "arbiter-formats",
- "arbiter-game",
  "arbiter-pack",
  "serde",
  "tempfile",

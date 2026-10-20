@@ -4,10 +4,10 @@
 //! The file has no MID1, so the game finds a record by its position. That
 //! position is the unit [`UNITS`] names. Every field is an offset into STR1.
 
-use crate::Entry;
-use crate::entry::entry;
-use crate::jsystem::jmessage::{Layout, field};
-use crate::tp::{ALL, JPN};
+use crate::games::Entry;
+use crate::games::entry::entry;
+use crate::games::tp::{ALL, JPN};
+use crate::jsystem::jmessage::games::{Layout, field};
 
 /// Units, by the record position the game passes to `dMsgUnit_setTag`. The
 /// game handles 0x10000 and 0x10001 in code without reading the file.

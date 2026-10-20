@@ -9,6 +9,8 @@ license.workspace = true
 name = "app"
 
 [dependencies]
+arbiter-diag.workspace = true
+arbiter-formats.workspace = true
 arbiter-gui.workspace = true
 arbiter-project.workspace = true
 dirs.workspace = true

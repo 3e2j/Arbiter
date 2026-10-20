@@ -27,7 +27,7 @@ use std::{
     thread,
 };
 
-use game::edition::{self, DumpVerdict, Game, KnownEdition};
+use formats::games::edition::{self, DumpVerdict, Game, KnownEdition};
 use pack::{
     disc::{self, Disc},
     unpack::{self, Unpacked},

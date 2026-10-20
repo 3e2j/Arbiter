@@ -2,10 +2,10 @@
 //! `zel_unit.bmg`: how one message is displayed. `zel_unit.bmg` has its own,
 //! see `unit.rs`.
 
-use crate::entry::entry;
-use crate::jsystem::jmessage::{Field, Layout, field};
-use crate::tp::{ALL, JPN};
-use crate::{Entry, Versions};
+use crate::games::entry::entry;
+use crate::games::tp::{ALL, JPN};
+use crate::games::{Entry, Versions};
+use crate::jsystem::jmessage::games::{Field, Layout, field};
 
 /// The message id, which a file with a MID1 repeats from its MID1 entry.
 const ID: Field =

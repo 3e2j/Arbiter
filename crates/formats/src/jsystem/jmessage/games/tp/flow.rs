@@ -5,9 +5,9 @@
 //! read big-endian as one u32 `p`, two u16 `p0` and `p1`, or four u8,
 //! depending on the event.
 
-use crate::Entry;
-use crate::entry::entry;
-use crate::tp::{GCN, WII};
+use crate::games::Entry;
+use crate::games::entry::entry;
+use crate::games::tp::{GCN, WII};
 
 /// Branch queries, by the id a branch node stores.
 #[rustfmt::skip]

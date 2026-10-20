@@ -12,7 +12,6 @@ license = "MIT"
 arbiter-diag = { path = "crates/diag" }
 arbiter-formats = { path = "crates/formats" }
 arbiter-pack = { path = "crates/pack" }
-arbiter-game = { path = "crates/game" }
 arbiter-project = { path = "crates/project" }
 arbiter-gui = { path = "crates/gui" }
 arbiter-app = { path = "crates/app" }

@@ -2,8 +2,8 @@
 //! them.
 
 use super::*;
-use crate::entry::assert_one_meaning;
-use crate::tp::Version;
+use crate::games::entry::assert_one_meaning;
+use crate::games::tp::Version;
 
 const USA: Tables = Tables::tp(Version::GcnUsa);
 

@@ -2,8 +2,8 @@
 //! `jmessage_tRenderingProcessor`.
 
 use super::color::COLORS;
-use crate::jsystem::jmessage::{Args, Tag, tag};
-use crate::tp::{ALL, GCN_PAL, JPN};
+use crate::games::tp::{ALL, GCN_PAL, JPN};
+use crate::jsystem::jmessage::games::{Args, Tag, tag};
 
 /// Sorted by group, then code.
 #[rustfmt::skip]

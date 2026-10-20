@@ -1,8 +1,7 @@
 //! Inline text tags: what each group and code does, and what arguments it
-//! takes. The group and code are the ones `formats::jsystem::jmessage::TextSegment::Tag`
-//! holds.
+//! takes. The group and code are the ones `bmg::TextSegment::Tag` holds.
 
-use crate::{Entry, Versions};
+use crate::games::{Entry, Versions};
 
 /// One kind of tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -5,9 +5,10 @@
 
 use std::io;
 
+use diag::Diagnostics;
+use formats::Decode;
+use formats::jsystem::jmessage::bmg::Bmg;
 use gui::ui::{Element, Length, Ui};
-use project::Document;
-use project::jsystem::jmessage::Bmg;
 use serde::{Deserialize, Serialize};
 
 use super::hex::{Hex, HexState};
@@ -152,15 +153,16 @@ impl Editor {
     /// The editor for `bytes`' format, or `None` when it has none or they
     /// don't decode, which leaves them to hex.
     fn open(path: &str, bytes: &[u8]) -> Option<Self> {
-        if !Document::<Bmg>::detect(bytes) {
+        if !Bmg::detect(bytes) {
             return None;
         }
-        match Document::<Bmg>::decode(path.to_owned(), bytes) {
-            Ok((doc, diag)) => {
+        let mut diag = Diagnostics::default();
+        match Bmg::decode(bytes, &mut diag) {
+            Ok(bmg) => {
                 for item in &diag.items {
                     tracing::warn!("{path}: {}", item.message);
                 }
-                Some(Self::Messages(Messages::new(doc)))
+                Some(Self::Messages(Messages::new(bmg)))
             }
             Err(err) => {
                 tracing::warn!("can't read {path} as a message file: {err}");

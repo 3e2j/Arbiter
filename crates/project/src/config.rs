@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use game::edition::{self, Game};
+use formats::games::edition::{self, Game};
 
 use serde::{Deserialize, Serialize};
 
