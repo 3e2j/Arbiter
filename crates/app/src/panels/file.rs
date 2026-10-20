@@ -8,6 +8,7 @@ use std::io;
 use diag::Diagnostics;
 use formats::Decode;
 use formats::jsystem::jmessage::bmg::Bmg;
+use formats::jsystem::jmessage::games::Tables;
 use gui::ui::{Element, Length, Ui};
 use serde::{Deserialize, Serialize};
 
@@ -104,13 +105,14 @@ impl File {
         self.path.rsplit('/').next().unwrap_or(&self.path)
     }
 
-    /// Shows what reading the file gave, with nothing selected.
-    pub fn load(&mut self, read: io::Result<Vec<u8>>) {
+    /// Shows what reading the file gave, with nothing selected. `tables`
+    /// name what the file's game means by its values, when known.
+    pub fn load(&mut self, read: io::Result<Vec<u8>>, tables: Option<Tables>) {
         self.hex.reload();
         self.editor = None;
         self.bytes = match read {
             Ok(bytes) => {
-                self.editor = Editor::open(&self.path, &bytes).map(Box::new);
+                self.editor = Editor::open(&self.path, &bytes, tables).map(Box::new);
                 Bytes::Read(bytes)
             }
             Err(err) => Bytes::Failed(format!("Can't read {}: {err}", self.path)),
@@ -152,7 +154,7 @@ impl File {
 impl Editor {
     /// The editor for `bytes`' format, or `None` when it has none or they
     /// don't decode, which leaves them to hex.
-    fn open(path: &str, bytes: &[u8]) -> Option<Self> {
+    fn open(path: &str, bytes: &[u8], tables: Option<Tables>) -> Option<Self> {
         if !Bmg::detect(bytes) {
             return None;
         }
@@ -162,7 +164,7 @@ impl Editor {
                 for item in &diag.items {
                     tracing::warn!("{path}: {}", item.message);
                 }
-                Some(Self::Messages(Messages::new(bmg)))
+                Some(Self::Messages(Messages::new(bmg, tables)))
             }
             Err(err) => {
                 tracing::warn!("can't read {path} as a message file: {err}");
@@ -197,9 +199,9 @@ mod tests {
     #[test]
     fn bytes_without_an_editor_stay_hex() {
         let mut file = File::new("a.bin".to_owned());
-        file.load(Ok(b"RARC".to_vec()));
+        file.load(Ok(b"RARC".to_vec()), None);
         assert!(file.editor.is_none());
-        file.load(Ok(b"MESGbmg1 broken".to_vec()));
+        file.load(Ok(b"MESGbmg1 broken".to_vec()), None);
         assert!(file.editor.is_none());
     }
 }

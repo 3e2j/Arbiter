@@ -144,6 +144,13 @@ impl Tables {
         let rgb = self.rows.rgb.get(usize::from(color));
         rgb.copied().unwrap_or(self.rows.past_rgb)
     }
+
+    /// Whether `tag`'s argument is a color, which [`Self::rgb`] draws.
+    #[must_use]
+    pub fn is_color(self, tag: &Tag) -> bool {
+        tag.values
+            .is_some_and(|values| std::ptr::eq(values, self.rows.colors))
+    }
 }
 
 /// One table, as one version reads it.

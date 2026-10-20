@@ -11,12 +11,14 @@ use crate::jsystem::jmessage::games::{Field, Layout, field};
 const ID: Field =
     field(0x04, 2, "Message id").notes("Id the game looks the message up by. Same as the MID1 id");
 
+const BOX_KIND: Field = field(0x09, 1, "Box kind").values(BOX_KINDS);
+
 #[rustfmt::skip]
-pub(super) const LAYOUT: Layout = Layout { len: 20, id: Some(ID), versions: Versions::ANY, fields: &[
+pub(super) const LAYOUT: Layout = Layout { len: 20, id: Some(ID), box_kind: Some(BOX_KIND), versions: Versions::ANY, fields: &[
     ID,
     field(0x06, 2, "Event label")   .notes("`saveBitLabels` index set when the message displays"),
     field(0x08, 1, "Speaker")       .notes("`Z2SpeechMgr2` voice bank id"),
-    field(0x09, 1, "Box kind")      .values(BOX_KINDS),
+    BOX_KIND,
     field(0x0A, 1, "Draw type")     .values(DRAW_TYPES).notes("Text pacing"),
     field(0x0B, 1, "Box position")  .values(BOX_POSITIONS),
     field(0x0C, 1, "Item")          .notes("Unused. Legacy `dItemNo`, 0xFF for none"),

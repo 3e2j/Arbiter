@@ -11,6 +11,9 @@ pub struct Layout {
     pub fields: &'static [Field],
     /// The field that repeats the MID1 id, in a layout that has one.
     pub id: Option<Field>,
+    /// The field picking the box the message shows in, where 0 is the
+    /// ordinary one, in a layout that has one.
+    pub box_kind: Option<Field>,
     pub versions: Versions,
 }
 
@@ -43,6 +46,19 @@ pub(crate) const fn field(offset: usize, len: usize, name: &'static str) -> Fiel
 }
 
 impl Field {
+    /// Its value in a message's attributes, or `None` when they end before
+    /// it.
+    #[must_use]
+    pub fn read(self, attributes: &[u8]) -> Option<u16> {
+        let start = self.offset.checked_sub(4)?;
+        let bytes = attributes.get(start..start + self.len)?;
+        Some(
+            bytes
+                .iter()
+                .fold(0, |value, &byte| value << 8 | u16::from(byte)),
+        )
+    }
+
     pub(crate) const fn notes(self, notes: &'static str) -> Self {
         Self {
             notes: Some(notes),

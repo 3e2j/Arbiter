@@ -8,11 +8,13 @@
 //! boxes. In a list that can insert or reorder, call them inside
 //! [`Ui::keyed`](gui::ui::Ui::keyed).
 
+mod chip;
 mod controls;
 mod layout;
 mod overlay;
 mod title_bar;
 
+pub use chip::chip;
 pub use controls::*;
 pub use layout::*;
 pub use overlay::*;

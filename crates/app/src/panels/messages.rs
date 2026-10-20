@@ -1,13 +1,20 @@
 //! A message file's messages, one to a row: the id the game looks it up by,
-//! then its text on one line.
+//! then its text on one line, its tags as chips, and the box it shows in
+//! when that's not the ordinary one.
+//!
+//! The game's tables name the tags and boxes. Without them, a tag shows as
+//! its raw `group.code` and no box is marked.
 
 use std::fmt::Write;
 
-use formats::jsystem::jmessage::bmg::{Bmg, TextSegment};
+use formats::jsystem::jmessage::bmg::{Bmg, Message, TextSegment};
+use formats::jsystem::jmessage::games::{Args, Layout, Tables, Tag};
+use gui::canvas::Color;
 use gui::ui::{Element, TextStyle, Ui};
 
 use crate::components::{self, ListScroll, indexed_list, notice};
 use crate::theme;
+use crate::views::{self, Lines};
 
 pub struct Messages {
     bmg: Bmg,
@@ -16,23 +23,15 @@ pub struct Messages {
     ids: Vec<usize>,
     /// The widest id's, so the text lines up after it.
     digits: usize,
+    /// Each message's text, by position.
     lines: Lines,
     scroll: ListScroll,
     /// By position.
     selected: Option<usize>,
 }
 
-/// Every message's text on one line, end to end, so a row slices it rather
-/// than decoding each pass.
-#[derive(Default)]
-struct Lines {
-    text: String,
-    /// Where each message's line ends in `text`, by position.
-    ends: Vec<usize>,
-}
-
 impl Messages {
-    pub fn new(bmg: Bmg) -> Self {
+    pub fn new(bmg: Bmg, tables: Option<Tables>) -> Self {
         let ids: Vec<usize> = match bmg.mid1 {
             Some(_) => bmg
                 .messages
@@ -44,7 +43,7 @@ impl Messages {
         Self {
             digits: ids.iter().max().map_or(1, |max| max.to_string().len()),
             ids,
-            lines: Lines::of(&bmg),
+            lines: lines(&bmg, tables),
             bmg,
             scroll: ListScroll::TOP,
             selected: None,
@@ -77,15 +76,10 @@ impl Messages {
             };
             id.clear();
             let _ = write!(id, "{at:>digits$}");
-            let line = self.lines.get(index);
             let selected = self.selected == Some(index);
             let (click, ()) = components::row(ui, element, selected, |ui| {
                 ui.text(id_style, &id);
-                if line.is_empty() {
-                    ui.text(theme.ui_text(c.dim), "empty");
-                } else {
-                    ui.text(theme.ui_text(c.text), line);
-                }
+                views::line(ui, &self.lines, index);
             });
             if click {
                 clicked = Some(index);
@@ -97,52 +91,93 @@ impl Messages {
     }
 }
 
-impl Lines {
-    fn of(bmg: &Bmg) -> Self {
-        let mut lines = Self::default();
-        for message in &bmg.messages {
-            let start = lines.text.len();
-            for segment in &message.text {
-                if let TextSegment::Text(bytes) = segment {
-                    push_flat(&mut lines.text, start, &bmg.encoding.decode(bytes));
-                }
+/// Each message's text as a line: tags as chips, named by `tables`, and
+/// the box it shows in as the badge when that's not the ordinary one.
+fn lines(bmg: &Bmg, tables: Option<Tables>) -> Lines {
+    let layout = tables.and_then(|tables| tables.layout(bmg.record_len));
+    let mut lines = Lines::default();
+    for message in &bmg.messages {
+        let box_kind = box_kind(layout, message);
+        for segment in &message.text {
+            match segment {
+                TextSegment::Text(bytes) => lines.text(&bmg.encoding.decode(bytes)),
+                &TextSegment::Tag {
+                    group,
+                    code,
+                    ref args,
+                } => match tables.and_then(|tables| Some((tables, tables.tag(group, code)?))) {
+                    Some((tables, tag)) => {
+                        let swatch = tables.is_color(tag).then(|| {
+                            let color = args.first().copied().unwrap_or(0);
+                            let [r, g, b] = tables.rgb(color, box_kind.unwrap_or(0));
+                            Color([r, g, b, u8::MAX])
+                        });
+                        lines.chip(swatch, |out| push_tag(out, tables, tag, code, args));
+                    }
+                    None => lines.chip(None, |out| {
+                        let _ = write!(out, "{group}.{code}");
+                    }),
+                },
             }
-            if lines.text.ends_with(' ') {
-                lines.text.pop();
-            }
-            lines.ends.push(lines.text.len());
         }
-        lines
+        if let Some(kind) = box_kind.filter(|&kind| kind != 0)
+            && let Some(tables) = tables
+        {
+            let values = layout.and_then(|layout| layout.box_kind?.values);
+            let named = values.and_then(|values| tables.values(values).get(u16::from(kind)));
+            lines.badge(|out| {
+                let _ = match named {
+                    Some(entry) => out.write_str(entry.name),
+                    None => write!(out, "Box {kind}"),
+                };
+            });
+        }
+        lines.end();
     }
-
-    /// The line at `index`, empty past the last.
-    fn get(&self, index: usize) -> &str {
-        let start = index
-            .checked_sub(1)
-            .and_then(|before| self.ends.get(before))
-            .copied()
-            .unwrap_or(0);
-        let end = self.ends.get(index).copied().unwrap_or(start);
-        self.text.get(start..end).unwrap_or_default()
-    }
+    lines
 }
 
-/// `text` onto the line in `out` from `start`, each run of whitespace one
-/// space, none leading.
-fn push_flat(out: &mut String, start: usize, text: &str) {
-    for ch in text.chars() {
-        if !ch.is_whitespace() {
-            out.push(ch);
-        } else if out.len() > start && !out.ends_with(' ') {
-            out.push(' ');
-        }
+/// The box kind `message` shows in, when the layout has one.
+fn box_kind(layout: Option<&Layout>, message: &Message) -> Option<u8> {
+    let value = layout?.box_kind?.read(&message.attributes)?;
+    u8::try_from(value).ok()
+}
+
+/// `tag`'s chip label onto `out`: its name, then what its code or argument
+/// says, named when its table names it. A color is just its name.
+fn push_tag(out: &mut String, tables: Tables, tag: &Tag, code: u16, args: &[u8]) {
+    let value = match (tag.args, args) {
+        (Args::U8, &[a]) => Some(u32::from(a)),
+        (Args::U16, &[a, b]) => Some(u32::from(u16::from_be_bytes([a, b]))),
+        (Args::U32, &[a, b, c, d]) => Some(u32::from_be_bytes([a, b, c, d])),
+        _ => None,
+    };
+    let named = value.and_then(|value| {
+        let value = u16::try_from(value).ok()?;
+        tables.values(tag.values?).get(value)
+    });
+    if let Some(entry) = named
+        && tables.is_color(tag)
+    {
+        return out.push_str(entry.name);
     }
+    out.push_str(tag.name);
+    if tag.any_code {
+        let _ = write!(out, " {code}");
+    }
+    let _ = match (named, value) {
+        (Some(entry), _) => write!(out, " {}", entry.name),
+        (None, Some(value)) => write!(out, " {value}"),
+        (None, None) => Ok(()),
+    };
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use formats::jsystem::jmessage::bmg::{Encoding, Message, MessageId};
+    use crate::views::RunKind;
+    use formats::games::tp::Version;
+    use formats::jsystem::jmessage::bmg::{Encoding, MessageId};
 
     fn bmg(texts: &[&[TextSegment]]) -> Bmg {
         Bmg {
@@ -167,21 +202,51 @@ mod tests {
         TextSegment::Text(s.to_vec())
     }
 
+    fn tag(group: u8, code: u16, args: &[u8]) -> TextSegment {
+        TextSegment::Tag {
+            group,
+            code,
+            args: args.to_vec(),
+        }
+    }
+
+    const TAG: RunKind = RunKind::Chip(None);
+
     #[test]
-    fn each_message_flattens_to_one_line() {
-        let color = TextSegment::Tag {
-            group: 255,
-            code: 0,
-            args: vec![1],
-        };
-        let lines = Lines::of(&bmg(&[
-            &[text(b"  Hey,\nyou!  ")],
-            &[],
-            &[text(b"a "), color, text(b"\n caf\xe9")],
-        ]));
-        assert_eq!(lines.get(0), "Hey, you!");
-        assert_eq!(lines.get(1), "");
-        assert_eq!(lines.get(2), "a café");
-        assert_eq!(lines.get(3), "");
+    fn the_tables_name_tags_and_boxes() {
+        let mut file = bmg(&[
+            &[
+                tag(255, 0, &[1]),
+                text(b"Hi"),
+                tag(0, 7, &[0, 30]),
+                tag(1, 12, &[]),
+            ],
+            &[tag(9, 9, &[])],
+        ]);
+        file.record_len = 20;
+        for (message, kind) in file.messages.iter_mut().zip([13, 0]) {
+            let mut attributes = [0; 16];
+            attributes[5] = kind;
+            message.attributes = Box::new(attributes);
+        }
+        let lines = lines(&file, Some(Tables::tp(Version::GcnUsa)));
+        let red = RunKind::Chip(Some(Color::hex(0xF0_78_78)));
+        assert_eq!(
+            lines.get(0).collect::<Vec<_>>(),
+            [
+                (red, "Red"),
+                (RunKind::Text, "Hi"),
+                (TAG, "Pause 30"),
+                (TAG, "Sound 12"),
+                (RunKind::Badge, "Midna"),
+            ]
+        );
+        assert_eq!(lines.get(1).collect::<Vec<_>>(), [(TAG, "9.9")]);
+    }
+
+    #[test]
+    fn without_tables_tags_are_raw() {
+        let lines = lines(&bmg(&[&[tag(255, 0, &[1])]]), None);
+        assert_eq!(lines.get(0).collect::<Vec<_>>(), [(TAG, "255.0")]);
     }
 }

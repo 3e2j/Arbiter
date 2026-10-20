@@ -43,10 +43,32 @@ fn no_two_layouts_of_a_version_share_a_width() {
 }
 
 #[test]
-fn the_id_is_a_field() {
+fn the_id_and_box_kind_are_fields() {
     for layout in every_version().flat_map(layouts) {
         assert!(layout.id.is_none_or(|id| layout.fields.contains(&id)));
+        assert!(
+            layout
+                .box_kind
+                .is_none_or(|kind| layout.fields.contains(&kind))
+        );
     }
+}
+
+#[test]
+fn a_field_reads_big_endian_after_the_text_offset() {
+    let id = field(0x04, 2, "Id");
+    let kind = field(0x06, 1, "Kind");
+    assert_eq!(id.read(&[0x12, 0x34, 9]), Some(0x1234));
+    assert_eq!(kind.read(&[0x12, 0x34, 9]), Some(9));
+    assert_eq!(kind.read(&[0x12, 0x34]), None);
+}
+
+#[test]
+fn only_the_color_tag_takes_a_color() {
+    let colored = |group, code| USA.tag(group, code).is_some_and(|tag| USA.is_color(tag));
+    assert!(colored(255, 0));
+    assert!(!colored(255, 1));
+    assert!(!colored(0, 8));
 }
 
 #[test]

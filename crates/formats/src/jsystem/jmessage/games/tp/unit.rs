@@ -33,7 +33,7 @@ pub(super) static UNITS: &[Entry] = &[
 /// `dMsgUnit_inf1_entry`. The decomp names the fields `startFrame` and
 /// `endFrame`. The DAT1 text is empty and never read.
 #[rustfmt::skip]
-pub(super) const LAYOUT: Layout = Layout { len: 8, id: None, versions: ALL.without(JPN), fields: &[
+pub(super) const LAYOUT: Layout = Layout { len: 8, id: None, box_kind: None, versions: ALL.without(JPN), fields: &[
     field(0x04, 2, "Singular").string().notes("Shown for 1. On PAL, also for 0 when the language is French"),
     field(0x06, 2, "Plural")  .string().notes("Shown for every other count"),
 ]};
@@ -42,7 +42,7 @@ pub(super) const LAYOUT: Layout = Layout { len: 8, id: None, versions: ALL.witho
 /// as ruby. An empty reading shows none. The decomp's retail `REGION_JPN`
 /// struct stops at 0x1A, but the file's records are 28 bytes.
 #[rustfmt::skip]
-pub(super) const JPN_LAYOUT: Layout = Layout { len: 28, id: None, versions: JPN, fields: &[
+pub(super) const JPN_LAYOUT: Layout = Layout { len: 28, id: None, box_kind: None, versions: JPN, fields: &[
     field(0x04, 2, "Reading for 0")     .string(),
     field(0x06, 2, "Reading, ends in 1").string(),
     field(0x08, 2, "Reading, ends in 2").string(),

@@ -13,12 +13,14 @@ pub mod keymap;
 mod panels;
 mod settings;
 mod theme;
+mod views;
 mod workspace;
 
 use std::sync::Arc;
 
 use components::ContextMenu;
 use disk::{Loader, TreeReader, Watch};
+use formats::jsystem::jmessage::games::tables;
 use gui::{
     host::{App, Startup, Wake, WindowStyle},
     input::Input,
@@ -212,17 +214,19 @@ impl App for Editor {
             Some(Err(err)) => tracing::warn!("can't read the project's files: {err}"),
             None => {}
         }
-        let root = self.project.as_ref().map(|project| &project.root);
+        let project = self.project.as_deref();
         for (path, read) in self.loader.iter().flat_map(Loader::take) {
             let file = self.workspace.panels_mut().find_map(|panel| match panel {
-                Panel::File(file) if root.is_some_and(|root| root.join(file.path()) == path) => {
+                Panel::File(file) if project.is_some_and(|p| p.root.join(file.path()) == path) => {
                     Some(file)
                 }
                 _ => None,
             });
             // Closed before it was read.
             if let Some(file) = file {
-                file.load(read);
+                let edition = project.and_then(|project| project.edition_of(file.path()));
+                let tables = edition.and_then(|(id, edition)| tables(id, edition.revision));
+                file.load(read, tables);
             }
         }
         self.workspace.input(input);
