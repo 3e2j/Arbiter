@@ -6,7 +6,8 @@
 //! its raw `group.code` and no box is marked.
 //!
 //! Find above narrows the list to the messages whose text holds the query,
-//! never counting a tag's.
+//! never counting a tag's. A query of only digits also finds the message
+//! with that id.
 
 use std::fmt::Write;
 
@@ -83,9 +84,10 @@ impl Messages {
             let _ = write!(self.count, "{len} messages");
             return;
         }
+        let id = self.search.text.trim().parse::<usize>().ok();
         let mut hits = 0;
-        for index in 0..len {
-            let found = find.count(&self.lines, index);
+        for (index, &at) in self.ids.iter().enumerate() {
+            let found = find.count(&self.lines, index) + usize::from(id == Some(at));
             if found > 0 {
                 self.shown.push(index);
                 hits += found;
@@ -117,7 +119,7 @@ impl Messages {
             ..Element::DEFAULT
         };
         let refind = toolbar(ui, |ui| {
-            let typed = text_field(ui, &mut self.search, None, "Find in every message");
+            let typed = text_field(ui, &mut self.search, None, "Find text or id");
             let case = toggle(ui, "Aa", self.case);
             let word = toggle(ui, "W", self.word);
             ui.text(theme.ui_text(c.dim), &self.count);
@@ -328,5 +330,15 @@ mod tests {
         messages.refind();
         assert_eq!(messages.shown, [0, 2]);
         assert_eq!(messages.count, "3 in 2 messages");
+    }
+
+    #[test]
+    fn find_by_digits_also_finds_that_id() {
+        let file = bmg(&[&[text(b"2 cats")], &[text(b"dog")], &[text(b"cat")]]);
+        let mut messages = Messages::new(file, None);
+        messages.search.text = "2".to_owned();
+        messages.refind();
+        assert_eq!(messages.shown, [0, 2]);
+        assert_eq!(messages.count, "2 in 2 messages");
     }
 }
