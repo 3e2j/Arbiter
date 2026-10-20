@@ -61,8 +61,6 @@ impl Dropdown {
         self.open = true;
         self.marked = None;
         ui.focus();
-        // So the list shows this frame, not the next.
-        ui.stale();
     }
 
     /// Up and Down step the mark through `len` choices from `from`, wrapping.

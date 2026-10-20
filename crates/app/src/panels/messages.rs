@@ -91,10 +91,8 @@ impl Messages {
                 clicked = Some(index);
             }
         });
-        if clicked.is_some() && clicked != self.selected {
+        if clicked.is_some() {
             self.selected = clicked;
-            // The rows were lit before the click moved it.
-            ui.stale();
         }
     }
 }

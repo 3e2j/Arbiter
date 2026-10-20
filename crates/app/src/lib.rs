@@ -278,7 +278,6 @@ impl App for Editor {
                     .collect();
                 for path in &picked {
                     self.open_file(path);
-                    ui.stale();
                 }
                 status_bar::ui(ui, &mut self.workspace);
                 self.settings.panel(ui);
@@ -289,7 +288,6 @@ impl App for Editor {
                 if kind == PanelKind::Files {
                     self.read_trees();
                 }
-                ui.stale();
             }
             window_edges(ui, RESIZE_EDGE);
         });

@@ -43,11 +43,8 @@ pub trait App: Sized {
         None
     }
     /// Declares one pass's boxes through `ui`, which starts in the window's
-    /// box. Can run twice in a frame, when the first pass's answers went
-    /// stale, and only the second is drawn.
-    ///
-    /// Act on input before declaring the boxes it changes. A change made after
-    /// shows a frame late unless [`Ui::stale`] asks for the pass again.
+    /// box. Runs at least twice a frame: once with the input, never drawn,
+    /// then without it until a pass moves no box, which is drawn.
     fn ui(&mut self, ui: &mut Ui);
     /// After the last pass.
     fn on_close(&mut self) {}
@@ -170,21 +167,23 @@ impl<A: App> Host<A> {
         // Act on input before any pass
         self.app.input(&self.input);
 
-        // 1st pass
+        // Acts on the input. Never drawn, as what it changed may be declared
+        // before the change.
         let mut out = self.pass(rounded);
-
         let fresh = self.input.fresh();
         self.input.clear();
-        let shifted = self.layout.solve(rect, scale);
-        if shifted || self.memory.changed() {
-            // The 1st pass answered from last frame's rects, stale now a box
-            // moved or a button changed hands. Never a 3rd: what's still
-            // stale waits for the next frame.
-            let first = out;
+        self.layout.solve(rect, scale);
+        // Each pass answers from the one before's rects, so it's right once
+        // nothing moved. A chain of boxes placed from each other settles in
+        // at most one pass per box, so only boxes placed from themselves
+        // reach the end.
+        for _ in 0..=self.layout.len() {
+            let acted = out;
             out = self.pass(rounded);
-            // It has no input to act on, so it can't ask again.
-            out.action = out.action.or(first.action);
-            self.layout.solve(rect, scale);
+            out.action = out.action.or(acted.action);
+            if !self.layout.solve(rect, scale) && !self.memory.changed() {
+                break;
+            }
         }
 
         canvas.clear(rect);
@@ -240,5 +239,81 @@ impl<A: App> Host<A> {
 
     pub fn close(&mut self) {
         self.app.on_close();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::{Align, Anchor, Element, Length};
+
+    fn fixed(w: f32, h: f32) -> Element {
+        Element {
+            size: [Length::Fixed(w), Length::Fixed(h)],
+            ..Element::DEFAULT
+        }
+    }
+
+    /// Shaped like the hex view: a list declares its row once it has a rect,
+    /// and the row places its ascii column right of its hex column's rect.
+    #[derive(Default)]
+    struct Nested {
+        /// Where the last pass found the ascii column, if it declared it.
+        ascii: Option<Rect>,
+    }
+
+    impl App for Nested {
+        const TITLE: &'static str = "nested";
+        const MIN_SIZE: [f32; 2] = [300., 100.];
+        type Args = ();
+
+        fn new(_: &mut Startup, (): ()) -> Result<Self, Box<dyn Error>> {
+            Ok(Self::default())
+        }
+
+        fn window_style(&self) -> WindowStyle {
+            WindowStyle {
+                background: Color::TRANSPARENT,
+                border: Border {
+                    width: 0.,
+                    color: Color::TRANSPARENT,
+                },
+                radius: 0.,
+            }
+        }
+
+        fn ui(&mut self, ui: &mut Ui) {
+            self.ascii = None;
+            let list = Element {
+                size: [Length::Grow; 2],
+                ..Element::column()
+            };
+            ui.element(list, |ui| {
+                let Some(view) = ui.rect() else { return };
+                ui.element(fixed(view.w, 10.), |ui| {
+                    let Some(hex) = ui.element(fixed(40., 10.), |ui| ui.rect()) else {
+                        return;
+                    };
+                    let ascii = Element {
+                        float: Some(Anchor::Parent {
+                            parent: [Align::Start; 2],
+                            own: [Align::Start; 2],
+                            offset: [hex.right() + 10., 0.],
+                            clipped: true,
+                        }),
+                        ..fixed(16., 10.)
+                    };
+                    self.ascii = ui.element(ascii, |ui| ui.rect());
+                });
+            });
+        }
+    }
+
+    #[test]
+    fn a_column_placed_from_another_is_drawn_in_its_first_frame() {
+        let mut host = Host::<Nested>::new((), Wake::new(|| {})).unwrap();
+        let window = Rect::new(0., 0., 300., 100.);
+        host.draw(window, 1., false, Duration::ZERO, &mut Canvas::default());
+        assert_eq!(host.app.ascii, Some(Rect::new(50., 0., 16., 10.)));
     }
 }

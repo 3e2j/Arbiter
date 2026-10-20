@@ -271,7 +271,6 @@ impl Picking {
                 anchor: byte,
                 caret: byte,
             });
-            ui.stale();
         }
     }
 
@@ -311,11 +310,7 @@ impl Picking {
             },
         };
         self.dragging = Some(column);
-        if self.selection != Some(selection) {
-            self.selection = Some(selection);
-            // The rows were lit before the drag moved it.
-            ui.stale();
-        }
+        self.selection = Some(selection);
     }
 
     /// The selected bytes, empty without a selection.
