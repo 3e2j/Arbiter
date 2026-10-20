@@ -1,15 +1,14 @@
 //! A file's bytes, sixteen to a row: the offset, each byte in hex, then the
-//! bytes as ASCII. What any file opens in until its format has an editor.
+//! bytes as ASCII. The view any file can show, and the only one until its
+//! format has an editor.
 //!
 //! Dragging across either column selects bytes, lit in both. Ctrl+C copies
 //! them as the ASCII column shows them, and Ctrl+Shift+C as hex, as does the
 //! right click menu.
 
-use std::{fmt::Write, io, ops::Range};
+use std::{fmt::Write, ops::Range};
 
-use crate::components::{
-    ContextMenu, ListScroll, MenuItem, context_menu, indexed_list, notice, rule,
-};
+use crate::components::{ContextMenu, ListScroll, MenuItem, context_menu, indexed_list, rule};
 use crate::keymap::{self, AppCommand, Chord, ChordAction, KeyContext};
 use gui::{
     input::{Key, Modifiers, PointerButton},
@@ -20,7 +19,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::Command;
 use crate::theme;
-use crate::workspace::Places;
 
 /// Bytes to a row.
 const ROW: usize = 16;
@@ -35,18 +33,7 @@ const COPY: AppCommand = AppCommand("hex.copy");
 const COPY_HEX: AppCommand = AppCommand("hex.copy-hex");
 const SELECT_ALL: AppCommand = AppCommand("hex.select-all");
 
-enum Bytes {
-    /// Asked of the [`Loader`](crate::disk::Loader), not back yet.
-    Loading,
-    Read(Vec<u8>),
-    /// Why it couldn't be read.
-    Failed(String),
-}
-
 pub struct Hex {
-    /// Relative to the project's root.
-    path: String,
-    bytes: Bytes,
     scroll: ListScroll,
     picking: Picking,
 }
@@ -93,49 +80,19 @@ struct Columns {
     ascii: String,
 }
 
-/// A file's tab as the session keeps it. Hex is its only view until a
-/// format has an editor, and each view keeps its own place, so flicking
-/// between them doesn't lose it.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-pub struct FileState {
-    /// Relative to the project's root.
-    path: String,
-    #[serde(default)]
-    view: View,
-    #[serde(default)]
-    hex: HexState,
-}
-
-#[derive(Serialize, Deserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-enum View {
-    #[default]
-    Hex,
-}
-
+/// The hex view's place, as a file's tab keeps it in the session.
 #[derive(Serialize, Deserialize, Default, Debug, PartialEq, Eq)]
-struct HexState {
+pub struct HexState {
     /// The first byte of the row at the top, which outlasts a change to
     /// [`ROW`].
     offset: usize,
 }
 
 impl Hex {
-    /// A file's tab, not the hex view's, so the session's tab holds once
-    /// the file can show in other views.
-    pub const KIND: &str = "file";
-    pub const PLACES: Places = Places::MAIN;
-
-    /// Shows `path`, relative to the project's root, once it's
-    /// [`Self::load`]ed.
-    pub const fn new(path: String) -> Self {
-        Self {
-            path,
-            bytes: Bytes::Loading,
-            scroll: ListScroll::TOP,
-            picking: Picking::NONE,
-        }
-    }
+    pub const NEW: Self = Self {
+        scroll: ListScroll::TOP,
+        picking: Picking::NONE,
+    };
 
     /// The copies and Ctrl+A (Command on macOS), once for every hex view.
     pub const COMMANDS: [Command; 3] = {
@@ -166,54 +123,30 @@ impl Hex {
         ]
     };
 
-    /// Scrolled where `state` left it, once it's [`Self::load`]ed.
-    pub fn from_state(state: FileState) -> Self {
-        let View::Hex = state.view;
+    /// Scrolled where `state` left it. A list shorter than that clamps it.
+    pub const fn from_state(state: &HexState) -> Self {
         Self {
-            scroll: ListScroll::at(state.hex.offset / ROW),
-            ..Self::new(state.path)
+            scroll: ListScroll::at(state.offset / ROW),
+            ..Self::NEW
         }
     }
 
-    pub fn state(&self) -> FileState {
-        FileState {
-            path: self.path.clone(),
-            view: View::Hex,
-            hex: HexState {
-                offset: self.scroll.top * ROW,
-            },
+    pub const fn state(&self) -> HexState {
+        HexState {
+            offset: self.scroll.top * ROW,
         }
     }
 
-    pub fn path(&self) -> &str {
-        &self.path
-    }
-
-    /// The file's name.
-    pub fn title(&self) -> &str {
-        self.path.rsplit('/').next().unwrap_or(&self.path)
-    }
-
-    /// Shows what reading the file gave, where it was scrolled to, with
-    /// nothing selected. A list that's now shorter clamps it.
-    pub fn load(&mut self, read: io::Result<Vec<u8>>) {
+    /// Lets go of the selection, for bytes read again.
+    pub const fn reload(&mut self) {
         self.picking.selection = None;
-        self.bytes = match read {
-            Ok(bytes) => Bytes::Read(bytes),
-            Err(err) => Bytes::Failed(format!("Can't read {}: {err}", self.path)),
-        };
     }
 
-    pub fn ui(&mut self, ui: &mut Ui) {
+    /// `bytes`, which aren't empty.
+    pub fn ui(&mut self, ui: &mut Ui, bytes: &[u8]) {
         if ui.input().pressed(PointerButton::Left) {
             self.picking.active = ui.hovered();
         }
-        let bytes = match &self.bytes {
-            Bytes::Loading => return notice(ui, "Loading…"),
-            Bytes::Failed(err) => return notice(ui, err),
-            Bytes::Read(bytes) if bytes.is_empty() => return notice(ui, "Empty file"),
-            Bytes::Read(bytes) => bytes,
-        };
         let theme = theme::current();
         let (c, s) = (theme.color, theme.size);
         let style = |color| TextStyle {
@@ -591,14 +524,8 @@ mod tests {
 
     #[test]
     fn its_state_keeps_the_top_rows_first_byte() {
-        let state = |offset| FileState {
-            path: "files/a.bin".to_owned(),
-            view: View::Hex,
-            hex: HexState { offset },
-        };
-        let hex = Hex::from_state(state(0x1A35));
-        assert_eq!(hex.title(), "a.bin");
-        assert_eq!(hex.state(), state(0x1A30));
+        let hex = Hex::from_state(&HexState { offset: 0x1A35 });
+        assert_eq!(hex.state(), HexState { offset: 0x1A30 });
     }
 
     #[test]

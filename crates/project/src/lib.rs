@@ -19,7 +19,9 @@ pub mod changes;
 pub mod config;
 mod create;
 mod disk;
+mod document;
 pub mod hash;
+pub mod jsystem;
 mod local;
 pub mod tree;
 
@@ -33,6 +35,7 @@ pub use config::EditionChange;
 use config::{Edition, ProjectConfig, ProjectKind};
 pub use create::DraftProject;
 use diag::Diagnostics;
+pub use document::Document;
 pub use game::edition::{DumpVerdict, Game};
 use hash::Hash;
 pub use local::{Log, LogWriter};
@@ -170,6 +173,17 @@ impl Project {
             self.save()?;
         }
         Ok(staged.outcome)
+    }
+
+    /// The edition whose base `path` is in, relative to the root, by its id.
+    #[must_use]
+    pub fn edition_of(&self, path: &str) -> Option<(&str, &Edition)> {
+        let rest = path.strip_prefix(base::DIR)?.strip_prefix('/')?;
+        let (id, _) = rest.split_once('/')?;
+        self.config
+            .editions
+            .get_key_value(id)
+            .map(|(id, edition)| (id.as_str(), edition))
     }
 
     fn save(&self) -> Result<(), ProjectError> {
@@ -312,6 +326,21 @@ mod tests {
         assert_eq!(project.config.editions["RZDE01"].platform, Platform::Wii);
         assert_eq!(fs::read(root.join("base/RZDE01/a.arc")).unwrap(), b"rev 2");
         assert!(!root.join("base/.RZDE01.partial").exists());
+    }
+
+    #[test]
+    fn edition_of_reads_the_base_folder() {
+        let (_dir, mut project) = fresh();
+        let staged = stage_fake(&project, "GZ2E01", 0, b"file");
+        project.commit(staged, true).unwrap();
+
+        let id = |path| project.edition_of(path).map(|(id, _)| id);
+        assert_eq!(id("base/GZ2E01/res/Msgus/zel_00.bmg"), Some("GZ2E01"));
+        assert_eq!(id("base/GZ2P01/res/Msguk/zel_00.bmg"), None);
+        assert_eq!(id("base/GZ2E01"), None);
+        assert_eq!(id("changes/res/Msgus/zel_00.bmg"), None);
+        assert_eq!(id("based/GZ2E01/a.bmg"), None);
+        assert!(jsystem::jmessage::tables(&project, "base/GZ2E01/a.bmg").is_some());
     }
 
     #[test]

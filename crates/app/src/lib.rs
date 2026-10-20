@@ -26,7 +26,7 @@ use gui::{
     ui::{Element, Ui, window::window_edges},
 };
 pub use panels::Capture;
-use panels::{Files, Hex, Output, Panel};
+use panels::{File, Files, Output, Panel};
 use project::{Log, Project};
 use settings::Settings;
 use theme::ThemeFonts;
@@ -101,8 +101,8 @@ impl Editor {
         // The session's file tabs, which open before the project does.
         if let Some(loader) = &self.loader {
             for panel in self.workspace.panels_mut() {
-                if let Panel::Hex(hex) = panel {
-                    loader.ask(root.join(hex.path()));
+                if let Panel::File(file) = panel {
+                    loader.ask(root.join(file.path()));
                 }
             }
         }
@@ -132,13 +132,13 @@ impl Editor {
         };
         if self
             .workspace
-            .show(|panel| matches!(panel, Panel::Hex(hex) if hex.path() == path))
+            .show(|panel| matches!(panel, Panel::File(file) if file.path() == path))
         {
             return;
         }
         loader.ask(project.root.join(path));
         self.workspace
-            .add(Place::Main, Panel::Hex(Hex::new(path.to_owned())));
+            .add(Place::Main, Panel::File(File::new(path.to_owned())));
     }
 
     fn files(&mut self) -> impl Iterator<Item = &mut Files> {
@@ -214,15 +214,15 @@ impl App for Editor {
         }
         let root = self.project.as_ref().map(|project| &project.root);
         for (path, read) in self.loader.iter().flat_map(Loader::take) {
-            let hex = self.workspace.panels_mut().find_map(|panel| match panel {
-                Panel::Hex(hex) if root.is_some_and(|root| root.join(hex.path()) == path) => {
-                    Some(hex)
+            let file = self.workspace.panels_mut().find_map(|panel| match panel {
+                Panel::File(file) if root.is_some_and(|root| root.join(file.path()) == path) => {
+                    Some(file)
                 }
                 _ => None,
             });
             // Closed before it was read.
-            if let Some(hex) = hex {
-                hex.load(read);
+            if let Some(file) = file {
+                file.load(read);
             }
         }
         self.workspace.input(input);

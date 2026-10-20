@@ -32,10 +32,12 @@ mod encode;
 mod flow;
 mod message;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::hash::Hash;
 
 use diag::Diagnostics;
+use encoding_rs::{SHIFT_JIS, UTF_8, UTF_16BE, WINDOWS_1252};
 
 use crate::{Be32, ByteWriter, Decode, Encode, FormatError, Result, record};
 
@@ -87,6 +89,19 @@ impl Encoding {
     #[must_use]
     pub const fn byte(self) -> u8 {
         self as u8
+    }
+
+    /// `bytes` as text. Legacy reads as Shift-JIS, as an unknown byte does,
+    /// and anything malformed as U+FFFD.
+    #[must_use]
+    pub fn decode(self, bytes: &[u8]) -> Cow<'_, str> {
+        let encoding = match self {
+            Self::Legacy | Self::ShiftJis => SHIFT_JIS,
+            Self::Windows1252 => WINDOWS_1252,
+            Self::Utf16Be => UTF_16BE,
+            Self::Utf8 => UTF_8,
+        };
+        encoding.decode_without_bom_handling(bytes).0
     }
 }
 

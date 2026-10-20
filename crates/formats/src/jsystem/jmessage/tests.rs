@@ -173,3 +173,14 @@ fn unwritable_files_are_refused() {
     bmg.messages.push(bmg.messages[0].clone());
     assert!(matches!(encode(&bmg), Err(FormatError::Malformed { .. })));
 }
+
+#[test]
+fn text_decodes_in_its_encoding() {
+    assert_eq!(Encoding::Windows1252.decode(b"caf\xe9 \x85"), "café …");
+    assert_eq!(
+        Encoding::ShiftJis.decode(b"\x83\x8a\x83\x93\x83N"),
+        "リンク"
+    );
+    assert_eq!(Encoding::Utf16Be.decode(b"\x00H\x00i"), "Hi");
+    assert_eq!(Encoding::Utf8.decode(b"\xff"), "\u{fffd}");
+}

@@ -1,8 +1,10 @@
 //! What the user works in, one per tab. Each panel is its own state plus a
 //! title and a `ui`, and knows no other panel.
 
+mod file;
 mod files;
 mod hex;
+mod messages;
 mod output;
 mod popover;
 
@@ -10,6 +12,7 @@ use gui::ui::Ui;
 
 use crate::workspace::Places;
 
+pub use file::File;
 pub use files::Files;
 pub use hex::Hex;
 pub use output::{Capture, Output};
@@ -17,7 +20,7 @@ pub use output::{Capture, Output};
 /// Every panel, by type, so a tab holds one inline.
 pub enum Panel {
     Files(Files),
-    Hex(Hex),
+    File(File),
     Output(Output),
 }
 
@@ -27,13 +30,13 @@ impl Panel {
     pub fn open(kind: &str, state: Option<&toml::Value>) -> Option<Self> {
         let mut panel = match kind {
             Files::KIND => Self::Files(Files::new()),
-            Hex::KIND => {
+            File::KIND => {
                 let Some(state) = state else {
                     tracing::warn!("the session has a file tab without its file");
                     return None;
                 };
                 return match state.clone().try_into() {
-                    Ok(state) => Some(Self::Hex(Hex::from_state(state))),
+                    Ok(state) => Some(Self::File(File::from_state(state))),
                     Err(err) => {
                         tracing::warn!("a file tab in the session isn't readable: {err}");
                         None
@@ -54,7 +57,7 @@ impl Panel {
     pub const fn kind(&self) -> &'static str {
         match self {
             Self::Files(_) => Files::KIND,
-            Self::Hex(_) => Hex::KIND,
+            Self::File(_) => File::KIND,
             Self::Output(_) => Output::KIND,
         }
     }
@@ -65,7 +68,7 @@ impl Panel {
             Self::Files(panel) => toml::Value::try_from(panel.view())
                 .inspect_err(|err| tracing::warn!("can't save the files panel's view: {err}"))
                 .ok(),
-            Self::Hex(panel) => toml::Value::try_from(panel.state())
+            Self::File(panel) => toml::Value::try_from(panel.state())
                 .inspect_err(|err| tracing::warn!("can't save {}'s tab: {err}", panel.path()))
                 .ok(),
             Self::Output(_) => None,
@@ -80,7 +83,7 @@ impl Panel {
                 Ok(view) => panel.set_view(view),
                 Err(err) => tracing::warn!("the files panel's view isn't readable: {err}"),
             },
-            Self::Hex(_) | Self::Output(_) => {}
+            Self::File(_) | Self::Output(_) => {}
         }
     }
 
@@ -96,7 +99,7 @@ impl Panel {
     pub fn title(&self) -> &str {
         match self {
             Self::Files(_) => Files::TITLE,
-            Self::Hex(panel) => panel.title(),
+            Self::File(panel) => panel.title(),
             Self::Output(_) => Output::TITLE,
         }
     }
@@ -105,7 +108,7 @@ impl Panel {
     pub const fn places(&self) -> Places {
         match self {
             Self::Files(_) => Files::PLACES,
-            Self::Hex(_) => Hex::PLACES,
+            Self::File(_) => File::PLACES,
             Self::Output(_) => Places::BANDS,
         }
     }
@@ -114,7 +117,7 @@ impl Panel {
     pub fn ui(&mut self, ui: &mut Ui) {
         match self {
             Self::Files(panel) => panel.ui(ui),
-            Self::Hex(panel) => panel.ui(ui),
+            Self::File(panel) => panel.ui(ui),
             Self::Output(panel) => panel.ui(ui),
         }
     }
