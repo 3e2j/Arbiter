@@ -10,6 +10,7 @@ use gui::{
 };
 
 use crate::assets::Icon;
+use crate::panels::Panel;
 
 use super::Workspace;
 use super::dock::{Dock, TAB_GAP, TAB_PADDING, dock_radius, tab_height};
@@ -122,9 +123,9 @@ impl Workspace {
                 };
             }
             Some(Choice::MoveTo(place)) => {
-                if let Some(tab) = dock.remove(menu.tab) {
+                if let Some(panel) = dock.remove(menu.tab) {
                     let target = &mut self.docks[place.index()];
-                    target.tabs.push(tab);
+                    target.tabs.push(panel);
                     target.active = target.tabs.len() - 1;
                     if let Some(band) = Band::of(place) {
                         self.hidden[band.index()] = false;
@@ -152,7 +153,7 @@ fn menu_ui(ui: &mut Ui, menu: Menu, docks: &[Dock; Place::COUNT], window: Rect) 
     let allowed = dock
         .tabs
         .get(menu.tab)
-        .map_or(Places::default(), |tab| tab.panel.places());
+        .map_or(Places::default(), Panel::places);
     let inner = TAB_PADDING.mul_add(-2., WIDTH);
     let map = [inner, (inner * MAP[1] / MAP[0]).round()];
     let rows: f32 = dock.tabs.iter().map(|_| tab_height(size)).sum();
@@ -185,9 +186,9 @@ fn menu_ui(ui: &mut Ui, menu: Menu, docks: &[Dock; Place::COUNT], window: Rect) 
         };
         let mut chosen = None;
         ui.element(across, |ui| {
-            for (key, (index, tab)) in (0..).zip(dock.tabs.iter().enumerate()) {
+            for (key, (index, panel)) in (0..).zip(dock.tabs.iter().enumerate()) {
                 let picked = ui.keyed(key, across, |ui| {
-                    tab_row(ui, tab.panel.title(), index == menu.tab)
+                    tab_row(ui, panel.title(), index == menu.tab)
                 });
                 chosen = chosen.or(picked.map(|row| match row {
                     RowClick::Show => Choice::Show(index),

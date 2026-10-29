@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::panels::{Panel, PanelKind};
 
-use super::dock::Tab;
 use super::place::{Band, Place};
 use super::{MIN_DOCK, Workspace};
 
@@ -137,7 +136,7 @@ impl Workspace {
                 if at == saved.active {
                     dock.active = dock.tabs.len();
                 }
-                dock.tabs.push(Tab { panel });
+                dock.tabs.push(panel);
             }
         }
         for saved in &session.bands {
@@ -165,9 +164,9 @@ impl Workspace {
                     tabs: dock
                         .tabs
                         .iter()
-                        .map(|tab| SavedTab {
-                            kind: SavedKind::Known(tab.panel.kind()),
-                            state: tab.panel.state(),
+                        .map(|panel| SavedTab {
+                            kind: SavedKind::Known(panel.kind()),
+                            state: panel.state(),
                         })
                         .collect(),
                 })
@@ -199,7 +198,7 @@ mod tests {
 
     fn titles(workspace: &Workspace, place: Place) -> Vec<&str> {
         let dock = &workspace.docks[place.index()];
-        dock.tabs.iter().map(|tab| tab.panel.title()).collect()
+        dock.tabs.iter().map(Panel::title).collect()
     }
 
     #[test]
@@ -229,12 +228,8 @@ mod tests {
         workspace.docks[Place::RightInnerTop.index()].remove(0);
         let below = &mut workspace.docks[Place::BelowMain.index()];
         below.tabs.extend([
-            Tab {
-                panel: Panel::open(PanelKind::FileTree, None).unwrap(),
-            },
-            Tab {
-                panel: Panel::Output(Output::new()),
-            },
+            Panel::open(PanelKind::FileTree, None).unwrap(),
+            Panel::Output(Output::new()),
         ]);
         below.active = 1;
         workspace.sizes[Band::BelowMain.index()] = 300.;

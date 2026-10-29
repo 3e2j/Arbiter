@@ -13,13 +13,9 @@ use crate::assets::Icon;
 use crate::panels::Panel;
 use crate::theme::{self, ThemeSizes};
 
-pub(super) struct Tab {
-    pub(super) panel: Panel,
-}
-
 #[derive(Default)]
 pub(super) struct Dock {
-    pub(super) tabs: Vec<Tab>,
+    pub(super) tabs: Vec<Panel>,
     /// The tab whose panel is drawn.
     pub(super) active: usize,
     /// Each tab's width this pass, kept so a pass allocates nothing.
@@ -83,8 +79,8 @@ impl Dock {
         let mut active = self.active;
         ui.element(bar, |ui| {
             self.bar = ui.rect();
-            for tab in &self.tabs {
-                let width = ui.measure(text, tab.panel.title())[0] + sides;
+            for panel in &self.tabs {
+                let width = ui.measure(text, panel.title())[0] + sides;
                 self.widths.push(width.ceil());
             }
             let room = |buttons: f32| {
@@ -97,9 +93,9 @@ impl Dock {
             let room = if all { room } else { crowded };
             on_line(ui, Length::Fixed(TAB_PADDING), |_| {});
             let tabs = (0..).zip(self.tabs.iter().zip(&self.widths).enumerate());
-            for (key, (i, (tab, &width))) in tabs.skip(range.start).take(range.len()) {
+            for (key, (i, (panel, &width))) in tabs.skip(range.start).take(range.len()) {
                 let fits = (room - TAB_GAP).max(0.);
-                let state = Self::tab(ui, key, tab.panel.title(), width.min(fits), i == active);
+                let state = Self::tab(ui, key, panel.title(), width.min(fits), i == active);
                 if state.left == Some(Left::Pressed) {
                     active = i;
                 }
@@ -154,24 +150,24 @@ impl Dock {
             on_line(ui, Length::Fixed(TAB_PADDING), |_| {});
         });
         self.active = active;
-        if let Some(tab) = self.tabs.get_mut(self.active) {
-            ui.element(Element::column().padded(size.gap), |ui| tab.panel.ui(ui));
+        if let Some(panel) = self.tabs.get_mut(self.active) {
+            ui.element(Element::column().padded(size.gap), |ui| panel.ui(ui));
         }
         out
     }
 
     /// Takes out the tab at `index`, showing the one that slides into its
     /// place, or the new last.
-    pub(super) fn remove(&mut self, index: usize) -> Option<Tab> {
+    pub(super) fn remove(&mut self, index: usize) -> Option<Panel> {
         if index >= self.tabs.len() {
             return None;
         }
-        let tab = self.tabs.remove(index);
+        let panel = self.tabs.remove(index);
         if self.active > index {
             self.active -= 1;
         }
         self.active = self.active.min(self.tabs.len().saturating_sub(1));
-        Some(tab)
+        Some(panel)
     }
 
     /// One tab `width` wide, keyed by `key`, its top corners rounded and its

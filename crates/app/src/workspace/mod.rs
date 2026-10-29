@@ -37,7 +37,7 @@ use gui::{
 use crate::panels::Panel;
 
 use crate::theme;
-use dock::{Dock, Tab, dock_radius};
+use dock::{Dock, dock_radius};
 use dock_menu::Menu;
 use drag::{Grip, TabDrag};
 use layout::{Divider, Drag, Pass, fit};
@@ -81,15 +81,14 @@ pub struct Workspace {
 impl Workspace {
     /// Every panel, in any dock.
     pub fn panels_mut(&mut self) -> impl Iterator<Item = &mut Panel> {
-        let tabs = self.docks.iter_mut().flat_map(|dock| &mut dock.tabs);
-        tabs.map(|tab| &mut tab.panel)
+        self.docks.iter_mut().flat_map(|dock| &mut dock.tabs)
     }
 
     /// Shows the first panel `find` picks out, in whichever dock it's in.
     /// Returns whether there was one.
     pub fn show(&mut self, find: impl Fn(&Panel) -> bool) -> bool {
         for dock in &mut self.docks {
-            if let Some(at) = dock.tabs.iter().position(|tab| find(&tab.panel)) {
+            if let Some(at) = dock.tabs.iter().position(&find) {
                 dock.active = at;
                 return true;
             }
@@ -101,7 +100,7 @@ impl Workspace {
     pub fn add(&mut self, place: Place, panel: Panel) {
         let dock = &mut self.docks[place.index()];
         dock.active = dock.tabs.len();
-        dock.tabs.push(Tab { panel });
+        dock.tabs.push(panel);
         if let Some(band) = Band::of(place) {
             self.hidden[band.index()] = false;
         }
@@ -110,7 +109,7 @@ impl Workspace {
     /// The panel shown in the dock with focus.
     pub fn focused(&mut self) -> Option<&mut Panel> {
         let dock = &mut self.docks[self.focus?.index()];
-        dock.tabs.get_mut(dock.active).map(|tab| &mut tab.panel)
+        dock.tabs.get_mut(dock.active)
     }
 
     /// Escape closes the menu.

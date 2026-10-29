@@ -80,7 +80,7 @@ impl Workspace {
         if !drag.moving && (pointer[0] - x).hypot(pointer[1] - y) < DRAG_THRESHOLD {
             return;
         }
-        let Some(tab) = self.docks[drag.grip.place.index()]
+        let Some(panel) = self.docks[drag.grip.place.index()]
             .tabs
             .get(drag.grip.index)
         else {
@@ -94,7 +94,7 @@ impl Workspace {
             gap: GUTTER,
             tab_height: tab_height(size),
         };
-        if let Some(landing) = drops.at(drag.grip, pointer, tab.panel.places()) {
+        if let Some(landing) = drops.at(drag.grip, pointer, panel.places()) {
             move_tab(&mut self.docks, drag.grip, landing);
         }
     }
@@ -126,7 +126,7 @@ impl Workspace {
         if released || !drag.moving {
             return;
         }
-        let Some(tab) = self.docks[grip.place.index()].tabs.get(grip.index) else {
+        let Some(panel) = self.docks[grip.place.index()].tabs.get(grip.index) else {
             return;
         };
         let size = theme::current().size;
@@ -137,13 +137,13 @@ impl Workspace {
             gap: GUTTER,
             tab_height: tab_height(size),
         };
-        let landing = drops.at(grip, pointer, tab.panel.places());
+        let landing = drops.at(grip, pointer, panel.places());
         let copy = Rect {
             x: drag.grip.rect.x + pointer[0] - x,
             y: drag.grip.rect.y + pointer[1] - y,
             ..drag.grip.rect
         };
-        drag_marks(ui, landing, copy, tab.panel.title(), window);
+        drag_marks(ui, landing, copy, panel.title(), window);
     }
 }
 
@@ -223,7 +223,7 @@ fn drag_marks(
 /// Takes the tab `grip` holds out of its dock in `docks` and puts it where
 /// `landing` says, showing it there.
 fn move_tab(docks: &mut [Dock; Place::COUNT], grip: Grip, landing: Landing) {
-    let Some(tab) = docks[grip.place.index()].remove(grip.index) else {
+    let Some(panel) = docks[grip.place.index()].remove(grip.index) else {
         return;
     };
     let mut index = landing.index;
@@ -232,7 +232,7 @@ fn move_tab(docks: &mut [Dock; Place::COUNT], grip: Grip, landing: Landing) {
     }
     let target = &mut docks[landing.place.index()];
     let index = index.min(target.tabs.len());
-    target.tabs.insert(index, tab);
+    target.tabs.insert(index, panel);
     target.active = index;
 }
 
@@ -390,7 +390,6 @@ fn reach(place: Place, main: Option<Rect>, point: [f32; 2]) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::super::dock::Tab;
     use super::*;
     use crate::panels::{OpenFile, Panel};
 
@@ -402,9 +401,9 @@ mod tests {
     /// A file tab for each of `titles`, which the drop rules don't stop
     /// anywhere, since they're passed what's allowed.
     fn dock(titles: &[&str], rect: Rect) -> Dock {
-        let tabs = titles.iter().map(|&title| Tab {
-            panel: Panel::OpenFile(OpenFile::new(title.to_owned())),
-        });
+        let tabs = titles
+            .iter()
+            .map(|&title| Panel::OpenFile(OpenFile::new(title.to_owned())));
         let shown = (0..).zip(titles).map(|(i, _): (u16, _)| {
             let x = f32::from(i).mul_add(74., rect.x + 6.);
             (usize::from(i), Rect::new(x, rect.y + 4., 72., TAB))
@@ -581,7 +580,7 @@ mod tests {
     }
 
     fn titles(dock: &Dock) -> Vec<&str> {
-        dock.tabs.iter().map(|tab| tab.panel.title()).collect()
+        dock.tabs.iter().map(Panel::title).collect()
     }
 
     #[test]
