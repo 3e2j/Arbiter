@@ -187,11 +187,11 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::panels::{Files, Output};
+    use crate::panels::{FileTree, Output};
     use crate::workspace::Side;
 
     const LAYOUT: [(PanelKind, Place); 3] = [
-        (PanelKind::Files, Place::LeftInnerTop),
+        (PanelKind::FileTree, Place::LeftInnerTop),
         (PanelKind::Output, Place::LeftInnerTop),
         (PanelKind::Output, Place::RightInnerTop),
     ];
@@ -206,13 +206,13 @@ mod tests {
         let text = r#"
             [[docks]]
             place = "left-inner-top"
-            tabs = [{ kind = "files" }, { kind = "gone" }, { kind = "output" }]
+            tabs = [{ kind = "file-tree" }, { kind = "gone" }, { kind = "output" }]
         "#;
         let session = Session::parse(text).unwrap();
         let workspace = Workspace::new(&session);
         assert_eq!(titles(&workspace, Place::LeftInnerTop), ["Files", "Output"]);
         let saved = workspace.session().to_text().unwrap();
-        assert!(saved.contains(r#"kind = "files""#), "{saved}");
+        assert!(saved.contains(r#"kind = "file-tree""#), "{saved}");
     }
 
     #[test]
@@ -229,7 +229,7 @@ mod tests {
         let below = &mut workspace.docks[Place::BelowMain.index()];
         below.tabs.extend([
             Tab {
-                panel: Panel::Files(Files::new()),
+                panel: Panel::FileTree(FileTree::new()),
             },
             Tab {
                 panel: Panel::Output(Output::new()),
@@ -302,7 +302,7 @@ mod tests {
         let text = r#"
             [[docks]]
             place = "main"
-            tabs = [{ kind = "files" }, { kind = "gone" }, { kind = "file", state = { path = "a.bin", view = "hex", hex = { offset = 0 } } }]
+            tabs = [{ kind = "file-tree" }, { kind = "gone" }, { kind = "file", state = { path = "a.bin", view = "hex", hex = { offset = 0 } } }]
         "#;
         let workspace = Workspace::new(&Session::parse(text).unwrap());
         assert_eq!(titles(&workspace, Place::Main), ["a.bin"]);
@@ -314,7 +314,7 @@ mod tests {
             [[docks]]
             place = "left-inner-top"
             active = 2
-            tabs = [{ kind = "gone" }, { kind = "files" }, { kind = "output" }]
+            tabs = [{ kind = "gone" }, { kind = "file-tree" }, { kind = "output" }]
         "#;
         let workspace = Workspace::new(&Session::parse(text).unwrap());
         let dock = &workspace.docks[Place::LeftInnerTop.index()];

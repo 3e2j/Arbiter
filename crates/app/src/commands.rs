@@ -4,7 +4,7 @@
 
 use crate::keymap::{AppCommand, Chord, ChordAction, KeyContext, Keymap};
 
-use crate::panels::{Files, Hex};
+use crate::panels::{FileTree, Hex};
 use crate::settings::Settings;
 
 pub struct Command {
@@ -18,7 +18,7 @@ pub struct Command {
 /// Every command, by the part of the app it works in.
 pub static GROUPS: [(&str, &[Command]); 3] = [
     ("General", &Settings::COMMANDS),
-    ("File tree", &Files::COMMANDS),
+    ("File tree", &FileTree::COMMANDS),
     ("Hex view", &Hex::COMMANDS),
 ];
 

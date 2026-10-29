@@ -32,7 +32,7 @@ const BAR: f32 = 3.;
 // Low alpha so the color is noticeably different
 const INSIDE: u8 = 0x39;
 
-/// While the panel is active, see [`Files::active`].
+/// While the panel is active, see [`FileTree::active`].
 const FILES: KeyContext = KeyContext("files");
 /// Focuses the search, Ctrl+F by default.
 const SEARCH: AppCommand = AppCommand("files.search");
@@ -118,7 +118,7 @@ struct Opened {
     views: [View; Tab::ALL.len()],
 }
 
-pub struct Files {
+pub struct FileTree {
     /// `None` until a project is open.
     opened: Option<Box<Opened>>,
     tab: Tab,
@@ -206,7 +206,7 @@ impl View {
     }
 }
 
-impl Files {
+impl FileTree {
     pub const TITLE: &str = "Files";
     pub const PLACES: Places = Places::BANDS;
 
@@ -770,7 +770,7 @@ mod tests {
 
     fn view(panel: &Panel) -> FilesView {
         match panel {
-            Panel::Files(files) => files.view(),
+            Panel::FileTree(files) => files.view(),
             _ => FilesView::default(),
         }
     }
@@ -783,9 +783,9 @@ mod tests {
             compact = false
             order = { key = "type", descending = true }
         "#;
-        let mut panel = Panel::Files(Files::new());
+        let mut panel = Panel::FileTree(FileTree::new());
         panel.restore(toml::from_str(text).unwrap());
-        let mut again = Panel::Files(Files::new());
+        let mut again = Panel::FileTree(FileTree::new());
         again.restore(panel.state().unwrap());
         assert_eq!(view(&again), view(&panel));
         let FilesView {
@@ -808,7 +808,7 @@ mod tests {
 
     #[test]
     fn unreadable_state_leaves_a_panel_as_it_was() {
-        let mut panel = Panel::Files(Files::new());
+        let mut panel = Panel::FileTree(FileTree::new());
         panel.restore(toml::from_str("tab = \"nowhere\"").unwrap());
         assert_eq!(view(&panel), FilesView::default());
     }

@@ -2,7 +2,7 @@
 //! title and a `ui`, and knows no other panel.
 
 mod file;
-mod files;
+mod file_tree;
 mod hex;
 mod output;
 mod popover;
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::workspace::Places;
 
 pub use file::File;
-pub use files::Files;
+pub use file_tree::FileTree;
 pub use hex::Hex;
 pub use output::{Capture, Output};
 
@@ -21,7 +21,7 @@ pub use output::{Capture, Output};
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub enum PanelKind {
-    Files,
+    FileTree,
     File,
     Output,
 }
@@ -30,7 +30,7 @@ impl PanelKind {
     /// The title a panel of this kind opens with.
     pub const fn title(self) -> &'static str {
         match self {
-            Self::Files => Files::TITLE,
+            Self::FileTree => FileTree::TITLE,
             Self::File => "File",
             Self::Output => Output::TITLE,
         }
@@ -39,7 +39,7 @@ impl PanelKind {
 
 /// Every panel, by type, so a tab holds one inline.
 pub enum Panel {
-    Files(Files),
+    FileTree(FileTree),
     File(File),
     Output(Output),
 }
@@ -49,7 +49,7 @@ impl Panel {
     /// when no panel is. A file's tab can't open without its state.
     pub fn open(kind: PanelKind, state: Option<&toml::Value>) -> Option<Self> {
         let mut panel = match kind {
-            PanelKind::Files => Self::Files(Files::new()),
+            PanelKind::FileTree => Self::FileTree(FileTree::new()),
             PanelKind::File => {
                 let Some(state) = state else {
                     tracing::warn!("the session has a file tab without its file");
@@ -75,7 +75,7 @@ impl Panel {
     /// changes.
     pub const fn kind(&self) -> PanelKind {
         match self {
-            Self::Files(_) => PanelKind::Files,
+            Self::FileTree(_) => PanelKind::FileTree,
             Self::File(_) => PanelKind::File,
             Self::Output(_) => PanelKind::Output,
         }
@@ -84,7 +84,7 @@ impl Panel {
     /// What it keeps of itself in the session, if anything.
     pub fn state(&self) -> Option<toml::Value> {
         match self {
-            Self::Files(panel) => toml::Value::try_from(panel.view())
+            Self::FileTree(panel) => toml::Value::try_from(panel.view())
                 .inspect_err(|err| tracing::warn!("can't save the files panel's view: {err}"))
                 .ok(),
             Self::File(panel) => toml::Value::try_from(panel.state())
@@ -98,7 +98,7 @@ impl Panel {
     /// as it was. A file's tab takes its state in [`Self::open`] instead.
     pub fn restore(&mut self, state: toml::Value) {
         match self {
-            Self::Files(panel) => match state.try_into() {
+            Self::FileTree(panel) => match state.try_into() {
                 Ok(view) => panel.set_view(view),
                 Err(err) => tracing::warn!("the files panel's view isn't readable: {err}"),
             },
@@ -108,7 +108,7 @@ impl Panel {
 
     pub fn title(&self) -> &str {
         match self {
-            Self::Files(_) => Files::TITLE,
+            Self::FileTree(_) => FileTree::TITLE,
             Self::File(panel) => panel.title(),
             Self::Output(_) => Output::TITLE,
         }
@@ -117,7 +117,7 @@ impl Panel {
     /// Where its tab may sit.
     pub const fn places(&self) -> Places {
         match self {
-            Self::Files(_) => Files::PLACES,
+            Self::FileTree(_) => FileTree::PLACES,
             Self::File(_) => File::PLACES,
             Self::Output(_) => Places::BANDS,
         }
@@ -126,7 +126,7 @@ impl Panel {
     /// Declares its contents into the box `ui` has open.
     pub fn ui(&mut self, ui: &mut Ui) {
         match self {
-            Self::Files(panel) => panel.ui(ui),
+            Self::FileTree(panel) => panel.ui(ui),
             Self::File(panel) => panel.ui(ui),
             Self::Output(panel) => panel.ui(ui),
         }

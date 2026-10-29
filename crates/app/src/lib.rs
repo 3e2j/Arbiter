@@ -26,7 +26,7 @@ use gui::{
     ui::{Element, Ui, window::window_edges},
 };
 pub use panels::Capture;
-use panels::{File, Files, Output, Panel, PanelKind};
+use panels::{File, FileTree, Output, Panel, PanelKind};
 use project::{Log, Project};
 use settings::Settings;
 use theme::ThemeFonts;
@@ -38,7 +38,7 @@ const RESIZE_EDGE: f32 = 4.;
 /// Each panel's kind and place in a project without a session, in tab order.
 /// The View menu offers them, and adds another where it sits here.
 const LAYOUT: [(PanelKind, Place); 2] = [
-    (PanelKind::Files, Place::LeftInnerTop),
+    (PanelKind::FileTree, Place::LeftInnerTop),
     (PanelKind::Output, Place::BelowMain),
 ];
 
@@ -95,7 +95,7 @@ impl Editor {
                 None
             }
         };
-        for files in self.files() {
+        for files in self.file_trees() {
             files.close();
         }
         // The session's file tabs, which open before the project does.
@@ -141,9 +141,9 @@ impl Editor {
             .add(Place::Main, Panel::File(File::new(path.to_owned())));
     }
 
-    fn files(&mut self) -> impl Iterator<Item = &mut Files> {
+    fn file_trees(&mut self) -> impl Iterator<Item = &mut FileTree> {
         self.workspace.panels_mut().filter_map(|panel| match panel {
-            Panel::Files(files) => Some(files),
+            Panel::FileTree(files) => Some(files),
             _ => None,
         })
     }
@@ -200,7 +200,7 @@ impl App for Editor {
         match self.reader.as_ref().and_then(TreeReader::take) {
             Some(Ok(trees)) => {
                 // Each sorts its own, so each takes a copy but the last.
-                let mut files = self.files().peekable();
+                let mut files = self.file_trees().peekable();
                 while let Some(panel) = files.next() {
                     if files.peek().is_none() {
                         panel.refresh(trees);
@@ -272,7 +272,7 @@ impl App for Editor {
                     .workspace
                     .panels_mut()
                     .filter_map(|panel| match panel {
-                        Panel::Files(files) => files.take_picked(),
+                        Panel::FileTree(files) => files.take_picked(),
                         _ => None,
                     })
                     .collect();
@@ -285,7 +285,7 @@ impl App for Editor {
             let added = title_bar::view_menu(ui, &mut self.view, &mut self.workspace, &LAYOUT);
             if let Some(kind) = added {
                 // A new files panel has no tree until it's read.
-                if kind == PanelKind::Files {
+                if kind == PanelKind::FileTree {
                     self.read_trees();
                 }
             }
