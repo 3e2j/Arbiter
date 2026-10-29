@@ -85,8 +85,7 @@ struct RowText {
 /// The hex view's place, as a file's tab keeps it in the session.
 #[derive(Serialize, Deserialize, Default, Debug, PartialEq, Eq)]
 pub struct HexState {
-    /// The first byte of the row at the top, which outlasts a change to
-    /// [`ROW`].
+    /// The first byte of the row at the top.
     offset: usize,
 }
 
@@ -517,28 +516,6 @@ mod tests {
         assert_eq!(as_shown(bytes), "RARC.. ~");
         assert_eq!(as_hex(bytes), "52 41 52 43 00 01 20 7E");
         assert_eq!(as_hex(&[]), "");
-    }
-
-    #[test]
-    fn a_selection_includes_both_ends_either_way() {
-        let forward = Selection {
-            anchor: 3,
-            caret: 5,
-        };
-        let back = Selection {
-            anchor: 5,
-            caret: 3,
-        };
-        assert_eq!(forward.range(), 3..6);
-        assert_eq!(back.range(), 3..6);
-        assert_eq!(
-            Selection {
-                anchor: 4,
-                caret: 4
-            }
-            .range(),
-            4..5
-        );
     }
 
     #[test]

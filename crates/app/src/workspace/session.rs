@@ -302,7 +302,7 @@ mod tests {
         let text = r#"
             [[docks]]
             place = "main"
-            tabs = [{ kind = "file-tree" }, { kind = "gone" }, { kind = "open-file", state = { path = "a.bin", view = "hex", hex = { offset = 0 } } }]
+            tabs = [{ kind = "file-tree" }, { kind = "gone" }, { kind = "open-file", state = { path = "a.bin", hex = { offset = 0 } } }]
         "#;
         let workspace = Workspace::new(&Session::parse(text).unwrap());
         assert_eq!(titles(&workspace, Place::Main), ["a.bin"]);
