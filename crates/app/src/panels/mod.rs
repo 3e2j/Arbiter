@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::workspace::Places;
 
 pub use file_tree::FileTree;
-pub use open_file::OpenFile;
+pub use open_file::{Hex, OpenFile};
 pub use output::Output;
 
 /// What a panel is, as the session saves its tab.

@@ -10,7 +10,6 @@
 
 mod chip;
 mod controls;
-mod hex;
 mod layout;
 mod overlay;
 mod title_bar;
@@ -18,7 +17,6 @@ mod wrap;
 
 pub use chip::{Chip, chip};
 pub use controls::*;
-pub use hex::{Hex, HexState};
 pub use layout::*;
 pub use overlay::*;
 pub use title_bar::title_bar;

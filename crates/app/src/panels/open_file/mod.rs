@@ -1,12 +1,17 @@
 //! A file's tab: its bytes, in hex.
 
+mod hex;
+
 use std::io;
 
 use gui::ui::Ui;
 use serde::{Deserialize, Serialize};
 
-use crate::components::{Hex, HexState, notice};
+use crate::components::notice;
 use crate::workspace::Places;
+use hex::HexState;
+
+pub use hex::Hex;
 
 pub struct OpenFile {
     /// Relative to the project's root.

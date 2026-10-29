@@ -4,8 +4,8 @@
 
 use crate::keymap::{AppCommand, Chord, ChordAction, KeyContext, Keymap};
 
-use crate::components::Hex;
 use crate::panels::FileTree;
+use crate::panels::Hex;
 use crate::settings::Settings;
 
 pub struct Command {
