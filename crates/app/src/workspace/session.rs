@@ -119,7 +119,9 @@ impl Workspace {
                 let kind = match &tab.kind {
                     SavedKind::Known(kind) => *kind,
                     SavedKind::Gone(name) => {
-                        tracing::warn!("the session has a {name} panel, which no panel is");
+                        tracing::warn!(
+                            "the session has a `{name}` panel, but no such panel exists, so it's skipped"
+                        );
                         continue;
                     }
                 };
