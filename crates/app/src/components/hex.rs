@@ -24,6 +24,8 @@ use crate::theme;
 const ROW: usize = 16;
 /// Where a row's bytes get an extra space, to count them by eye.
 const HALF: usize = ROW / 2;
+/// Each byte's place in its row, spaced as [`RowText::fill`] spaces its hex.
+const HEADER: &str = "00 01 02 03 04 05 06 07  08 09 0A 0B 0C 0D 0E 0F";
 
 /// While the panel is active, see [`Picking::active`].
 const HEX: KeyContext = KeyContext("hex");
@@ -156,8 +158,11 @@ impl Hex {
             ..theme.ui_text(color)
         };
         self.picking.keys(ui, bytes);
-        let mut heading = RowText::default();
-        header(&mut heading);
+        let heading = RowText {
+            offset: "Offset  ".to_owned(),
+            hex: HEADER.to_owned(),
+            ascii: String::new(),
+        };
         line(ui, style(c.dim), style(c.dim), &heading, false, None);
         rule(ui);
         let selected = self.picking.selection.map(Selection::range);
@@ -190,7 +195,7 @@ impl Hex {
                 };
                 let column = column.or_else(|| Column::at(x, lefts))?;
                 let x = x - column.left(lefts);
-                let byte = row * ROW + column.byte(glyph(ui, style(c.text), &heading.hex, x));
+                let byte = row * ROW + column.byte(glyph(ui, style(c.text), HEADER, x));
                 Some((column, byte.min(bytes.len() - 1)))
             };
             if self.picking.menu.open_on_right_press(ui) {
@@ -435,23 +440,6 @@ impl RowText {
     }
 }
 
-/// Names the columns: each byte's place in its row, over its hex.
-fn header(row_text: &mut RowText) {
-    row_text.offset.clear();
-    row_text.offset.push_str("Offset  ");
-    row_text.hex.clear();
-    for at in 0..ROW {
-        if at > 0 {
-            row_text.hex.push(' ');
-        }
-        if at == HALF {
-            row_text.hex.push(' ');
-        }
-        let _ = write!(row_text.hex, "{at:02X}");
-    }
-    row_text.ascii.clear();
-}
-
 /// One row of `row_text`, the offset in `dim` and the rest in `text`, lit
 /// under the pointer while `hover`, with the `selected` bytes, from the
 /// row's first, lit in both columns. Returns where the hex and the ASCII
@@ -583,10 +571,8 @@ mod tests {
 
     #[test]
     fn the_header_lines_up_with_a_row() {
-        let (mut heading, mut row) = (RowText::default(), RowText::default());
-        header(&mut heading);
+        let mut row = RowText::default();
         row.fill(0, &[0; ROW]);
-        assert_eq!(heading.offset.len(), row.offset.len());
-        assert_eq!(heading.hex.len(), row.hex.len());
+        assert_eq!(HEADER.len(), row.hex.len());
     }
 }
