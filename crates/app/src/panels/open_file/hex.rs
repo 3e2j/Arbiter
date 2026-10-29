@@ -9,7 +9,7 @@
 use std::{fmt::Write, ops::Range};
 
 use crate::components::{ContextMenu, ListScroll, MenuItem, context_menu, indexed_list, rule};
-use crate::keymap::{self, AppCommand, Chord, KeyContext};
+use crate::keymap::{AppCommand, Chord, KeyContext};
 use gui::{
     input::{Key, Modifiers, PointerButton},
     ui::{Element, TextHighlight, TextStyle, Ui},
@@ -27,8 +27,8 @@ const HALF: usize = ROW / 2;
 /// Each byte's place in its row, spaced as [`RowText::fill`] spaces its hex.
 const HEADER: &str = "00 01 02 03 04 05 06 07  08 09 0A 0B 0C 0D 0E 0F";
 
-/// While the panel is active, see [`Picking::active`].
-const HEX: KeyContext = KeyContext("hex");
+/// While the panel has focus.
+pub const HEX: KeyContext = KeyContext("hex");
 /// Copies the selection as the ASCII column shows it, Ctrl+C by default.
 const COPY: AppCommand = AppCommand("hex.copy");
 /// Copies the selection as hex, Ctrl+Shift+C by default.
@@ -45,9 +45,6 @@ struct Picking {
     selection: Option<Selection>,
     /// The column a drag picks from, while the left button is held.
     dragging: Option<Column>,
-    /// Whether the last press landed on the panel, so its keys are the
-    /// panel's.
-    active: bool,
     menu: ContextMenu,
 }
 
@@ -145,18 +142,22 @@ impl Hex {
         self.picking.selection = None;
     }
 
+    /// Does `commands`, the [`HEX`] ones pressed while it has focus, on
+    /// `bytes`, which aren't empty.
+    pub fn act(&mut self, ui: &mut Ui, commands: &[AppCommand], bytes: &[u8]) {
+        for &command in commands {
+            self.picking.act(ui, command, bytes);
+        }
+    }
+
     /// `bytes`, which aren't empty.
     pub fn ui(&mut self, ui: &mut Ui, bytes: &[u8]) {
-        if ui.input().pressed(PointerButton::Left) {
-            self.picking.active = ui.hovered();
-        }
         let theme = theme::current();
         let (c, s) = (theme.color, theme.size);
         let style = |color| TextStyle {
             font: theme.font.buffer,
             ..theme.ui_text(color)
         };
-        self.picking.keys(ui, bytes);
         let heading = RowText {
             offset: "Offset  ".to_owned(),
             hex: HEADER.to_owned(),
@@ -211,21 +212,8 @@ impl Picking {
     const NONE: Self = Self {
         selection: None,
         dragging: None,
-        active: false,
         menu: ContextMenu::CLOSED,
     };
-
-    /// Copies or selects as `ui`'s keys say, while the panel is active and
-    /// nothing else has the keyboard.
-    fn keys(&mut self, ui: &mut Ui, bytes: &[u8]) {
-        if !self.active || ui.typing() {
-            return;
-        }
-        let input = ui.input();
-        for command in keymap::commands(input.keys(), &[HEX]) {
-            self.act(ui, command, bytes);
-        }
-    }
 
     /// The right click menu while it's open, doing what's clicked.
     fn menu(&mut self, ui: &mut Ui, bytes: &[u8]) {

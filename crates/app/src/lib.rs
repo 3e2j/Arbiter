@@ -25,6 +25,7 @@ use gui::{
     platform::window,
     ui::{Element, Ui, window::window_edges},
 };
+use keymap::{AppCommand, KeyContext};
 use panels::{FileTree, OpenFile, Panel, PanelKind};
 use project::{LOG, Project};
 use settings::Settings;
@@ -137,6 +138,24 @@ impl Editor {
         loader.ask(project.root.join(path));
         self.workspace
             .add(Place::Main, Panel::OpenFile(OpenFile::new(path.to_owned())));
+    }
+
+    /// What the keys pressed this pass do: as text while a box has the
+    /// keyboard, else in the focused panel, then anywhere.
+    fn commands(&mut self, ui: &Ui) -> Vec<AppCommand> {
+        if self.settings.recording() {
+            return Vec::new();
+        }
+        let first = if ui.typing() {
+            Some(KeyContext::TEXT)
+        } else {
+            self.workspace
+                .focused()
+                .and_then(|panel| panel.key_context())
+        };
+        // Asking GLOBAL twice finds nothing more.
+        let contexts = [first.unwrap_or(KeyContext::GLOBAL), KeyContext::GLOBAL];
+        keymap::commands(ui.input().keys(), &contexts).collect()
     }
 
     fn file_trees(&mut self) -> impl Iterator<Item = &mut FileTree> {
@@ -255,6 +274,12 @@ impl App for Editor {
     }
 
     fn ui(&mut self, ui: &mut Ui) {
+        self.settings.sync(ui);
+        let commands = self.commands(ui);
+        self.settings.act(&commands);
+        if let Some(panel) = self.workspace.focused() {
+            panel.act(ui, &commands);
+        }
         ui.element(Element::column(), |ui| {
             title_bar::ui(ui, Self::TITLE, &mut self.settings, &mut self.view);
             // Settings covers everything under the title bar.

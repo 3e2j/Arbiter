@@ -48,7 +48,7 @@ impl Editor {
     }
 
     /// Hands what gui keeps to it. Before anything that pastes reads it.
-    pub fn apply(&self, ui: &mut Ui) {
+    pub fn sync(&self, ui: &mut Ui) {
         ui.clipboard().middle_click_paste = self.middle_click_paste;
     }
 

@@ -112,6 +112,7 @@ impl Workspace {
             grip: None,
             tab_drag: None,
             menu: None,
+            focus: None,
         };
         for saved in &session.docks {
             let dock = &mut workspace.docks[saved.place.index()];

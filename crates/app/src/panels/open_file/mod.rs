@@ -8,10 +8,11 @@ use gui::ui::Ui;
 use serde::{Deserialize, Serialize};
 
 use crate::components::notice;
+use crate::keymap::AppCommand;
 use crate::workspace::Places;
 use hex::HexState;
 
-pub use hex::Hex;
+pub use hex::{HEX, Hex};
 
 pub struct OpenFile {
     /// Relative to the project's root.
@@ -81,6 +82,16 @@ impl OpenFile {
             Ok(bytes) => Bytes::Read(bytes),
             Err(err) => Bytes::Failed(format!("Can't read {}: {err}", self.path)),
         };
+    }
+
+    /// Does `commands`, the [`HEX`] ones pressed while it has
+    /// focus, once there are bytes to.
+    pub fn act(&mut self, ui: &mut Ui, commands: &[AppCommand]) {
+        if let Bytes::Read(bytes) = &self.bytes
+            && !bytes.is_empty()
+        {
+            self.hex.act(ui, commands, bytes);
+        }
     }
 
     pub fn ui(&mut self, ui: &mut Ui) {

@@ -8,6 +8,7 @@ mod output;
 use gui::ui::Ui;
 use serde::{Deserialize, Serialize};
 
+use crate::keymap::{AppCommand, KeyContext};
 use crate::workspace::Places;
 
 pub use file_tree::FileTree;
@@ -117,6 +118,24 @@ impl Panel {
             Self::FileTree(_) => FileTree::PLACES,
             Self::OpenFile(_) => OpenFile::PLACES,
             Self::Output(_) => Places::BANDS,
+        }
+    }
+
+    /// Where its keys are bound while it has focus, if anywhere.
+    pub const fn key_context(&self) -> Option<KeyContext> {
+        match self {
+            Self::FileTree(_) => Some(file_tree::FILES),
+            Self::OpenFile(_) => Some(open_file::HEX),
+            Self::Output(_) => None,
+        }
+    }
+
+    /// Does `commands`, pressed while it has focus, before its `ui`.
+    pub fn act(&mut self, ui: &mut Ui, commands: &[AppCommand]) {
+        match self {
+            Self::FileTree(panel) => panel.act(commands),
+            Self::OpenFile(panel) => panel.act(ui, commands),
+            Self::Output(_) => {}
         }
     }
 

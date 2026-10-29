@@ -9,7 +9,7 @@ mod tab_state;
 use crate::components::{
     self, IconState, TextField, icon_button, list, notice, rule, text_field, toolbar,
 };
-use crate::keymap::{self, AppCommand, Chord, KeyContext};
+use crate::keymap::{AppCommand, Chord, KeyContext};
 use gui::{
     input::{CursorIcon, Key, Modifiers, PointerButton},
     ui::{Align, Direction, Element, Length, Ui},
@@ -27,8 +27,8 @@ use tab_state::TabState;
 use crate::components::popover::{WIDTH as POPOVER, check, heading};
 use crate::theme;
 
-/// While the panel is active, see [`FileTree::active`].
-const FILES: KeyContext = KeyContext("files");
+/// While the panel has focus.
+pub const FILES: KeyContext = KeyContext("files");
 /// Focuses the search, Ctrl+F by default.
 const SEARCH: AppCommand = AppCommand("files.search");
 
@@ -106,8 +106,6 @@ pub struct FileTree {
     /// Both trees'.
     order: SortOrder,
     popover: Option<Popover>,
-    /// The last press landed in the panel, so its [`FILES`] keys apply.
-    active: bool,
     /// The file last double clicked, relative to the project root, until
     /// [`Self::take_picked`].
     picked: Option<String>,
@@ -139,7 +137,6 @@ impl FileTree {
             letters: view.letters,
             order: view.order,
             popover: None,
-            active: false,
             picked: None,
         }
     }
@@ -240,10 +237,14 @@ impl FileTree {
         }
     }
 
-    pub fn ui(&mut self, ui: &mut Ui) {
-        if ui.input().pressed(PointerButton::Left) {
-            self.active = ui.hovered();
+    /// Does `commands`, the [`FILES`] ones pressed while it has focus.
+    pub fn act(&mut self, commands: &[AppCommand]) {
+        if self.opened.is_some() && commands.contains(&SEARCH) {
+            self.search.focus = true;
         }
+    }
+
+    pub fn ui(&mut self, ui: &mut Ui) {
         self.tabs(ui);
         if self.opened.is_none() {
             return notice(ui, "No project open");
@@ -309,11 +310,6 @@ impl FileTree {
 
     /// The search across, then Filter on the Game tab, then View.
     fn toolbar(&mut self, ui: &mut Ui) {
-        let input = ui.input();
-        let focus = keymap::commands(input.keys(), &[FILES]).any(|command| command == SEARCH);
-        if self.active && focus && !ui.typing() {
-            self.search.focus = true;
-        }
         toolbar(ui, |ui| {
             let icon = Some(Icon::Search.into());
             if text_field(ui, &mut self.search, icon, "Search") {

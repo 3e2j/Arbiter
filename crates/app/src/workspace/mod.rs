@@ -30,7 +30,7 @@ pub mod status_bar;
 pub mod title_bar;
 
 use gui::{
-    input::{Input, Key},
+    input::{Input, Key, PointerButton},
     ui::{Direction, Element, Length, Ui},
 };
 
@@ -74,6 +74,8 @@ pub struct Workspace {
     tab_drag: Option<TabDrag>,
     /// The menu that's open, which takes every press until it closes.
     menu: Option<Menu>,
+    /// The dock the last press landed in, whose shown panel has the keys.
+    focus: Option<Place>,
 }
 
 impl Workspace {
@@ -105,6 +107,12 @@ impl Workspace {
         }
     }
 
+    /// The panel shown in the dock with focus.
+    pub fn focused(&mut self) -> Option<&mut Panel> {
+        let dock = &mut self.docks[self.focus?.index()];
+        dock.tabs.get_mut(dock.active).map(|tab| &mut tab.panel)
+    }
+
     /// Escape closes the menu.
     pub fn input(&mut self, input: &Input) {
         if input.keys().iter().any(|press| press.key == Key::Escape) {
@@ -122,6 +130,9 @@ impl Workspace {
             dock.shown.clear();
         }
         self.grip = None;
+        if ui.input().pressed(PointerButton::Left) {
+            self.focus = None;
+        }
         // The bars above and below sit flush against it.
         let element = Element {
             padding: [GUTTER, 0., GUTTER, 0.],
@@ -261,6 +272,9 @@ impl Workspace {
         };
         let dock = &mut self.docks[place.index()];
         let out = ui.element(element, |ui| {
+            if ui.input().pressed(PointerButton::Left) && ui.hovered() {
+                self.focus = Some(place);
+            }
             dock.rect = ui.rect();
             dock.ui(ui)
         });

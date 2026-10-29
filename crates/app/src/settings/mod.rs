@@ -221,34 +221,41 @@ impl Settings {
         self.scroll.offset = 0.;
     }
 
-    /// The gear, lit while the panel is open. Where its keys are acted on,
-    /// and what gui keeps is handed to it, before the boxes that read it.
-    pub fn gear(&mut self, ui: &mut Ui) {
-        self.editor.apply(ui);
+    /// Brings gui and the keymap up to date with the settings, before
+    /// anything reads them.
+    pub fn sync(&mut self, ui: &mut Ui) {
+        self.editor.sync(ui);
         if let Some(keymap) = self.keybinds.take_keymap() {
             keymap::set(keymap);
         }
-        let mut toggled = false;
-        let keys = if self.keybinds.recording() {
-            &[][..]
-        } else {
-            ui.input().keys()
-        };
-        for command in keymap::commands(keys, &[KeyContext::GLOBAL]) {
+    }
+
+    /// Whether a chord is being recorded, which takes every key.
+    pub const fn recording(&self) -> bool {
+        self.keybinds.recording()
+    }
+
+    /// Does the [`GLOBAL`](KeyContext::GLOBAL) ones of `commands`.
+    pub fn act(&mut self, commands: &[AppCommand]) {
+        for &command in commands {
             match command {
-                TOGGLE => toggled = true,
+                TOGGLE => self.show(!self.open),
                 ZOOM_IN => self.appearance.step_zoom(true),
                 ZOOM_OUT => self.appearance.step_zoom(false),
                 ZOOM_RESET => self.appearance.reset_zoom(),
                 _ => {}
             }
         }
+    }
+
+    /// The gear, lit while the panel is open.
+    pub fn gear(&mut self, ui: &mut Ui) {
         let state = if self.open {
             IconState::Lit
         } else {
             IconState::Normal
         };
-        if icon_button(ui, Icon::Settings, state).pressed || toggled {
+        if icon_button(ui, Icon::Settings, state).pressed {
             self.show(!self.open);
         }
     }
