@@ -221,6 +221,7 @@ fn commit(
         if !problems.items.is_empty() {
             for d in &problems.items {
                 let severity = match d.severity() {
+                    Severity::Info => "info",
                     Severity::Warning => "warning",
                     Severity::Error => "error",
                 };

@@ -4,6 +4,8 @@ use std::fmt::Display;
 /// the worst compares greatest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Severity {
+    /// Only matters if something goes wrong, as a lead to follow then.
+    Info,
     Warning,
     Error,
 }

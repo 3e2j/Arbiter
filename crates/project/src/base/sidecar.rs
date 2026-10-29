@@ -23,6 +23,11 @@ pub const MISSING_MEMBER: DiagnosticCode = DiagnosticCode {
     summary: "a change names an archive member the base doesn't hold",
 };
 
+// TODO: once members can be added or removed, report an `Info` for each
+// retail member a rebuild moves. Game code loads most files by position, so
+// a moved one may load as the wrong file. The fix to suggest is a new archive
+// if that proves to be a problem.
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Sidecar {
     /// See `formats::jsystem::jkernel::rarc::Rarc::root`.
