@@ -100,7 +100,7 @@ fn encodes_the_retail_layout() {
 
     assert_eq!(&data[NODES..NODES + 4], b"ROOT");
     assert_eq!(u32_at(&data, NODES + 4), 5);
-    assert_eq!(u16_at(&data, NODES + 8), name_hash(b"root"));
+    assert_eq!(u16_at(&data, NODES + 8), 0x11AE);
     assert_eq!(u16_at(&data, NODES + 10), 4);
     assert_eq!(u32_at(&data, NODES + 12), 0);
     assert_eq!(&data[NODES + 16..NODES + 20], b"SUB ");
@@ -153,6 +153,7 @@ fn round_trips() {
             ("sub/b.bin", b"BBB".as_slice(), Some(1), Preload::Mram),
         ]
     );
+    assert_eq!(decoded.next_id, None);
     assert_eq!(encode(&decoded).unwrap(), data);
 }
 
@@ -289,7 +290,16 @@ fn memories_out_of_data_order_are_refused() {
 
 #[test]
 fn unusable_paths_are_refused() {
-    for path in ["sub/../b.bin", "", "sub//b.bin", ".", "a\\b", "a.bin/x"] {
+    for path in [
+        "sub/../b.bin",
+        "",
+        "sub//b.bin",
+        ".",
+        "a\\b",
+        "a.bin/x",
+        "a\0b",
+        "\u{e9}.bin",
+    ] {
         let files = vec![file("a.bin", b"A"), file(path, b"")];
         assert!(
             matches!(encode(&rarc(files)), Err(FormatError::Name { .. })),
@@ -301,6 +311,11 @@ fn unusable_paths_are_refused() {
         encode(&rarc(files)),
         Err(FormatError::Name { .. })
     ));
+    let nameless = Rarc {
+        root: String::new(),
+        ..Rarc::default()
+    };
+    assert!(matches!(encode(&nameless), Err(FormatError::Name { .. })));
 }
 
 #[test]
@@ -363,6 +378,7 @@ fn broken_structure_is_refused() {
         corrupt(&mut data);
         assert!(decode(&data).is_err(), "corruption {n}");
     }
+    assert!(!Rarc::detect(b"Yaz0...."));
     assert!(matches!(
         decode(b"Yaz0...."),
         Err(FormatError::WrongMagic { .. })
