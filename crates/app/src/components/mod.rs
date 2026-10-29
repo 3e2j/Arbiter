@@ -12,14 +12,12 @@ mod chip;
 mod controls;
 mod layout;
 mod overlay;
-mod title_bar;
 mod wrap;
 
 pub use chip::{Chip, chip};
 pub use controls::*;
 pub use layout::*;
 pub use overlay::*;
-pub use title_bar::title_bar;
 pub use wrap::{Atom, Run, line_box, wrapped};
 
 #[cfg(test)]

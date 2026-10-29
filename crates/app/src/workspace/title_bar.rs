@@ -6,11 +6,11 @@
 //! another where that kind first sits, as many as are wanted.
 
 use crate::components::{
-    ContextMenu, IconState, MenuItem, context_menu, icon_button, spacer, title_bar,
+    ContextMenu, IconState, MenuItem, context_menu, icon_button, spacer, toolbar,
 };
 use gui::{
     input::{CursorIcon, PointerButton, WindowAction},
-    ui::{Align, Element, Length, Ui},
+    ui::{Align, Element, Length, Ui, window::window_drag},
 };
 
 use crate::assets::Icon;
@@ -24,7 +24,7 @@ use super::{Place, Workspace};
 /// the right end.
 pub fn ui(ui: &mut Ui, title: &str, settings: &mut Settings, view: &mut ContextMenu) {
     let theme = theme::current();
-    title_bar(ui, |ui| {
+    bar(ui, |ui| {
         // With the bar's own half gap, two gaps in, about where the panels'
         // contents start.
         let inset = Element {
@@ -51,6 +51,28 @@ pub fn ui(ui: &mut Ui, title: &str, settings: &mut Settings, view: &mut ContextM
             }
         }
     });
+}
+
+/// A [`toolbar`] that moves the window as [`window_drag`] says, shaded while
+/// held.
+#[track_caller]
+fn bar<R>(ui: &mut Ui, body: impl FnOnce(&mut Ui) -> R) -> R {
+    let (c, s) = (theme::current().color, theme::current().size);
+    toolbar(ui, |ui| {
+        let out = body(ui);
+        let held = window_drag(ui);
+        // Keeps inside the window's corners, which are only round while
+        // it isn't maximized.
+        let radius = if ui.input().maximized() {
+            0.
+        } else {
+            s.window_radius
+        };
+        let style = ui.style();
+        style.background = held.then_some(c.hover);
+        style.radius = [radius, radius, 0., 0.];
+        out
+    })
 }
 
 /// `label` as flat text, opening `menu` under it when pressed. Lit while
@@ -101,4 +123,72 @@ pub fn view_menu(
     let &(kind, place) = panels.get(context_menu(ui, menu, &items)?)?;
     workspace.add(place, Panel::open(kind, None)?);
     Some(kind)
+}
+
+#[cfg(test)]
+mod tests {
+    use gui::canvas::IconId;
+    use gui::input::Event;
+    use gui::ui::testing::Kept;
+
+    use super::*;
+    use crate::theme::sizes;
+
+    /// A title bar 300 across holding a button, which it moves the window
+    /// around. Returns what the pass asked of the window.
+    fn title_bar_pass(kept: &mut Kept) -> Option<WindowAction> {
+        kept.pass(|ui| {
+            bar(ui, |ui| {
+                icon_button(ui, IconId::default(), IconState::Normal)
+            })
+        });
+        kept.out.action
+    }
+
+    #[test]
+    fn dragging_a_title_bar_moves_the_window_but_not_from_its_buttons() {
+        let mut kept = Kept::default();
+        sizes(|size| size.row = 20.);
+        kept.input.push(Event::Pointer(Some([5., 5.])));
+        title_bar_pass(&mut kept);
+        kept.input.push(Event::Pressed(PointerButton::Left));
+        title_bar_pass(&mut kept);
+        kept.input.push(Event::Pointer(Some([10., 5.])));
+        assert_eq!(title_bar_pass(&mut kept), None);
+        kept.input.push(Event::Released(PointerButton::Left));
+        title_bar_pass(&mut kept);
+        kept.input.push(Event::Pointer(Some([200., 5.])));
+        title_bar_pass(&mut kept);
+        kept.input.push(Event::Pressed(PointerButton::Left));
+        title_bar_pass(&mut kept);
+        // Held but not moved, so a double click can still come.
+        assert_eq!(title_bar_pass(&mut kept), None);
+        kept.input.push(Event::Pointer(Some([210., 5.])));
+        assert_eq!(title_bar_pass(&mut kept), Some(WindowAction::Move));
+    }
+
+    /// Clicks the title bar with `press`. Returns what the release asked of
+    /// the window.
+    fn click_title_bar(kept: &mut Kept, press: Event<'static>) -> Option<WindowAction> {
+        kept.input.push(press);
+        title_bar_pass(kept);
+        title_bar_pass(kept);
+        kept.input.push(Event::Released(PointerButton::Left));
+        title_bar_pass(kept)
+    }
+
+    #[test]
+    fn double_clicking_a_title_bar_toggles_maximized() {
+        let mut kept = Kept::default();
+        sizes(|size| size.row = 20.);
+        kept.input.push(Event::Pointer(Some([200., 5.])));
+        title_bar_pass(&mut kept);
+        let first = Event::Pressed(PointerButton::Left);
+        assert_eq!(click_title_bar(&mut kept, first), None);
+        let second = Event::PressedAgain(PointerButton::Left);
+        assert_eq!(
+            click_title_bar(&mut kept, second),
+            Some(WindowAction::ToggleMaximize)
+        );
+    }
 }

@@ -29,6 +29,14 @@ pub fn set(theme: Theme) {
     CURRENT.set(theme);
 }
 
+/// Changes the sizes of the theme in use, for a test's passes to draw with.
+#[cfg(test)]
+pub fn sizes(edit: impl FnOnce(&mut ThemeSizes)) {
+    let mut theme = current();
+    edit(&mut theme.size);
+    set(theme);
+}
+
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub struct Theme {
     pub color: ThemeColors,
