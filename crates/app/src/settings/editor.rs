@@ -10,7 +10,7 @@ use gui::{
 use serde::{Deserialize, Serialize};
 
 use super::saved::{OnByDefault, lenient};
-use super::widgets::{beside, row, sized};
+use super::widgets::{beside, setting, sized};
 use crate::theme;
 
 /// How long the switch's knob takes to cross.
@@ -68,7 +68,7 @@ impl Editor {
             align: [Align::End, Align::Center],
             ..Element::DEFAULT
         };
-        row(ui, |ui| {
+        setting(ui, |ui| {
             let desc = Some("Pastes the primary selection.");
             let (reset, flipped) = beside(ui, "Middle-click paste", desc, changed, |ui| {
                 ui.element(end, |ui| {

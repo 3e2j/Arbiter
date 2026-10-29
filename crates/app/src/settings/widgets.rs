@@ -47,7 +47,7 @@ pub fn key_cap_width(ui: &mut Ui, name: &str) -> f32 {
 /// A setting: its label, then its control under it or beside. Its words
 /// line up with the [`rule`](crate::components::rule)s a page puts between
 /// rows.
-pub fn row(ui: &mut Ui, body: impl FnOnce(&mut Ui)) {
+pub fn setting(ui: &mut Ui, body: impl FnOnce(&mut Ui)) {
     let element = Element {
         size: [Length::Grow, Length::Fit],
         padding: [0., 12., 0., 12.],

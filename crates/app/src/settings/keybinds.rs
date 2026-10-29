@@ -22,7 +22,7 @@ use gui::{
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use super::widgets::{DOT, DOT_GAP, dot, key_cap, key_cap_width, row, sized};
+use super::widgets::{DOT, DOT_GAP, dot, key_cap, key_cap_width, setting, sized};
 use crate::assets::Icon;
 use crate::commands::{self, Command};
 use crate::theme;
@@ -226,7 +226,7 @@ impl Keybinds {
                 let clash = clash(all, command, chords);
                 let desc = clash.map(|(name, _)| format!("Also {name}"));
                 let here = was.filter(|&(row, _)| row == at).map(|(_, slot)| slot);
-                row(ui, |ui| {
+                setting(ui, |ui| {
                     let hot = ui.hovered();
                     let warned = clash.map(|(_, chord)| chord);
                     ui.element(line(), |ui| {

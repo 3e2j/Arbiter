@@ -9,7 +9,7 @@ use gui::{
 use serde::{Deserialize, Serialize};
 
 use super::saved::lenient;
-use super::widgets::{beside, label, row, sized};
+use super::widgets::{beside, label, setting, sized};
 use crate::assets::Icon;
 use crate::theme;
 use crate::theme::Palette;
@@ -180,7 +180,7 @@ impl Appearance {
     fn theme(&mut self, ui: &mut Ui) {
         let changed = self.palette != Palette::default();
         let mut hovered = None;
-        row(ui, |ui| {
+        setting(ui, |ui| {
             if label(ui, "Theme", Some("Hover to try one on."), changed) {
                 self.palette = Palette::default();
             }
@@ -212,7 +212,7 @@ impl Appearance {
             .zip(Zoom::ALL)
             .find_map(|(n, zoom)| (zoom == self.zoom).then_some(n))
             .unwrap_or_default();
-        row(ui, |ui| {
+        setting(ui, |ui| {
             let (reset, picked) =
                 beside(ui, "Zoom", None, changed, |ui| segmented(ui, &labels, at));
             if reset {
