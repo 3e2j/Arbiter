@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::components::{Hex, HexState, notice};
 use crate::workspace::Places;
 
-pub struct File {
+pub struct OpenFile {
     /// Relative to the project's root.
     path: String,
     bytes: Bytes,
@@ -25,14 +25,14 @@ enum Bytes {
 
 /// A file's tab as the session keeps it.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-pub struct FileState {
+pub struct OpenFileState {
     /// Relative to the project's root.
     path: String,
     #[serde(default)]
     hex: HexState,
 }
 
-impl File {
+impl OpenFile {
     pub const PLACES: Places = Places::MAIN;
 
     /// Shows `path`, relative to the project's root, once it's
@@ -46,15 +46,15 @@ impl File {
     }
 
     /// Where `state` left it, once it's [`Self::load`]ed.
-    pub fn from_state(state: FileState) -> Self {
+    pub fn from_state(state: OpenFileState) -> Self {
         Self {
             hex: Hex::from_state(&state.hex),
             ..Self::new(state.path)
         }
     }
 
-    pub fn state(&self) -> FileState {
-        FileState {
+    pub fn state(&self) -> OpenFileState {
+        OpenFileState {
             path: self.path.clone(),
             hex: self.hex.state(),
         }
@@ -94,11 +94,11 @@ mod tests {
 
     #[test]
     fn its_state_keeps_its_view() {
-        let state = || FileState {
+        let state = || OpenFileState {
             path: "files/a.bin".to_owned(),
             hex: HexState::default(),
         };
-        let file = File::from_state(state());
+        let file = OpenFile::from_state(state());
         assert_eq!(file.title(), "a.bin");
         assert_eq!(file.state(), state());
     }

@@ -26,7 +26,7 @@ use gui::{
     ui::{Element, Ui, window::window_edges},
 };
 pub use panels::Capture;
-use panels::{File, FileTree, Output, Panel, PanelKind};
+use panels::{FileTree, OpenFile, Output, Panel, PanelKind};
 use project::{Log, Project};
 use settings::Settings;
 use theme::ThemeFonts;
@@ -101,7 +101,7 @@ impl Editor {
         // The session's file tabs, which open before the project does.
         if let Some(loader) = &self.loader {
             for panel in self.workspace.panels_mut() {
-                if let Panel::File(file) = panel {
+                if let Panel::OpenFile(file) = panel {
                     loader.ask(root.join(file.path()));
                 }
             }
@@ -132,13 +132,13 @@ impl Editor {
         };
         if self
             .workspace
-            .show(|panel| matches!(panel, Panel::File(file) if file.path() == path))
+            .show(|panel| matches!(panel, Panel::OpenFile(file) if file.path() == path))
         {
             return;
         }
         loader.ask(project.root.join(path));
         self.workspace
-            .add(Place::Main, Panel::File(File::new(path.to_owned())));
+            .add(Place::Main, Panel::OpenFile(OpenFile::new(path.to_owned())));
     }
 
     fn file_trees(&mut self) -> impl Iterator<Item = &mut FileTree> {
@@ -215,7 +215,9 @@ impl App for Editor {
         let project = self.project.as_deref();
         for (path, read) in self.loader.iter().flat_map(Loader::take) {
             let file = self.workspace.panels_mut().find_map(|panel| match panel {
-                Panel::File(file) if project.is_some_and(|p| p.root.join(file.path()) == path) => {
+                Panel::OpenFile(file)
+                    if project.is_some_and(|p| p.root.join(file.path()) == path) =>
+                {
                     Some(file)
                 }
                 _ => None,

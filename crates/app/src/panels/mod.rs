@@ -1,8 +1,8 @@
 //! What the user works in, one per tab. Each panel is its own state plus a
 //! title and a `ui`, and knows no other panel.
 
-mod file;
 mod file_tree;
+mod open_file;
 mod output;
 mod popover;
 
@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::workspace::Places;
 
-pub use file::File;
 pub use file_tree::FileTree;
+pub use open_file::OpenFile;
 pub use output::{Capture, Output};
 
 /// What a panel is, as the session saves its tab.
@@ -20,7 +20,7 @@ pub use output::{Capture, Output};
 #[serde(rename_all = "kebab-case")]
 pub enum PanelKind {
     FileTree,
-    File,
+    OpenFile,
     Output,
 }
 
@@ -29,7 +29,7 @@ impl PanelKind {
     pub const fn title(self) -> &'static str {
         match self {
             Self::FileTree => FileTree::TITLE,
-            Self::File => "File",
+            Self::OpenFile => "File",
             Self::Output => Output::TITLE,
         }
     }
@@ -38,7 +38,7 @@ impl PanelKind {
 /// Every panel, by type, so a tab holds one inline.
 pub enum Panel {
     FileTree(FileTree),
-    File(File),
+    OpenFile(OpenFile),
     Output(Output),
 }
 
@@ -48,13 +48,13 @@ impl Panel {
     pub fn open(kind: PanelKind, state: Option<&toml::Value>) -> Option<Self> {
         let mut panel = match kind {
             PanelKind::FileTree => Self::FileTree(FileTree::new()),
-            PanelKind::File => {
+            PanelKind::OpenFile => {
                 let Some(state) = state else {
                     tracing::warn!("the session has a file tab without its file");
                     return None;
                 };
                 return match state.clone().try_into() {
-                    Ok(state) => Some(Self::File(File::from_state(state))),
+                    Ok(state) => Some(Self::OpenFile(OpenFile::from_state(state))),
                     Err(err) => {
                         tracing::warn!("a file tab in the session isn't readable: {err}");
                         None
@@ -74,7 +74,7 @@ impl Panel {
     pub const fn kind(&self) -> PanelKind {
         match self {
             Self::FileTree(_) => PanelKind::FileTree,
-            Self::File(_) => PanelKind::File,
+            Self::OpenFile(_) => PanelKind::OpenFile,
             Self::Output(_) => PanelKind::Output,
         }
     }
@@ -85,7 +85,7 @@ impl Panel {
             Self::FileTree(panel) => toml::Value::try_from(panel.view())
                 .inspect_err(|err| tracing::warn!("can't save the files panel's view: {err}"))
                 .ok(),
-            Self::File(panel) => toml::Value::try_from(panel.state())
+            Self::OpenFile(panel) => toml::Value::try_from(panel.state())
                 .inspect_err(|err| tracing::warn!("can't save {}'s tab: {err}", panel.path()))
                 .ok(),
             Self::Output(_) => None,
@@ -100,14 +100,14 @@ impl Panel {
                 Ok(view) => panel.set_view(view),
                 Err(err) => tracing::warn!("the files panel's view isn't readable: {err}"),
             },
-            Self::File(_) | Self::Output(_) => {}
+            Self::OpenFile(_) | Self::Output(_) => {}
         }
     }
 
     pub fn title(&self) -> &str {
         match self {
             Self::FileTree(_) => FileTree::TITLE,
-            Self::File(panel) => panel.title(),
+            Self::OpenFile(panel) => panel.title(),
             Self::Output(_) => Output::TITLE,
         }
     }
@@ -116,7 +116,7 @@ impl Panel {
     pub const fn places(&self) -> Places {
         match self {
             Self::FileTree(_) => FileTree::PLACES,
-            Self::File(_) => File::PLACES,
+            Self::OpenFile(_) => OpenFile::PLACES,
             Self::Output(_) => Places::BANDS,
         }
     }
@@ -125,7 +125,7 @@ impl Panel {
     pub fn ui(&mut self, ui: &mut Ui) {
         match self {
             Self::FileTree(panel) => panel.ui(ui),
-            Self::File(panel) => panel.ui(ui),
+            Self::OpenFile(panel) => panel.ui(ui),
             Self::Output(panel) => panel.ui(ui),
         }
     }

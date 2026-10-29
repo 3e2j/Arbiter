@@ -392,7 +392,7 @@ fn reach(place: Place, main: Option<Rect>, point: [f32; 2]) -> f32 {
 mod tests {
     use super::super::dock::Tab;
     use super::*;
-    use crate::panels::{File, Panel};
+    use crate::panels::{OpenFile, Panel};
 
     const GAP: f32 = 8.;
 
@@ -403,7 +403,7 @@ mod tests {
     /// anywhere, since they're passed what's allowed.
     fn dock(titles: &[&str], rect: Rect) -> Dock {
         let tabs = titles.iter().map(|&title| Tab {
-            panel: Panel::File(File::new(title.to_owned())),
+            panel: Panel::OpenFile(OpenFile::new(title.to_owned())),
         });
         let shown = (0..).zip(titles).map(|(i, _): (u16, _)| {
             let x = f32::from(i).mul_add(74., rect.x + 6.);
