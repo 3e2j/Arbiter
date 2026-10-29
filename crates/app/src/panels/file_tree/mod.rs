@@ -123,8 +123,7 @@ impl FileTree {
         chords: &[Chord::new(Key::Char('f'), Modifiers::COMMAND)],
     }];
 
-    pub fn new() -> Self {
-        let view = FilesView::default();
+    pub fn new(view: FilesView) -> Self {
         Self {
             opened: None,
             tab: view.tab,
@@ -149,18 +148,6 @@ impl FileTree {
             letters: self.letters,
             order: self.order,
         }
-    }
-
-    /// Shows its trees as `view` says, keeping what each tab has open.
-    pub fn set_view(&mut self, view: FilesView) {
-        self.tab = view.tab;
-        self.filter.modded = view.modded;
-        self.compact = view.compact;
-        self.letters = view.letters;
-        if view.order != self.order {
-            self.sort(view.order);
-        }
-        self.restale();
     }
 
     /// Shows `trees` in place of what was shown, every folder closed.
@@ -463,7 +450,7 @@ impl FileTree {
 mod tests {
     use project::tree::SortKey;
 
-    use super::super::Panel;
+    use super::super::{Panel, PanelKind};
     use super::*;
 
     fn view(panel: &Panel) -> FilesView {
@@ -481,10 +468,9 @@ mod tests {
             compact = false
             order = { key = "type", descending = true }
         "#;
-        let mut panel = Panel::FileTree(FileTree::new());
-        panel.restore(toml::from_str(text).unwrap());
-        let mut again = Panel::FileTree(FileTree::new());
-        again.restore(panel.state().unwrap());
+        let state = toml::from_str(text).unwrap();
+        let panel = Panel::open(PanelKind::FileTree, Some(&state)).unwrap();
+        let again = Panel::open(PanelKind::FileTree, panel.state().as_ref()).unwrap();
         assert_eq!(view(&again), view(&panel));
         let FilesView {
             tab,
@@ -505,9 +491,9 @@ mod tests {
     }
 
     #[test]
-    fn unreadable_state_leaves_a_panel_as_it_was() {
-        let mut panel = Panel::FileTree(FileTree::new());
-        panel.restore(toml::from_str("tab = \"nowhere\"").unwrap());
+    fn unreadable_state_opens_a_new_panel() {
+        let state = toml::from_str("tab = \"nowhere\"").unwrap();
+        let panel = Panel::open(PanelKind::FileTree, Some(&state)).unwrap();
         assert_eq!(view(&panel), FilesView::default());
     }
 }

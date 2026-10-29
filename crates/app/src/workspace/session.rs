@@ -188,7 +188,7 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::panels::{FileTree, Output};
+    use crate::panels::Output;
     use crate::workspace::Side;
 
     const LAYOUT: [(PanelKind, Place); 3] = [
@@ -230,7 +230,7 @@ mod tests {
         let below = &mut workspace.docks[Place::BelowMain.index()];
         below.tabs.extend([
             Tab {
-                panel: Panel::FileTree(FileTree::new()),
+                panel: Panel::open(PanelKind::FileTree, None).unwrap(),
             },
             Tab {
                 panel: Panel::Output(Output::new()),

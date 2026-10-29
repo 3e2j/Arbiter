@@ -299,7 +299,7 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::panels::{FileTree, PanelKind};
+    use crate::panels::PanelKind;
 
     #[test]
     fn a_side_hides_only_bands_with_tabs_and_shows_them_again() {
@@ -323,7 +323,10 @@ mod tests {
         let mut workspace = Workspace::new(&session);
         workspace.toggle_side(Side::Left);
         assert!(!workspace.in_use(Band::LeftInner));
-        workspace.add(Place::LeftInnerBottom, Panel::FileTree(FileTree::new()));
+        workspace.add(
+            Place::LeftInnerBottom,
+            Panel::open(PanelKind::FileTree, None).unwrap(),
+        );
         assert!(workspace.in_use(Band::LeftInner));
         assert_eq!(workspace.panels_mut().count(), 2);
     }
