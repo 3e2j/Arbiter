@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use super::hex::{Hex, HexState};
 use super::messages::Messages;
 use crate::components::{notice, segmented, toolbar};
+use crate::views::Inspection;
 use crate::workspace::Places;
 
 /// The switch's width, enough for both views' names.
@@ -112,11 +113,27 @@ impl File {
         self.editor = None;
         self.bytes = match read {
             Ok(bytes) => {
-                self.editor = Editor::open(&self.path, &bytes, tables).map(Box::new);
+                self.editor = Editor::open(self.title(), &self.path, &bytes, tables).map(Box::new);
                 Bytes::Read(bytes)
             }
             Err(err) => Bytes::Failed(format!("Can't read {}: {err}", self.path)),
         };
+    }
+
+    /// The key of what's selected in its editor, while that's shown.
+    pub fn selection(&self) -> Option<usize> {
+        match (self.view, self.editor.as_deref()) {
+            (View::Editor, Some(Editor::Messages(messages))) => messages.selected(),
+            _ => None,
+        }
+    }
+
+    /// What `key` names in its editor, as the Inspector shows it.
+    pub fn inspect(&self, key: usize) -> Option<Inspection> {
+        match self.editor.as_deref() {
+            Some(Editor::Messages(messages)) => messages.inspect(key),
+            None => None,
+        }
     }
 
     pub fn ui(&mut self, ui: &mut Ui) {
@@ -153,8 +170,9 @@ impl File {
 
 impl Editor {
     /// The editor for `bytes`' format, or `None` when it has none or they
-    /// don't decode, which leaves them to hex.
-    fn open(path: &str, bytes: &[u8], tables: Option<Tables>) -> Option<Self> {
+    /// don't decode, which leaves them to hex. `title` names the file in
+    /// what it publishes.
+    fn open(title: &str, path: &str, bytes: &[u8], tables: Option<Tables>) -> Option<Self> {
         if !Bmg::detect(bytes) {
             return None;
         }
@@ -164,7 +182,7 @@ impl Editor {
                 for item in &diag.items {
                     tracing::warn!("{path}: {}", item.message);
                 }
-                Some(Self::Messages(Messages::new(bmg, tables)))
+                Some(Self::Messages(Messages::new(title, bmg, tables)))
             }
             Err(err) => {
                 tracing::warn!("can't read {path} as a message file: {err}");

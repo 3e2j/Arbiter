@@ -8,6 +8,8 @@
 //! Find above narrows the list to the messages whose text holds the query,
 //! never counting a tag's. A query of only digits also finds the message
 //! with that id.
+//!
+//! The Inspector shows a message as a card, built by [`Messages::inspect`].
 
 use std::fmt::Write;
 
@@ -20,9 +22,11 @@ use crate::components::{
     self, ListScroll, TextField, fit_list, line_box, notice, text_field, toggle, toolbar,
 };
 use crate::theme;
-use crate::views::{self, Find, Lines};
+use crate::views::{self, Find, Inspection, Lines};
 
 pub struct Messages {
+    /// The file's name, the root of the breadcrumb.
+    file: String,
     bmg: Bmg,
     /// What each row shows as its id, by position. A file without MID1 is
     /// addressed by position, so that's its id.
@@ -46,7 +50,8 @@ pub struct Messages {
 }
 
 impl Messages {
-    pub fn new(bmg: Bmg, tables: Option<Tables>) -> Self {
+    /// `bmg`, read from the file named `file`.
+    pub fn new(file: &str, bmg: Bmg, tables: Option<Tables>) -> Self {
         let ids: Vec<usize> = match bmg.mid1 {
             Some(_) => bmg
                 .messages
@@ -56,6 +61,7 @@ impl Messages {
             None => (0..bmg.messages.len()).collect(),
         };
         let mut messages = Self {
+            file: file.to_owned(),
             digits: ids.iter().max().map_or(1, |max| max.to_string().len()),
             ids,
             lines: lines(&bmg, tables),
@@ -158,6 +164,25 @@ impl Messages {
         if clicked.is_some() {
             self.selected = clicked;
         }
+    }
+
+    /// The selected message's position.
+    pub fn selected(&self) -> Option<usize> {
+        self.selected
+    }
+
+    /// The message at `index` as the Inspector shows it.
+    pub fn inspect(&self, index: usize) -> Option<Inspection> {
+        let message = self.bmg.messages.get(index)?;
+        let id = self.ids.get(index)?;
+        let mut inspection = Inspection::default();
+        inspection.crumb(&self.file);
+        inspection.crumb(format_args!("Message {id}"));
+        inspection.card("Message", id);
+        inspection.section("Entry");
+        inspection.number("Position", index);
+        inspection.bytes("Attributes", &message.attributes);
+        Some(inspection)
     }
 }
 
@@ -323,7 +348,7 @@ mod tests {
     #[test]
     fn find_narrows_the_list_and_counts() {
         let file = bmg(&[&[text(b"a cat")], &[text(b"dog")], &[text(b"cat, cat")]]);
-        let mut messages = Messages::new(file, None);
+        let mut messages = Messages::new("a.bmg", file, None);
         assert_eq!(messages.shown, [0, 1, 2]);
         assert_eq!(messages.count, "3 messages");
         messages.search.text = "cat".to_owned();
@@ -335,7 +360,7 @@ mod tests {
     #[test]
     fn find_by_digits_also_finds_that_id() {
         let file = bmg(&[&[text(b"2 cats")], &[text(b"dog")], &[text(b"cat")]]);
-        let mut messages = Messages::new(file, None);
+        let mut messages = Messages::new("a.bmg", file, None);
         messages.search.text = "2".to_owned();
         messages.refind();
         assert_eq!(messages.shown, [0, 2]);

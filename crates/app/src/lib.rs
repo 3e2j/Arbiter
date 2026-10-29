@@ -28,7 +28,7 @@ use gui::{
     ui::{Element, Ui, window::window_edges},
 };
 pub use panels::Capture;
-use panels::{File, Files, Output, Panel, PanelKind};
+use panels::{File, Files, Inspector, Output, Panel, PanelKind};
 use project::{Log, Project};
 use settings::Settings;
 use theme::ThemeFonts;
@@ -39,9 +39,13 @@ const RESIZE_EDGE: f32 = 4.;
 
 /// Each panel's kind and place in a project without a session, in tab order.
 /// The View menu offers them, and adds another where it sits here.
-const LAYOUT: [(PanelKind, Place); 2] = [
+/// Where a live inspector opens beside pinned ones, as in [`LAYOUT`].
+const INSPECTOR_PLACE: Place = Place::RightInnerTop;
+
+const LAYOUT: [(PanelKind, Place); 3] = [
     (PanelKind::Files, Place::LeftInnerTop),
     (PanelKind::Output, Place::BelowMain),
+    (PanelKind::Inspector, INSPECTOR_PLACE),
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -78,6 +82,9 @@ struct Editor {
     /// Unless its thread couldn't start.
     loader: Option<Loader>,
     wake: Wake,
+    /// The active document's path and the key of what's selected in it, as
+    /// of last pass.
+    selection: Option<(String, usize)>,
 }
 
 impl Editor {
@@ -143,6 +150,78 @@ impl Editor {
             .add(Place::Main, Panel::File(File::new(path.to_owned())));
     }
 
+    /// Settles which inspector is live, then has it show the selection.
+    ///
+    /// A new selection while every inspector is pinned opens a live one
+    /// beside them. Claiming inspectors close the live one, the first taking
+    /// its place and the rest closing too.
+    fn inspect(&mut self) {
+        let selection = self.workspace.document().and_then(Panel::selection);
+        let changed = self
+            .selection
+            .as_ref()
+            .map(|(path, key)| (path.as_str(), *key))
+            != selection;
+        if changed {
+            self.selection = selection.map(|(path, key)| (path.to_owned(), key));
+        }
+        let mut pinned = false;
+        let mut unpinned = false;
+        let mut claiming = false;
+        for inspector in self.inspectors() {
+            pinned |= inspector.is_pinned();
+            unpinned |= !inspector.is_pinned();
+            claiming |= inspector.is_claiming();
+        }
+        if changed && self.selection.is_some() && pinned && !unpinned {
+            self.workspace
+                .add(INSPECTOR_PLACE, Panel::Inspector(Inspector::new()));
+            claiming = true;
+        }
+        if claiming {
+            let mut kept = false;
+            self.workspace.close(|panel| match panel {
+                Panel::Inspector(inspector) if inspector.is_live() => true,
+                Panel::Inspector(inspector) if inspector.is_claiming() => {
+                    std::mem::replace(&mut kept, true)
+                }
+                _ => false,
+            });
+            if let Some(inspector) = self.inspectors().find(|inspector| inspector.is_claiming()) {
+                inspector.go_live();
+            }
+        }
+        let selection = self
+            .selection
+            .as_ref()
+            .map(|(path, key)| (path.as_str(), *key));
+        let stale = self.workspace.panels().any(|panel| match panel {
+            Panel::Inspector(inspector) => inspector.is_live() && !inspector.shows(selection),
+            _ => false,
+        });
+        if !stale {
+            return;
+        }
+        let shown = selection.and_then(|(path, key)| {
+            let inspection = self.workspace.document()?.inspect(key)?;
+            Some((path, key, inspection))
+        });
+        let live = self.workspace.panels_mut().find_map(|panel| match panel {
+            Panel::Inspector(inspector) if inspector.is_live() => Some(inspector),
+            _ => None,
+        });
+        if let Some(live) = live {
+            live.show(shown);
+        }
+    }
+
+    fn inspectors(&mut self) -> impl Iterator<Item = &mut Inspector> {
+        self.workspace.panels_mut().filter_map(|panel| match panel {
+            Panel::Inspector(inspector) => Some(inspector),
+            _ => None,
+        })
+    }
+
     fn files(&mut self) -> impl Iterator<Item = &mut Files> {
         self.workspace.panels_mut().filter_map(|panel| match panel {
             Panel::Files(files) => Some(files),
@@ -184,6 +263,7 @@ impl App for Editor {
                 .inspect_err(|err| tracing::warn!("can't start reading files to open: {err}"))
                 .ok(),
             wake: start.wake.clone(),
+            selection: None,
         };
         if let Some(project) = project {
             app.open(project);
@@ -271,6 +351,7 @@ impl App for Editor {
                     Panel::Output(output) => Some(output),
                     _ => None,
                 }));
+                self.inspect();
                 self.workspace.ui(ui);
                 let picked: Vec<_> = self
                     .workspace

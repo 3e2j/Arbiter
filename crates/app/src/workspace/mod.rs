@@ -17,6 +17,9 @@
 //! Each [`Side`] of the main view hides or shows its bands at once. A hidden
 //! band keeps its tabs and size, and gives its space to the main view.
 //!
+//! The active document is the main view's shown tab, which the tools that
+//! follow a document, such as the Inspector, read.
+//!
 //! A [`Session`] saves every tab's panel, where it sits, and the bands'
 //! sizes, for the next launch to lay out again.
 
@@ -78,9 +81,21 @@ pub struct Workspace {
 
 impl Workspace {
     /// Every panel, in any dock.
+    pub fn panels(&self) -> impl Iterator<Item = &Panel> {
+        let tabs = self.docks.iter().flat_map(|dock| &dock.tabs);
+        tabs.map(|tab| &tab.panel)
+    }
+
+    /// Every panel, in any dock.
     pub fn panels_mut(&mut self) -> impl Iterator<Item = &mut Panel> {
         let tabs = self.docks.iter_mut().flat_map(|dock| &mut dock.tabs);
         tabs.map(|tab| &mut tab.panel)
+    }
+
+    /// The main view's shown tab, `None` while it has none.
+    pub fn document(&self) -> Option<&Panel> {
+        let dock = &self.docks[Place::Main.index()];
+        dock.tabs.get(dock.active).map(|tab| &tab.panel)
     }
 
     /// Shows the first panel `find` picks out, in whichever dock it's in.
@@ -93,6 +108,20 @@ impl Workspace {
             }
         }
         false
+    }
+
+    /// Closes every panel `close` picks out, in tab order.
+    pub fn close(&mut self, mut close: impl FnMut(&Panel) -> bool) {
+        for dock in &mut self.docks {
+            let mut at = 0;
+            while let Some(tab) = dock.tabs.get(at) {
+                if close(&tab.panel) {
+                    dock.remove(at);
+                } else {
+                    at += 1;
+                }
+            }
+        }
     }
 
     /// Adds `panel` as the last tab at `place`, and shows it and its band.
@@ -285,7 +314,7 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::panels::{Files, PanelKind};
+    use crate::panels::{File, Files, PanelKind};
 
     #[test]
     fn a_side_hides_only_bands_with_tabs_and_shows_them_again() {
@@ -312,5 +341,31 @@ mod tests {
         workspace.add(Place::LeftInnerBottom, Panel::Files(Files::new()));
         assert!(workspace.in_use(Band::LeftInner));
         assert_eq!(workspace.panels_mut().count(), 2);
+    }
+
+    #[test]
+    fn the_document_is_the_main_views_shown_tab() {
+        let mut workspace =
+            Workspace::new(&Session::of(&[(PanelKind::Files, Place::LeftInnerTop)]));
+        assert!(workspace.document().is_none());
+        for path in ["a.bin", "b.bin"] {
+            workspace.add(Place::Main, Panel::File(File::new(path.to_owned())));
+        }
+        assert_eq!(workspace.document().map(Panel::title), Some("b.bin"));
+        workspace.show(|panel| panel.title() == "a.bin");
+        assert_eq!(workspace.document().map(Panel::title), Some("a.bin"));
+    }
+
+    #[test]
+    fn closing_keeps_the_shown_tab_where_it_can() {
+        let mut workspace = Workspace::new(&Session::of(&[]));
+        for path in ["a.bin", "b.bin", "c.bin"] {
+            workspace.add(Place::Main, Panel::File(File::new(path.to_owned())));
+        }
+        workspace.close(|panel| panel.title() == "a.bin");
+        assert_eq!(workspace.document().map(Panel::title), Some("c.bin"));
+        workspace.close(|panel| panel.title() == "c.bin");
+        assert_eq!(workspace.document().map(Panel::title), Some("b.bin"));
+        assert_eq!(workspace.panels().count(), 1);
     }
 }
