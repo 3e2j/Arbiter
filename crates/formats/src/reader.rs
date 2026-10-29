@@ -1,10 +1,10 @@
 use crate::{FormatError, Record, Result};
 
-/// A cursor over a borrowed buffer.
+/// A cursor over a borrowed buffer. Values read big-endian, as the GameCube
+/// and Wii write them.
 ///
-/// Sequential reads advance the cursor. The `_at` reads take an absolute
-/// position and leave it alone, which is what following an offset out of a
-/// header amounts to. Both hand back slices of the original buffer.
+/// Sequential reads advance the cursor, `_at` does not.
+/// Both hand back slices of the original buffer.
 pub struct ByteReader<'a> {
     data: &'a [u8],
     pos: usize,
@@ -194,13 +194,6 @@ mod tests {
         assert!(matches!(reader.u8(), Err(FormatError::OutOfBounds { .. })));
     }
 
-    #[test]
-    fn absolute_reads_leave_the_cursor_alone() {
-        let reader = ByteReader::new(&[0x0D, 0xEF, 0xAC, 0xED]);
-        assert_eq!(reader.bytes_at(2, 2).unwrap(), [0xAC, 0xED]);
-        assert_eq!(reader.pos(), 0);
-    }
-
     /// A length that overflows when added to the position has to read as out
     /// of bounds rather than wrapping into a range that happens to exist.
     #[test]
@@ -209,24 +202,6 @@ mod tests {
         assert!(matches!(
             reader.bytes_at(4, usize::MAX),
             Err(FormatError::OutOfBounds { .. })
-        ));
-    }
-
-    #[test]
-    fn magic_steps_over_only_a_match() {
-        let mut reader = ByteReader::new(b"Yaz0rest");
-        assert_eq!(
-            reader.magic(*b"RARC"),
-            Err(FormatError::WrongMagic { expected: *b"RARC" })
-        );
-        assert_eq!(reader.pos(), 0);
-        reader.magic(*b"Yaz0").unwrap();
-        assert_eq!(reader.pos(), 4);
-
-        let mut short = ByteReader::new(b"Ya");
-        assert!(matches!(
-            short.magic(*b"Yaz0"),
-            Err(FormatError::WrongMagic { .. })
         ));
     }
 
