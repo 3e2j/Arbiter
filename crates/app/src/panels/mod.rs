@@ -4,7 +4,6 @@
 mod file_tree;
 mod open_file;
 mod output;
-mod popover;
 
 use gui::ui::Ui;
 use serde::{Deserialize, Serialize};

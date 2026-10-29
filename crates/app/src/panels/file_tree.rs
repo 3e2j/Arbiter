@@ -23,7 +23,7 @@ use crate::commands::Command;
 use crate::theme::HOVER_THUMB;
 use crate::workspace::Places;
 
-use super::popover::{WIDTH as POPOVER, check, heading};
+use crate::components::popover::{WIDTH as POPOVER, check, heading};
 use crate::theme;
 
 /// Width of the gutter's bar.

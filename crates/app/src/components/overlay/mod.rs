@@ -1,7 +1,7 @@
 //! What floats over everything else until it's dismissed.
 
 mod menu;
-mod popover;
+pub mod popover;
 mod tooltip;
 
 pub use menu::{ContextMenu, MenuItem, context_menu};
