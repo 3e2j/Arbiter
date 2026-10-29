@@ -40,7 +40,7 @@ enum Tab {
 }
 
 impl Tab {
-    // In order of appearance
+    // In display order.
     const ALL: [Self; 2] = [Self::Project, Self::Game];
 
     const fn title(self) -> &'static str {

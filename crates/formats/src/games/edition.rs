@@ -34,7 +34,6 @@ pub enum DumpVerdict {
 /// Sorted by id, for `edition`'s binary search.
 #[rustfmt::skip]
 pub static EDITIONS: &[KnownEdition] = &[
-    // Twilight Princess.
     // Hashes from Dusklight's `src/dusk/iso_validate.cpp` so both tools agree.
     entry(*b"GZ2E01", Game::TwilightPrincess, &[(0, 0x14e8_86f0_8e54_8a00_0afd_e98a_3195_e788)]),
     entry(*b"GZ2J01", Game::TwilightPrincess, &[(0, 0x5967_dc7a_6a55_3652_f4d2_050a_eef6_f368)]),

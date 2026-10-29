@@ -8,7 +8,6 @@
 use std::ops::Range;
 use std::time::Duration;
 
-/// A pointer button.
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PointerButton {
@@ -523,7 +522,6 @@ impl Input {
         self.focused
     }
 
-    /// Whether the window is maximized.
     #[must_use]
     pub const fn maximized(&self) -> bool {
         self.maximized

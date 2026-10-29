@@ -18,7 +18,6 @@ thread_local! {
     static CURRENT: Cell<Theme> = Cell::new(Theme::default());
 }
 
-/// The theme in use.
 #[must_use]
 pub fn current() -> Theme {
     CURRENT.get()

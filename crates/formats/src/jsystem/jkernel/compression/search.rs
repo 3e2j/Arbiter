@@ -173,10 +173,8 @@ impl Chains {
 
         let ceiling = (data.len() - pos).min(MAX_LENGTH as usize);
         let mut best: Option<Backreference> = None;
-        // Nintendo parity: the window is scanned front to back and a candidate
-        // only replaces a strictly shorter one, so ties go to the earliest.
-        // This tie-break only changes which equal-length match is picked, not
-        // the final filesize. Chains run oldest first already.
+        // Nintendo parity: a candidate only replaces a strictly shorter one, so
+        // ties go to the earliest. Chains already run oldest first.
         let mut slot = self.head[Self::hash(data, pos)];
         while slot != NO_SLOT {
             // Every filed position is within `WINDOW` behind `pos`, so its
@@ -187,7 +185,7 @@ impl Chains {
             let best_len = best.map_or(0, |matched| matched.length() as usize);
 
             // The byte right after `best_len` must also match, or the candidate
-            // can't beat it. Checked early before doing the full compare below.
+            // can't beat it.
             if best_len > 0 && data[start + best_len] != data[pos + best_len] {
                 continue;
             }

@@ -45,7 +45,6 @@ struct Typing {
 }
 
 impl TextField {
-    /// Empties it.
     pub fn clear(&mut self) {
         self.text.clear();
         self.selection = Selection::default();

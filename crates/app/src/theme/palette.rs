@@ -16,7 +16,7 @@ pub enum Palette {
 }
 
 impl Palette {
-    // In order of appearance
+    // In display order.
     pub const ALL: [Self; 2] = [Self::Default, Self::Twilight];
 
     pub const fn name(self) -> &'static str {

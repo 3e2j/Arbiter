@@ -88,7 +88,6 @@ pub const fn ease_out(t: f32) -> f32 {
     1. - u * u * u
 }
 
-/// Slow at both ends.
 #[must_use]
 pub const fn ease_in_out(t: f32) -> f32 {
     if t < 0.5 {

@@ -219,18 +219,11 @@ pub struct Edition {
     /// clone needs to know which disc to ask for.
     pub revision: u8,
     /// XXH3-128 of the whole disc, see `pack::disc::hash`.
-    ///
-    /// Catalogue hash for a retail disc.
-    ///
-    /// Used to verify that a disc is unmodified from what's expected in a catalogue.
+    /// Matched against the catalogue to tell an unmodified retail disc.
     pub disc_hash: Hash,
-    /// XXH3-128 over all unpacked files' paths and hashes, sorted by path.
-    /// Unpacked file-based check, not a disc check (see `disc_hash` for that).
-    ///
-    /// Used to verify all unpacked files have the same bytes (when unpacking again),
-    /// even if it came from a modified disc.
-    // A changed digest only means "something" has changed, not what. So this is
-    // used as a fast-path check before checking against every file that differs.
+    /// XXH3-128 over every unpacked file's path and hash, sorted by path.
+    /// Tells whether unpacking again gave the same files, even from a
+    /// modified disc, but not which ones differ.
     pub files_digest: Hash,
 }
 

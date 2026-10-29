@@ -72,7 +72,6 @@ pub struct KeyContext(pub &'static str);
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct AppCommand(pub &'static str);
 
-/// What a chord does.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ChordAction {
     Edit(Edit<'static>),

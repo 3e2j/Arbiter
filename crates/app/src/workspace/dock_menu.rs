@@ -16,7 +16,6 @@ use super::dock::{Dock, TAB_GAP, TAB_PADDING, dock_radius, tab_height};
 use super::place::{Band, Place, Places};
 use crate::theme;
 
-/// The open menu.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Menu {
     pub(super) place: Place,

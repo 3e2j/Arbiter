@@ -73,7 +73,6 @@ pub struct Border {
     pub color: Color,
 }
 
-/// What a box is.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Element {
     /// Which way its children are stacked.

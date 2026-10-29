@@ -164,7 +164,6 @@ impl<A: App> Host<A> {
             self.input.set_elapsed(elapsed.as_secs_f32());
         }
 
-        // Act on input before any pass
         self.app.input(&self.input);
 
         // Acts on the input. Never drawn, as what it changed may be declared
