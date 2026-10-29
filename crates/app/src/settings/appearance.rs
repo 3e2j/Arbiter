@@ -8,7 +8,7 @@ use gui::{
 
 use serde::{Deserialize, Serialize};
 
-use super::file::lenient;
+use super::saved::lenient;
 use super::widgets::{beside, label, row, sized};
 use crate::assets::Icon;
 use crate::theme;

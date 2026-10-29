@@ -9,7 +9,7 @@ use gui::{
 
 use serde::{Deserialize, Serialize};
 
-use super::file::{OnByDefault, lenient};
+use super::saved::{OnByDefault, lenient};
 use super::widgets::{beside, row, sized};
 use crate::theme;
 

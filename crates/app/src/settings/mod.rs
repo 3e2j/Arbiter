@@ -4,8 +4,8 @@
 
 mod appearance;
 mod editor;
-mod file;
 mod keybinds;
+mod saved;
 mod widgets;
 
 use std::path::PathBuf;
@@ -21,12 +21,14 @@ use gui::{
 
 use crate::assets::Icon;
 use crate::commands::Command;
+use crate::fs;
 use crate::theme;
 use crate::theme::{HOVER_THUMB, Palette};
 use appearance::Appearance;
 pub use appearance::Zoom;
 use editor::Editor;
 use keybinds::Keybinds;
+pub use saved::Saved;
 use widgets::{key_cap, sized};
 
 const TOGGLE: AppCommand = AppCommand("settings.toggle");
@@ -65,7 +67,7 @@ pub struct Settings {
     /// Where they're kept, unless there's nowhere to.
     path: Option<PathBuf>,
     /// As last read or written, to write again only once they change.
-    written: file::Saved,
+    written: Saved,
     open: bool,
     page: Page,
     /// The page picked before `page`, whose marker shrinks as `leaving` runs
@@ -137,11 +139,11 @@ impl Settings {
 
     /// As the settings file left them.
     pub fn load() -> Self {
-        let path = file::path();
+        let path = fs::settings::path();
         if path.is_none() {
             tracing::warn!("there's no folder for settings, so they won't be kept");
         }
-        let written = path.as_deref().map(file::read).unwrap_or_default();
+        let written = path.as_deref().map(fs::settings::read).unwrap_or_default();
         Self {
             path,
             appearance: Appearance::new(written.appearance),
@@ -161,13 +163,13 @@ impl Settings {
             return;
         }
         // Even if it fails, so it's tried once a change rather than a pass.
-        self.written = file::Saved {
+        self.written = Saved {
             appearance,
             editor,
             keybinds: self.keybinds.saved(),
         };
         if let Some(path) = &self.path
-            && let Err(err) = file::write(path, &self.written)
+            && let Err(err) = fs::settings::write(path, &self.written)
         {
             tracing::warn!("can't save the settings: {err}");
         }

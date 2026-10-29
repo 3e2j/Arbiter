@@ -1,8 +1,10 @@
-//! Threads that work the disk so a frame never waits on it: [`FileLoader`] reads
+//! Everything the app reads from or writes to disk. [`FileLoader`] reads
 //! whole files, [`TreeReader`] a project's trees, and [`Watch`] what changes
-//! under it. Each wakes the window once it has something to take.
+//! under it, each on a thread of its own that wakes the window once it has
+//! something to take. [`settings`] reads and writes the settings file.
 
 mod file_loader;
+pub mod settings;
 mod tree_reader;
 mod watch;
 
