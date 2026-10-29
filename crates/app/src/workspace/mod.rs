@@ -21,9 +21,9 @@
 //! sizes, for the next launch to lay out again.
 
 mod dock;
+mod dock_menu;
 mod drag;
 mod layout;
-mod menu;
 mod place;
 mod session;
 pub mod status_bar;
@@ -38,9 +38,9 @@ use crate::panels::Panel;
 
 use crate::theme;
 use dock::{Dock, Tab, dock_radius};
+use dock_menu::Menu;
 use drag::{Grip, TabDrag};
 use layout::{Divider, Drag, Pass, fit};
-use menu::Menu;
 use place::Band;
 pub use place::{Place, Places, Side};
 pub use session::Session;
