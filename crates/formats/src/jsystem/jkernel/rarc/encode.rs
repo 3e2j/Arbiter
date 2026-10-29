@@ -2,7 +2,7 @@ use encoding_rs::SHIFT_JIS;
 
 use super::{
     ALIGN, DIR_SIZE, DOT_AT, DOT_DOT_AT, Entry, Header, INFO_AT, Info, NO_ID, NO_NODE, Node,
-    Preload, Rarc, flag, is_plain, name_hash, next_id,
+    Preload, Rarc, flag, is_plain, name_hash,
 };
 use crate::jsystem::jkernel::compression::Compression;
 use crate::{Be16, Be32, ByteWriter, Flag, FormatError, Record, Result};
@@ -41,6 +41,8 @@ struct Tree {
 /// Where each file goes, by its index in the archive's files.
 struct Placed {
     ids: Vec<u16>,
+    /// The next free id, past every one handed out.
+    next: u16,
     offsets: Vec<u32>,
     synced: bool,
     data_len: usize,
@@ -60,7 +62,7 @@ pub(super) fn encode(rarc: &Rarc, out: &mut ByteWriter) -> Result<()> {
     let tree = Tree::build(rarc)?;
     let placed = place(rarc, &tree)?;
     let next = match rarc.next_id {
-        Some(id) => id,
+        Some(_) => placed.next,
         None => next_id(
             tree.entry_count,
             placed.ids.iter().copied().max(),
@@ -287,9 +289,9 @@ fn grow(rarc: &Rarc) -> Result<Vec<Dir>> {
 
 /// Ids, data offsets and preload sizes, in entry order.
 ///
-/// A file with no id takes the lowest one unclaimed. The format's own way is
-/// the next free id, which never reuses one, but filling gaps keeps ids
-/// bounded and drifts toward the synced fast path.
+/// A file with no id takes the next free one, so an id a removed file held
+/// isn't handed out again while something may still point at it. Once that
+/// runs out, it takes the lowest one unclaimed.
 fn place(rarc: &Rarc, tree: &Tree) -> Result<Placed> {
     let mut claimed: Vec<u16> = rarc.files.iter().filter_map(|f| f.id).collect();
     claimed.sort_unstable();
@@ -298,10 +300,14 @@ fn place(rarc: &Rarc, tree: &Tree) -> Result<Placed> {
             what: "two files share an id",
         });
     }
-    let mut unclaimed = (0..NO_ID).filter(|id| claimed.binary_search(id).is_err());
+    let start = rarc.next_id.unwrap_or(0);
+    let mut unclaimed = (start..NO_ID)
+        .chain(0..start)
+        .filter(|id| claimed.binary_search(id).is_err());
 
     let mut placed = Placed {
         ids: vec![NO_ID; rarc.files.len()],
+        next: start,
         offsets: vec![0; rarc.files.len()],
         synced: true,
         data_len: 0,
@@ -319,11 +325,15 @@ fn place(rarc: &Rarc, tree: &Tree) -> Result<Placed> {
         }
         memory = f.preload;
 
-        let id = match f.id {
-            Some(id) => id,
-            None => unclaimed
+        let id = if let Some(id) = f.id {
+            id
+        } else {
+            let id = unclaimed
                 .next()
-                .ok_or_else(|| too_large("the file count"))?,
+                .ok_or_else(|| too_large("the file count"))?;
+            // Below it once it wraps, where it stays.
+            placed.next = placed.next.max(id + 1);
+            id
         };
         placed.ids[file] = id;
         placed.synced &= usize::from(id) == entry;
@@ -402,6 +412,19 @@ fn u32_of(value: usize) -> Result<u32> {
 
 fn be32(value: usize) -> Result<Be32> {
     u32_of(value).map(Be32::new)
+}
+
+/// The info block's next free id. With synced ids every entry, directories
+/// included, holds an id, so it's the entry count.
+fn next_id(entry_count: usize, highest: Option<u16>, synced: bool) -> Result<u16> {
+    let next = if synced {
+        entry_count
+    } else {
+        highest.map_or(0, |id| usize::from(id) + 1)
+    };
+    u16::try_from(next).map_err(|_| FormatError::TooLarge {
+        what: "the next free id",
+    })
 }
 
 const fn too_large(what: &'static str) -> FormatError {

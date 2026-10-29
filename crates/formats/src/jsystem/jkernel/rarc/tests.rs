@@ -153,7 +153,7 @@ fn round_trips() {
             ("sub/b.bin", b"BBB".as_slice(), Some(1), Preload::Mram),
         ]
     );
-    assert_eq!(decoded.next_id, None);
+    assert_eq!(decoded.next_id, Some(2));
     assert_eq!(encode(&decoded).unwrap(), data);
 }
 
@@ -215,7 +215,7 @@ fn ids_matching_entries_are_synced() {
     // Two files, then the root's `.` and `..`.
     assert_eq!(u16_at(&data, INFO_AT + 0x18), 4);
     let decoded = decode(&data).unwrap();
-    assert_eq!(decoded.next_id, None);
+    assert_eq!(decoded.next_id, Some(4));
     assert_eq!(encode(&decoded).unwrap(), data);
 }
 
@@ -238,6 +238,31 @@ fn new_ids_skip_carried_ones() {
     let decoded = decode(&encode(&rarc(files)).unwrap()).unwrap();
     assert_eq!(decoded.files[0].id, Some(4));
     assert_eq!(decoded.files[1].id, Some(0));
+}
+
+/// The fixture's counter is 2, past `sub/b.bin`'s 1.
+#[test]
+fn a_new_file_takes_the_counter_not_a_removed_files_id() {
+    let mut decoded = decode(&fixture()).unwrap();
+    decoded.files.pop();
+    decoded.files.push(file("c.bin", b"C"));
+    let data = encode(&decoded).unwrap();
+    let again = decode(&data).unwrap();
+    assert_eq!(again.files[1].id, Some(2));
+    assert_eq!(again.next_id, Some(3));
+}
+
+#[test]
+fn a_spent_counter_fills_gaps() {
+    let mut files = vec![file("a.bin", b"A"), file("b.bin", b"B")];
+    files[0].id = Some(0);
+    let rarc = Rarc {
+        next_id: Some(NO_ID),
+        ..rarc(files)
+    };
+    let again = decode(&encode(&rarc).unwrap()).unwrap();
+    assert_eq!(again.files[1].id, Some(1));
+    assert_eq!(again.next_id, Some(NO_ID));
 }
 
 #[test]

@@ -33,8 +33,9 @@ pub struct Rarc {
     /// Depth first, in entry order. A directory is the shared prefix of its
     /// files' paths, so an empty one doesn't survive a round trip.
     pub files: Vec<RarcFile>,
-    /// The info block's next free id, `None` when it's the one
-    /// [`encode`](Encode::encode) derives. Nothing reads it.
+    /// The info block's next free id, which files without one take theirs
+    /// from. `None` for a new archive, which [`encode`](Encode::encode)
+    /// derives one for. Nothing in the game reads it.
     pub next_id: Option<u16>,
 }
 
@@ -43,7 +44,7 @@ pub struct RarcFile {
     /// `/`-separated under the root, every component a plain name.
     pub path: String,
     pub data: Vec<u8>,
-    /// `None` takes the lowest id no other file holds.
+    /// `None` takes the archive's next free id.
     pub id: Option<u16>,
     pub preload: Preload,
 }
@@ -182,19 +183,6 @@ mod flag {
 fn name_hash(name: &[u8]) -> u16 {
     name.iter().fold(0, |hash: u16, &b| {
         hash.wrapping_mul(3).wrapping_add(u16::from(b))
-    })
-}
-
-/// The info block's next free id. With synced ids every entry, directories
-/// included, holds an id, so it's the entry count.
-fn next_id(entry_count: usize, highest: Option<u16>, synced: bool) -> Result<u16> {
-    let next = if synced {
-        entry_count
-    } else {
-        highest.map_or(0, |id| usize::from(id) + 1)
-    };
-    u16::try_from(next).map_err(|_| crate::FormatError::TooLarge {
-        what: "the next free id",
     })
 }
 

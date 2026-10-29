@@ -2,9 +2,7 @@ use std::ops::Range;
 
 use encoding_rs::SHIFT_JIS;
 
-use super::{
-    Entry, Header, Info, Node, Preload, Rarc, RarcFile, flag, is_plain, name_hash, next_id,
-};
+use super::{Entry, Header, Info, Node, Preload, Rarc, RarcFile, flag, is_plain, name_hash};
 use crate::{Be32, ByteReader, FormatError, Result};
 
 /// An archive's tables, borrowed in place, every offset made absolute.
@@ -56,23 +54,19 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Rarc> {
         return Err(malformed("there is no root directory"));
     };
     let root = tables.name(root.name.get(), root.hash.get())?;
-    let (files, derived) = tables.walk()?;
-    let stored = info.next_id.get();
     Ok(Rarc {
         root,
-        files,
-        next_id: (stored != derived).then_some(stored),
+        files: tables.walk()?,
+        next_id: Some(info.next_id.get()),
     })
 }
 
 impl Tables<'_> {
     /// Flattens the tree depth first from the root, directories into their
-    /// files' paths. Returns the files and the next free id they derive.
-    fn walk(&self) -> Result<(Vec<RarcFile>, u16)> {
+    /// files' paths.
+    fn walk(&self) -> Result<Vec<RarcFile>> {
         let mut files = Vec::new();
         let mut visited = vec![false; self.nodes.len()];
-        let mut highest = None;
-        let mut synced = true;
         // Each frame is a directory mid-walk: the entries left, and its path.
         let mut stack = vec![(self.open(0, &mut visited)?, String::new())];
 
@@ -111,9 +105,6 @@ impl Tables<'_> {
             } else {
                 return Err(malformed("a file is marked for no memory"));
             };
-            let id = entry.id.get();
-            highest = highest.max(Some(id));
-            synced &= usize::from(id) == at;
             let data = self.reader.bytes_at(
                 self.data_at.saturating_add(entry.target.get() as usize),
                 entry.size.get() as usize,
@@ -121,12 +112,12 @@ impl Tables<'_> {
             files.push(RarcFile {
                 path,
                 data: data.to_vec(),
-                id: Some(id),
+                id: Some(entry.id.get()),
                 preload,
             });
         }
 
-        Ok((files, next_id(self.entries.len(), highest, synced)?))
+        Ok(files)
     }
 
     /// Marks a node visited and returns its run of entries.
