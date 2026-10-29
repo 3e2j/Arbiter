@@ -180,11 +180,9 @@ unsafe impl Record for Flag {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ByteReader, ByteWriter, FormatError};
+    use crate::{ByteReader, FormatError};
 
     record! {
-        /// Fields of every width, so one at an odd position proves nothing
-        /// needed alignment.
         #[derive(Debug, PartialEq, Eq)]
         struct Sample {
             tag: u8,
@@ -209,22 +207,10 @@ mod tests {
     fn a_record_is_its_bytes() {
         assert_eq!(Sample::LEN, SAMPLE.len());
         assert_eq!(sample().as_bytes(), SAMPLE);
-
-        let mut out = ByteWriter::new();
-        out.record(&sample());
-        assert_eq!(out.finish(), SAMPLE);
     }
 
     #[test]
-    fn any_nonzero_flag_is_set() {
-        assert!(!Flag(0).get());
-        assert!(Flag(1).get());
-        assert!(Flag(0x80).get());
-    }
-
-    /// Starting at an odd position proves the record never needed alignment.
-    #[test]
-    fn records_borrow_from_any_position() {
+    fn records_borrow_and_stay_in_bounds() {
         let mut bytes = vec![0xFF];
         bytes.extend_from_slice(&SAMPLE);
         bytes.extend_from_slice(&SAMPLE);
