@@ -72,9 +72,9 @@ struct Pointed {
     lefts: Option<[f32; 2]>,
 }
 
-/// A row's columns, kept between rows so a pass formats into the same three.
+/// A row's text, kept between rows so a pass formats into the same three.
 #[derive(Default)]
-struct Columns {
+struct RowText {
     offset: String,
     hex: String,
     ascii: String,
@@ -156,13 +156,13 @@ impl Hex {
             ..theme.ui_text(color)
         };
         self.picking.keys(ui, bytes);
-        let mut heading = Columns::default();
+        let mut heading = RowText::default();
         header(&mut heading);
         line(ui, style(c.dim), style(c.dim), &heading, false, None);
         rule(ui);
         let selected = self.picking.selection.map(Selection::range);
         let pointer = ui.input().pointer();
-        let mut columns = Columns::default();
+        let mut row_text = RowText::default();
         let mut seen = Pointed::default();
         let rows = bytes.len().div_ceil(ROW);
         // Holds the button for the rows, so a drag outlasts the row it
@@ -173,10 +173,10 @@ impl Hex {
                 let start = index * ROW;
                 let row = bytes.get(start..).unwrap_or_default();
                 let row = row.get(..ROW).unwrap_or(row);
-                columns.fill(start, row);
+                row_text.fill(start, row);
                 let lit = selected.as_ref().and_then(|sel| lit(sel, start, row.len()));
                 let rect = ui.rect();
-                let lefts = line(ui, style(c.dim), style(c.text), &columns, true, lit);
+                let lefts = line(ui, style(c.dim), style(c.text), &row_text, true, lit);
                 if let (Some(rect), Some([_, y])) = (rect, pointer) {
                     if seen.row.is_none() || y >= rect.y {
                         seen.row = Some(index);
@@ -411,7 +411,7 @@ fn shown(byte: u8) -> char {
     }
 }
 
-impl Columns {
+impl RowText {
     /// Up to [`ROW`] bytes from `offset`, the hex padded out to a whole row's
     /// width so the ASCII lines up under a short last row.
     fn fill(&mut self, offset: usize, row: &[u8]) {
@@ -438,23 +438,23 @@ impl Columns {
 }
 
 /// Names the columns: each byte's place in its row, over its hex.
-fn header(columns: &mut Columns) {
-    columns.offset.clear();
-    columns.offset.push_str("Offset  ");
-    columns.hex.clear();
+fn header(row_text: &mut RowText) {
+    row_text.offset.clear();
+    row_text.offset.push_str("Offset  ");
+    row_text.hex.clear();
     for at in 0..ROW {
         if at > 0 {
-            columns.hex.push(' ');
+            row_text.hex.push(' ');
         }
         if at == HALF {
-            columns.hex.push(' ');
+            row_text.hex.push(' ');
         }
-        let _ = write!(columns.hex, "{at:02X}");
+        let _ = write!(row_text.hex, "{at:02X}");
     }
-    columns.ascii.clear();
+    row_text.ascii.clear();
 }
 
-/// One row of `columns`, the offset in `dim` and the rest in `text`, lit
+/// One row of `row_text`, the offset in `dim` and the rest in `text`, lit
 /// under the pointer while `hover`, with the `selected` bytes, from the
 /// row's first, lit in both columns. Returns where the hex and the ASCII
 /// started across last pass.
@@ -462,7 +462,7 @@ fn line(
     ui: &mut Ui,
     dim: TextStyle,
     text: TextStyle,
-    columns: &Columns,
+    row_text: &RowText,
     hover: bool,
     selected: Option<Range<usize>>,
 ) -> Option<[f32; 2]> {
@@ -484,12 +484,12 @@ fn line(
         if hover {
             ui.style().background = ui.hovered().then_some(c.hover);
         }
-        ui.text(dim, &columns.offset);
-        let hex = ui.text_layered(text, &columns.hex, hex.as_slice(), None)?;
-        if columns.ascii.is_empty() {
+        ui.text(dim, &row_text.offset);
+        let hex = ui.text_layered(text, &row_text.hex, hex.as_slice(), None)?;
+        if row_text.ascii.is_empty() {
             return None;
         }
-        let ascii = ui.text_layered(dim, &columns.ascii, ascii.as_slice(), None)?;
+        let ascii = ui.text_layered(dim, &row_text.ascii, ascii.as_slice(), None)?;
         Some([hex.x, ascii.x])
     })
 }
@@ -500,23 +500,23 @@ mod tests {
 
     #[test]
     fn a_row_shows_its_offset_hex_and_ascii() {
-        let mut columns = Columns::default();
-        columns.fill(0x20, b"RARC\x00\x01 ~\xff0123456");
-        assert_eq!(columns.offset, "00000020");
+        let mut row_text = RowText::default();
+        row_text.fill(0x20, b"RARC\x00\x01 ~\xff0123456");
+        assert_eq!(row_text.offset, "00000020");
         assert_eq!(
-            columns.hex,
+            row_text.hex,
             "52 41 52 43 00 01 20 7E  FF 30 31 32 33 34 35 36"
         );
-        assert_eq!(columns.ascii, "RARC.. ~.0123456");
+        assert_eq!(row_text.ascii, "RARC.. ~.0123456");
     }
 
     #[test]
     fn a_short_row_pads_its_hex_to_a_whole_row() {
-        let mut columns = Columns::default();
-        columns.fill(0x10, b"ab");
-        assert_eq!(columns.hex.len(), ROW * 3);
-        assert!(columns.hex.starts_with("61 62 "));
-        assert_eq!(columns.ascii, "ab");
+        let mut row_text = RowText::default();
+        row_text.fill(0x10, b"ab");
+        assert_eq!(row_text.hex.len(), ROW * 3);
+        assert!(row_text.hex.starts_with("61 62 "));
+        assert_eq!(row_text.ascii, "ab");
     }
 
     #[test]
@@ -557,11 +557,11 @@ mod tests {
 
     #[test]
     fn each_glyph_of_a_bytes_hex_picks_it() {
-        let mut columns = Columns::default();
-        columns.fill(0, &[0; ROW]);
+        let mut row_text = RowText::default();
+        row_text.fill(0, &[0; ROW]);
         for at in 0..ROW {
             let start = hex_at(at);
-            assert_eq!(columns.hex.get(start..start + 2), Some("00"));
+            assert_eq!(row_text.hex.get(start..start + 2), Some("00"));
             assert_eq!(Column::Hex.byte(start), at);
             assert_eq!(Column::Hex.byte(start + 1), at);
             assert_eq!(Column::Ascii.byte(at), at);
@@ -569,7 +569,7 @@ mod tests {
         // The spaces after a byte, the half's two included, pick it.
         assert_eq!(Column::Hex.byte(hex_at(HALF) - 1), HALF - 1);
         assert_eq!(Column::Hex.byte(hex_at(HALF) - 2), HALF - 1);
-        assert_eq!(Column::Hex.byte(columns.hex.len() + 5), ROW - 1);
+        assert_eq!(Column::Hex.byte(row_text.hex.len() + 5), ROW - 1);
     }
 
     #[test]
@@ -585,7 +585,7 @@ mod tests {
 
     #[test]
     fn the_header_lines_up_with_a_row() {
-        let (mut heading, mut row) = (Columns::default(), Columns::default());
+        let (mut heading, mut row) = (RowText::default(), RowText::default());
         header(&mut heading);
         row.fill(0, &[0; ROW]);
         assert_eq!(heading.offset.len(), row.offset.len());
