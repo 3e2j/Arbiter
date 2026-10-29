@@ -3,7 +3,6 @@
 
 mod file;
 mod file_tree;
-mod hex;
 mod output;
 mod popover;
 
@@ -14,7 +13,6 @@ use crate::workspace::Places;
 
 pub use file::File;
 pub use file_tree::FileTree;
-pub use hex::Hex;
 pub use output::{Capture, Output};
 
 /// What a panel is, as the session saves its tab.

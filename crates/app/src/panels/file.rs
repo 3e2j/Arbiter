@@ -5,8 +5,7 @@ use std::io;
 use gui::ui::Ui;
 use serde::{Deserialize, Serialize};
 
-use super::hex::{Hex, HexState};
-use crate::components::notice;
+use crate::components::{Hex, HexState, notice};
 use crate::workspace::Places;
 
 pub struct File {

@@ -124,6 +124,7 @@ impl Hex {
     };
 
     /// Scrolled where `state` left it. A list shorter than that clamps it.
+    #[must_use]
     pub const fn from_state(state: &HexState) -> Self {
         Self {
             scroll: ListScroll::at(state.offset / ROW),
@@ -131,6 +132,7 @@ impl Hex {
         }
     }
 
+    #[must_use]
     pub const fn state(&self) -> HexState {
         HexState {
             offset: self.scroll.top * ROW,
