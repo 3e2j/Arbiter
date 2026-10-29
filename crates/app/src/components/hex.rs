@@ -9,7 +9,7 @@
 use std::{fmt::Write, ops::Range};
 
 use crate::components::{ContextMenu, ListScroll, MenuItem, context_menu, indexed_list, rule};
-use crate::keymap::{self, AppCommand, Chord, ChordAction, KeyContext};
+use crate::keymap::{self, AppCommand, Chord, KeyContext};
 use gui::{
     input::{Key, Modifiers, PointerButton},
     ui::{Element, TextHighlight, TextStyle, Ui},
@@ -218,10 +218,8 @@ impl Picking {
             return;
         }
         let input = ui.input();
-        for &press in input.keys() {
-            if let Some(ChordAction::Command(command)) = keymap::resolve(press, &[HEX]) {
-                self.act(ui, command, bytes);
-            }
+        for command in keymap::commands(input.keys(), &[HEX]) {
+            self.act(ui, command, bytes);
         }
     }
 

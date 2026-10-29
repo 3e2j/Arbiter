@@ -4,12 +4,12 @@
 //! Includes Search, Filter, and View options.
 
 mod row;
-mod view;
+mod tab_state;
 
 use crate::components::{
     self, IconState, TextField, icon_button, list, notice, rule, text_field, toolbar,
 };
-use crate::keymap::{self, AppCommand, Chord, ChordAction, KeyContext};
+use crate::keymap::{self, AppCommand, Chord, KeyContext};
 use gui::{
     input::{CursorIcon, Key, Modifiers, PointerButton},
     ui::{Align, Direction, Element, Length, Ui},
@@ -22,7 +22,7 @@ use crate::assets::Icon;
 use crate::commands::Command;
 use crate::workspace::Places;
 use row::{Columns, row_ui};
-use view::View;
+use tab_state::TabState;
 
 use crate::components::popover::{WIDTH as POPOVER, check, heading};
 use crate::theme;
@@ -89,7 +89,7 @@ impl Default for FilesView {
 struct Opened {
     trees: Trees,
     /// By [`Tab`].
-    views: [View; Tab::ALL.len()],
+    states: [TabState; Tab::ALL.len()],
 }
 
 pub struct FileTree {
@@ -172,8 +172,8 @@ impl FileTree {
             trees.game.sort(self.order);
             trees.project.sort(self.order);
         }
-        let views = [View::new(), View::new()];
-        self.opened = Some(Box::new(Opened { trees, views }));
+        let states = [TabState::new(), TabState::new()];
+        self.opened = Some(Box::new(Opened { trees, states }));
         self.filter.editions = 0;
     }
 
@@ -195,7 +195,7 @@ impl FileTree {
         if trees.game.editions != opened.trees.game.editions {
             self.filter.editions = 0;
         }
-        let [project, game] = &mut opened.views;
+        let [project, game] = &mut opened.states;
         project.remap(&opened.trees.project.ids_in(&trees.project));
         game.remap(&opened.trees.game.ids_in(&trees.game));
         opened.trees = trees;
@@ -221,22 +221,22 @@ impl FileTree {
             return;
         };
         let sort = |tree: &mut Tree| -> Vec<_> { tree.sort(order).into_iter().map(Some).collect() };
-        let [project, game] = &mut opened.views;
+        let [project, game] = &mut opened.states;
         project.remap(&sort(&mut opened.trees.project));
         game.remap(&sort(&mut opened.trees.game));
     }
 
     /// Rebuilds every tab's rows.
     fn restale(&mut self) {
-        for view in self.opened.iter_mut().flat_map(|opened| &mut opened.views) {
-            view.stale = true;
+        for state in self.opened.iter_mut().flat_map(|opened| &mut opened.states) {
+            state.stale = true;
         }
     }
 
     /// Rebuilds every tab's rows from the top for a new search or filter.
     fn renarrow(&mut self) {
-        for view in self.opened.iter_mut().flat_map(|opened| &mut opened.views) {
-            view.renarrow();
+        for state in self.opened.iter_mut().flat_map(|opened| &mut opened.states) {
+            state.renarrow();
         }
     }
 
@@ -258,12 +258,12 @@ impl FileTree {
             Tab::Game => &opened.trees.game,
             Tab::Project => &opened.trees.project,
         };
-        let view = &mut opened.views[self.tab as usize];
+        let state = &mut opened.states[self.tab as usize];
         if tree.is_empty() {
             return notice(ui, "Nothing here yet");
         }
-        view.rebuild(tree, query, filter, self.compact);
-        if view.rows.is_empty() {
+        state.rebuild(tree, query, filter, self.compact);
+        if state.rows.is_empty() {
             return notice(ui, "No matches");
         }
         let height = theme::current().size.row;
@@ -272,17 +272,17 @@ impl FileTree {
             letters: self.letters,
         };
         let mut clicked = None;
-        let mut scroll = view.scroll;
-        list(ui, &mut scroll, &view.rows, height, |ui, &row| {
-            let open = view.is_open(row.last);
-            let selected = view.selected == Some(row.last);
+        let mut scroll = state.scroll;
+        list(ui, &mut scroll, &state.rows, height, |ui, &row| {
+            let open = state.is_open(row.last);
+            let selected = state.selected == Some(row.last);
             if row_ui(ui, tree, row, open, selected, columns) {
                 clicked = Some(row.last);
             }
         });
-        view.scroll = scroll;
+        state.scroll = scroll;
         if let Some(id) = clicked {
-            view.selected = Some(id);
+            state.selected = Some(id);
             if tree[id].kind == NodeKind::File && ui.input().pressed_again(PointerButton::Left) {
                 let mut path = String::new();
                 let found = match self.tab {
@@ -302,7 +302,7 @@ impl FileTree {
                 }
             }
             if tree[id].kind == NodeKind::Folder {
-                view.toggle(id);
+                state.toggle(id);
             }
         }
     }
@@ -310,10 +310,7 @@ impl FileTree {
     /// The search across, then Filter on the Game tab, then View.
     fn toolbar(&mut self, ui: &mut Ui) {
         let input = ui.input();
-        let focus = input
-            .keys()
-            .iter()
-            .any(|&press| keymap::resolve(press, &[FILES]) == Some(ChordAction::Command(SEARCH)));
+        let focus = keymap::commands(input.keys(), &[FILES]).any(|command| command == SEARCH);
         if self.active && focus && !ui.typing() {
             self.search.focus = true;
         }

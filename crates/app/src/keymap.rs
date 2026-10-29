@@ -28,6 +28,16 @@ pub fn resolve(press: KeyPress, contexts: &[KeyContext]) -> Option<ChordAction> 
     CURRENT.with_borrow(|keymap| keymap.resolve(press, contexts))
 }
 
+/// The commands `keys` do in `contexts`, as [`resolve`] finds them, in the
+/// order pressed.
+pub fn commands(keys: &[KeyPress], contexts: &[KeyContext]) -> impl Iterator<Item = AppCommand> {
+    keys.iter()
+        .filter_map(|&press| match resolve(press, contexts)? {
+            ChordAction::Command(command) => Some(command),
+            _ => None,
+        })
+}
+
 /// Looks presses up in `keymap` from now on, in place of the one before.
 pub fn set(keymap: Keymap) {
     CURRENT.set(keymap);

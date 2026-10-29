@@ -11,7 +11,7 @@ mod widgets;
 use std::path::PathBuf;
 
 use crate::components::{IconState, Scroll, icon_button, notice, rule, scroll, spacer};
-use crate::keymap::{self, AppCommand, Chord, ChordAction, KeyContext, Keymap};
+use crate::keymap::{self, AppCommand, Chord, KeyContext, Keymap};
 use gui::{
     anim::{Tween, ease_out},
     canvas::Color,
@@ -234,11 +234,7 @@ impl Settings {
         } else {
             ui.input().keys()
         };
-        for &press in keys {
-            let Some(ChordAction::Command(command)) = keymap::resolve(press, &[KeyContext::GLOBAL])
-            else {
-                continue;
-            };
+        for command in keymap::commands(keys, &[KeyContext::GLOBAL]) {
             match command {
                 TOGGLE => toggled = true,
                 ZOOM_IN => self.appearance.step_zoom(true),
