@@ -180,8 +180,16 @@ impl Messages {
         inspection.crumb(format_args!("Message {id}"));
         inspection.card("Message", id);
         inspection.section("Entry");
-        inspection.number("Position", index);
-        inspection.bytes("Attributes", &message.attributes);
+        inspection.number(
+            "Position",
+            index,
+            "Where it sits in the file, from 0. Flows name a message by this.",
+        );
+        inspection.bytes(
+            "Attributes",
+            &message.attributes,
+            "The bytes beside its text offset, as stored.",
+        );
         Some(inspection)
     }
 }

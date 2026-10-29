@@ -2,6 +2,8 @@
 
 mod menu;
 mod popover;
+mod tooltip;
 
 pub use menu::{ContextMenu, MenuItem, context_menu};
 pub use popover::popover;
+pub use tooltip::{Tooltip, tooltip};

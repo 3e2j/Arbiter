@@ -37,7 +37,8 @@ impl Kind {
     const fn pieces(self) -> usize {
         match self {
             Self::Crumb | Self::Section => 1,
-            Self::Card | Self::Field(_) => 2,
+            Self::Card => 2,
+            Self::Field(_) => 3,
         }
     }
 }
@@ -54,6 +55,8 @@ pub enum Row<'a> {
     Field {
         label: &'a str,
         value: &'a str,
+        /// What it does, for its tooltip. May be empty.
+        help: &'a str,
         kind: FieldKind,
     },
 }
@@ -71,18 +74,18 @@ impl Inspection {
         self.push(Kind::Section, [&title as &dyn Display]);
     }
 
-    pub fn number(&mut self, label: impl Display, value: impl Display) {
+    pub fn number(&mut self, label: impl Display, value: impl Display, help: impl Display) {
         self.push(
             Kind::Field(FieldKind::Number),
-            [&label as &dyn Display, &value],
+            [&label as &dyn Display, &value, &help],
         );
     }
 
-    pub fn bytes(&mut self, label: impl Display, bytes: &[u8]) {
+    pub fn bytes(&mut self, label: impl Display, bytes: &[u8], help: impl Display) {
         let hex = Hex(bytes);
         self.push(
             Kind::Field(FieldKind::Bytes),
-            [&label as &dyn Display, &hex],
+            [&label as &dyn Display, &hex, &help],
         );
     }
 
@@ -114,6 +117,7 @@ impl Inspection {
             &Kind::Field(kind) => Row::Field {
                 label: next(),
                 value: next(),
+                help: next(),
                 kind,
             },
         })
@@ -146,8 +150,8 @@ mod tests {
         inspection.crumb(format_args!("Message {}", 12));
         inspection.card("Message", 12);
         inspection.section("Box");
-        inspection.number("Kind", 3);
-        inspection.bytes("Attributes", &[0, 0x1F]);
+        inspection.number("Kind", 3, "Which box.");
+        inspection.bytes("Attributes", &[0, 0x1F], "");
         assert_eq!(
             inspection.rows().collect::<Vec<_>>(),
             [
@@ -161,11 +165,13 @@ mod tests {
                 Row::Field {
                     label: "Kind",
                     value: "3",
+                    help: "Which box.",
                     kind: FieldKind::Number
                 },
                 Row::Field {
                     label: "Attributes",
                     value: "00 1F",
+                    help: "",
                     kind: FieldKind::Bytes
                 },
             ]
