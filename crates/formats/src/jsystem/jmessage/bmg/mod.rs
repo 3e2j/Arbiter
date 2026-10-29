@@ -24,8 +24,7 @@
 //! MID1, and one with no conversations has neither flow section.
 //!
 //! What a tag means, what an event does, and which attribute byte holds the
-//! speaker are the game's business (`super::games`), so text and attributes
-//! stay raw.
+//! speaker are the game's business, so text and attributes stay raw.
 
 mod decode;
 mod encode;

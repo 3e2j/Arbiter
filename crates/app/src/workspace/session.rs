@@ -263,7 +263,7 @@ mod tests {
         let text = r#"
             [[docks]]
             place = "main"
-            tabs = [{ kind = "file", state = { path = "files/a.bin", view = "hex", hex = { offset = 4096 } } }]
+            tabs = [{ kind = "file", state = { path = "files/a.bin", hex = { offset = 4096 } } }]
         "#;
         let session = Session::parse(text).unwrap();
         let workspace = Workspace::new(&session);
@@ -276,7 +276,7 @@ mod tests {
         let text = r#"
             [[docks]]
             place = "main"
-            tabs = [{ kind = "file" }, { kind = "file", state = { view = "hex" } }, { kind = "file", state = { path = "a.bin", view = "hex", hex = { offset = 0 } } }]
+            tabs = [{ kind = "file" }, { kind = "file", state = { hex = { offset = 0 } } }, { kind = "file", state = { path = "a.bin", hex = { offset = 0 } } }]
         "#;
         let workspace = Workspace::new(&Session::parse(text).unwrap());
         assert_eq!(titles(&workspace, Place::Main), ["a.bin"]);

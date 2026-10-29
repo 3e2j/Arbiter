@@ -1,35 +1,19 @@
-//! A file's tab: its bytes, and the views that show them.
-//!
-//! Hex shows any file. A format with an editor opens in it instead, with a
-//! switch above to flick back to hex. Each view keeps its own place.
+//! A file's tab: its bytes, in hex.
 
 use std::io;
 
-use diag::Diagnostics;
-use formats::Decode;
-use formats::jsystem::jmessage::bmg::Bmg;
-use formats::jsystem::jmessage::games::Tables;
-use gui::ui::{Element, Length, Ui};
+use gui::ui::Ui;
 use serde::{Deserialize, Serialize};
 
 use super::hex::{Hex, HexState};
-use super::messages::Messages;
-use crate::components::{notice, segmented, toolbar};
-use crate::views::Inspection;
+use crate::components::notice;
 use crate::workspace::Places;
-
-/// The switch's width, enough for both views' names.
-const SWITCH: f32 = 180.;
 
 pub struct File {
     /// Relative to the project's root.
     path: String,
     bytes: Bytes,
-    view: View,
     hex: Hex,
-    /// `None` until read, or for a file whose format has no editor.
-    /// Boxed, as most files have none and it's the bulk of the tab.
-    editor: Option<Box<Editor>>,
 }
 
 enum Bytes {
@@ -40,27 +24,11 @@ enum Bytes {
     Failed(String),
 }
 
-/// The editor for the file's format.
-enum Editor {
-    Messages(Messages),
-}
-
-#[derive(Serialize, Deserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-enum View {
-    /// The format's editor, or hex for a format without one.
-    #[default]
-    Editor,
-    Hex,
-}
-
 /// A file's tab as the session keeps it.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct FileState {
     /// Relative to the project's root.
     path: String,
-    #[serde(default)]
-    view: View,
     #[serde(default)]
     hex: HexState,
 }
@@ -74,16 +42,13 @@ impl File {
         Self {
             path,
             bytes: Bytes::Loading,
-            view: View::Editor,
             hex: Hex::NEW,
-            editor: None,
         }
     }
 
-    /// In the view `state` left it in, once it's [`Self::load`]ed.
+    /// Where `state` left it, once it's [`Self::load`]ed.
     pub fn from_state(state: FileState) -> Self {
         Self {
-            view: state.view,
             hex: Hex::from_state(&state.hex),
             ..Self::new(state.path)
         }
@@ -92,7 +57,6 @@ impl File {
     pub fn state(&self) -> FileState {
         FileState {
             path: self.path.clone(),
-            view: self.view,
             hex: self.hex.state(),
         }
     }
@@ -106,94 +70,21 @@ impl File {
         self.path.rsplit('/').next().unwrap_or(&self.path)
     }
 
-    /// Shows what reading the file gave, with nothing selected. `tables`
-    /// name what the file's game means by its values, when known.
-    pub fn load(&mut self, read: io::Result<Vec<u8>>, tables: Option<Tables>) {
+    /// Shows what reading the file gave.
+    pub fn load(&mut self, read: io::Result<Vec<u8>>) {
         self.hex.reload();
-        self.editor = None;
         self.bytes = match read {
-            Ok(bytes) => {
-                self.editor = Editor::open(self.title(), &self.path, &bytes, tables).map(Box::new);
-                Bytes::Read(bytes)
-            }
+            Ok(bytes) => Bytes::Read(bytes),
             Err(err) => Bytes::Failed(format!("Can't read {}: {err}", self.path)),
         };
     }
 
-    /// The key of what's selected in its editor, while that's shown.
-    pub fn selection(&self) -> Option<usize> {
-        match (self.view, self.editor.as_deref()) {
-            (View::Editor, Some(Editor::Messages(messages))) => messages.selected(),
-            _ => None,
-        }
-    }
-
-    /// What `key` names in its editor, as the Inspector shows it.
-    pub fn inspect(&self, key: usize) -> Option<Inspection> {
-        match self.editor.as_deref() {
-            Some(Editor::Messages(messages)) => messages.inspect(key),
-            None => None,
-        }
-    }
-
     pub fn ui(&mut self, ui: &mut Ui) {
-        let bytes = match &self.bytes {
-            Bytes::Loading => return notice(ui, "Loading…"),
-            Bytes::Failed(err) => return notice(ui, err),
-            Bytes::Read(bytes) => bytes,
-        };
-        if let Some(editor) = &self.editor {
-            let at = match self.view {
-                View::Editor => 0,
-                View::Hex => 1,
-            };
-            let switch = Element {
-                size: [Length::Fixed(SWITCH), Length::Fit],
-                ..Element::DEFAULT
-            };
-            let picked = toolbar(ui, |ui| {
-                ui.element(switch, |ui| segmented(ui, &[editor.name(), "Hex"], at))
-            });
-            match picked {
-                Some(0) => self.view = View::Editor,
-                Some(1) => self.view = View::Hex,
-                _ => {}
-            }
-        }
-        match (self.view, self.editor.as_deref_mut()) {
-            (View::Editor, Some(Editor::Messages(messages))) => messages.ui(ui),
-            _ if bytes.is_empty() => notice(ui, "Empty file"),
-            _ => self.hex.ui(ui, bytes),
-        }
-    }
-}
-
-impl Editor {
-    /// The editor for `bytes`' format, or `None` when it has none or they
-    /// don't decode, which leaves them to hex. `title` names the file in
-    /// what it publishes.
-    fn open(title: &str, path: &str, bytes: &[u8], tables: Option<Tables>) -> Option<Self> {
-        if !Bmg::detect(bytes) {
-            return None;
-        }
-        let mut diag = Diagnostics::default();
-        match Bmg::decode(bytes, &mut diag) {
-            Ok(bmg) => {
-                for item in &diag.items {
-                    tracing::warn!("{path}: {}", item.message);
-                }
-                Some(Self::Messages(Messages::new(title, bmg, tables)))
-            }
-            Err(err) => {
-                tracing::warn!("can't read {path} as a message file: {err}");
-                None
-            }
-        }
-    }
-
-    const fn name(&self) -> &'static str {
-        match self {
-            Self::Messages(_) => "Messages",
+        match &self.bytes {
+            Bytes::Loading => notice(ui, "Loading…"),
+            Bytes::Failed(err) => notice(ui, err),
+            Bytes::Read(bytes) if bytes.is_empty() => notice(ui, "Empty file"),
+            Bytes::Read(bytes) => self.hex.ui(ui, bytes),
         }
     }
 }
@@ -206,20 +97,10 @@ mod tests {
     fn its_state_keeps_its_view() {
         let state = || FileState {
             path: "files/a.bin".to_owned(),
-            view: View::Hex,
             hex: HexState::default(),
         };
         let file = File::from_state(state());
         assert_eq!(file.title(), "a.bin");
         assert_eq!(file.state(), state());
-    }
-
-    #[test]
-    fn bytes_without_an_editor_stay_hex() {
-        let mut file = File::new("a.bin".to_owned());
-        file.load(Ok(b"RARC".to_vec()), None);
-        assert!(file.editor.is_none());
-        file.load(Ok(b"MESGbmg1 broken".to_vec()), None);
-        assert!(file.editor.is_none());
     }
 }

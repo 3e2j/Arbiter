@@ -1,25 +1,20 @@
 //! What the user works in, one per tab. Each panel is its own state plus a
-//! title and a `ui`, and knows no other panel. A document's selection is a
-//! key, which it builds an [`Inspection`] of.
+//! title and a `ui`, and knows no other panel.
 
 mod file;
 mod files;
 mod hex;
-mod inspector;
-mod messages;
 mod output;
 mod popover;
 
 use gui::ui::Ui;
 use serde::{Deserialize, Serialize};
 
-use crate::views::Inspection;
 use crate::workspace::Places;
 
 pub use file::File;
 pub use files::Files;
 pub use hex::Hex;
-pub use inspector::Inspector;
 pub use output::{Capture, Output};
 
 /// What a panel is, as the session saves its tab.
@@ -29,7 +24,6 @@ pub enum PanelKind {
     Files,
     File,
     Output,
-    Inspector,
 }
 
 impl PanelKind {
@@ -39,7 +33,6 @@ impl PanelKind {
             Self::Files => Files::TITLE,
             Self::File => "File",
             Self::Output => Output::TITLE,
-            Self::Inspector => Inspector::TITLE,
         }
     }
 }
@@ -49,7 +42,6 @@ pub enum Panel {
     Files(Files),
     File(File),
     Output(Output),
-    Inspector(Inspector),
 }
 
 impl Panel {
@@ -72,7 +64,6 @@ impl Panel {
                 };
             }
             PanelKind::Output => Self::Output(Output::new()),
-            PanelKind::Inspector => Self::Inspector(Inspector::new()),
         };
         if let Some(state) = state {
             panel.restore(state.clone());
@@ -87,7 +78,6 @@ impl Panel {
             Self::Files(_) => PanelKind::Files,
             Self::File(_) => PanelKind::File,
             Self::Output(_) => PanelKind::Output,
-            Self::Inspector(_) => PanelKind::Inspector,
         }
     }
 
@@ -100,7 +90,7 @@ impl Panel {
             Self::File(panel) => toml::Value::try_from(panel.state())
                 .inspect_err(|err| tracing::warn!("can't save {}'s tab: {err}", panel.path()))
                 .ok(),
-            Self::Output(_) | Self::Inspector(_) => None,
+            Self::Output(_) => None,
         }
     }
 
@@ -112,7 +102,7 @@ impl Panel {
                 Ok(view) => panel.set_view(view),
                 Err(err) => tracing::warn!("the files panel's view isn't readable: {err}"),
             },
-            Self::File(_) | Self::Output(_) | Self::Inspector(_) => {}
+            Self::File(_) | Self::Output(_) => {}
         }
     }
 
@@ -121,7 +111,6 @@ impl Panel {
             Self::Files(_) => Files::TITLE,
             Self::File(panel) => panel.title(),
             Self::Output(_) => Output::TITLE,
-            Self::Inspector(panel) => panel.title(),
         }
     }
 
@@ -130,24 +119,7 @@ impl Panel {
         match self {
             Self::Files(_) => Files::PLACES,
             Self::File(_) => File::PLACES,
-            Self::Output(_) | Self::Inspector(_) => Places::BANDS,
-        }
-    }
-
-    /// The document's path and the key of what's selected in it, when it's
-    /// a document with something selected.
-    pub fn selection(&self) -> Option<(&str, usize)> {
-        match self {
-            Self::File(panel) => Some((panel.path(), panel.selection()?)),
-            Self::Files(_) | Self::Output(_) | Self::Inspector(_) => None,
-        }
-    }
-
-    /// What `key` names in it, when it's a document.
-    pub fn inspect(&self, key: usize) -> Option<Inspection> {
-        match self {
-            Self::File(panel) => panel.inspect(key),
-            Self::Files(_) | Self::Output(_) | Self::Inspector(_) => None,
+            Self::Output(_) => Places::BANDS,
         }
     }
 
@@ -157,7 +129,6 @@ impl Panel {
             Self::Files(panel) => panel.ui(ui),
             Self::File(panel) => panel.ui(ui),
             Self::Output(panel) => panel.ui(ui),
-            Self::Inspector(panel) => panel.ui(ui),
         }
     }
 }
