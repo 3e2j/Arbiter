@@ -2,7 +2,7 @@
 //! frame. Each ask is read once, in the order asked.
 
 use std::{
-    fs, io,
+    io,
     path::PathBuf,
     sync::mpsc::{self, Receiver, Sender},
     thread,
@@ -13,13 +13,13 @@ use gui::host::Wake;
 /// A file's bytes, or why they couldn't be read.
 pub type Loaded = (PathBuf, io::Result<Vec<u8>>);
 
-pub struct Loader {
+pub struct FileLoader {
     // Dropping it ends the thread once a read in flight is done.
     asks: Sender<PathBuf>,
     loads: Receiver<Loaded>,
 }
 
-impl Loader {
+impl FileLoader {
     /// Reads each file asked for, and wakes the window with it.
     ///
     /// # Errors
@@ -49,7 +49,7 @@ impl Loader {
 /// Until the loader is dropped.
 fn load(asked: &Receiver<PathBuf>, done: &Sender<Loaded>, wake: &Wake) {
     for path in asked {
-        let bytes = fs::read(&path);
+        let bytes = std::fs::read(&path);
         if done.send((path, bytes)).is_err() {
             return;
         }

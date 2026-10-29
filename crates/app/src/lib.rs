@@ -7,8 +7,8 @@
 mod assets;
 mod commands;
 pub mod components;
-mod disk;
 pub mod edit;
+mod fs;
 pub mod keymap;
 mod panels;
 mod settings;
@@ -18,7 +18,7 @@ mod workspace;
 use std::sync::Arc;
 
 use components::ContextMenu;
-use disk::{Loader, TreeReader, Watch};
+use fs::{FileLoader, TreeReader, Watch};
 use gui::{
     host::{App, Startup, Wake, WindowStyle},
     input::Input,
@@ -74,7 +74,7 @@ struct Editor {
     /// The open project's, unless its thread couldn't start.
     reader: Option<TreeReader>,
     /// Unless its thread couldn't start.
-    loader: Option<Loader>,
+    loader: Option<FileLoader>,
     wake: Wake,
 }
 
@@ -178,7 +178,7 @@ impl App for Editor {
             project: None,
             watch: None,
             reader: None,
-            loader: Loader::new(start.wake.clone())
+            loader: FileLoader::new(start.wake.clone())
                 .inspect_err(|err| tracing::warn!("can't start reading files to open: {err}"))
                 .ok(),
             wake: start.wake.clone(),
@@ -213,7 +213,7 @@ impl App for Editor {
             None => {}
         }
         let project = self.project.as_deref();
-        for (path, read) in self.loader.iter().flat_map(Loader::take) {
+        for (path, read) in self.loader.iter().flat_map(FileLoader::take) {
             let file = self.workspace.panels_mut().find_map(|panel| match panel {
                 Panel::OpenFile(file)
                     if project.is_some_and(|p| p.root.join(file.path()) == path) =>

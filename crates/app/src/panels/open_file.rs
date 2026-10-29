@@ -16,7 +16,7 @@ pub struct OpenFile {
 }
 
 enum Bytes {
-    /// Asked of the [`Loader`](crate::disk::Loader), not back yet.
+    /// Asked of the [`FileLoader`](crate::fs::FileLoader), not back yet.
     Loading,
     Read(Vec<u8>),
     /// Why it couldn't be read.
