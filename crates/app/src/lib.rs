@@ -101,7 +101,7 @@ impl Editor {
         if let Some(loader) = &self.loader {
             for panel in self.workspace.panels_mut() {
                 if let Panel::OpenFile(file) = panel {
-                    loader.ask(root.join(file.path()));
+                    file.load(loader.ask(root.join(file.path())));
                 }
             }
         }
@@ -135,9 +135,9 @@ impl Editor {
         {
             return;
         }
-        loader.ask(project.root.join(path));
-        self.workspace
-            .add(Place::Main, Panel::OpenFile(OpenFile::new(path.to_owned())));
+        let mut file = OpenFile::new(path.to_owned());
+        file.load(loader.ask(project.root.join(path)));
+        self.workspace.add(Place::Main, Panel::OpenFile(file));
     }
 
     /// What the keys pressed this pass do: as text while a box has the
@@ -224,21 +224,6 @@ impl App for Editor {
             }
             Some(Err(err)) => tracing::warn!("can't read the project's files: {err}"),
             None => {}
-        }
-        let project = self.project.as_deref();
-        for (path, read) in self.loader.iter().flat_map(FileLoader::take) {
-            let file = self.workspace.panels_mut().find_map(|panel| match panel {
-                Panel::OpenFile(file)
-                    if project.is_some_and(|p| p.root.join(file.path()) == path) =>
-                {
-                    Some(file)
-                }
-                _ => None,
-            });
-            // Closed before it was read.
-            if let Some(file) = file {
-                file.load(read);
-            }
         }
         self.workspace.input(input);
         if let Some(palette) = self.settings.take_changed() {

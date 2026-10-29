@@ -3,11 +3,13 @@
 mod hex;
 
 use std::io;
+use std::sync::mpsc::{Receiver, TryRecvError};
 
 use gui::ui::Ui;
 use serde::{Deserialize, Serialize};
 
 use crate::components::notice;
+use crate::fs::Loaded;
 use crate::keymap::AppCommand;
 use crate::workspace::Places;
 use hex::HexState;
@@ -22,8 +24,10 @@ pub struct OpenFile {
 }
 
 enum Bytes {
+    /// Until [`OpenFile::load`] is given them to wait on.
+    Unasked,
     /// Asked of the [`FileLoader`](crate::fs::FileLoader), not back yet.
-    Loading,
+    Loading(Receiver<Loaded>),
     Read(Vec<u8>),
     /// Why it couldn't be read.
     Failed(String),
@@ -46,7 +50,7 @@ impl OpenFile {
     pub const fn new(path: String) -> Self {
         Self {
             path,
-            bytes: Bytes::Loading,
+            bytes: Bytes::Unasked,
             hex: Hex::NEW,
         }
     }
@@ -75,8 +79,21 @@ impl OpenFile {
         self.path.rsplit('/').next().unwrap_or(&self.path)
     }
 
-    /// Shows what reading the file gave.
-    pub fn load(&mut self, read: io::Result<Vec<u8>>) {
+    /// Shows the bytes `loading` brings, once they come.
+    pub fn load(&mut self, loading: Receiver<Loaded>) {
+        self.bytes = Bytes::Loading(loading);
+    }
+
+    /// Takes the bytes it's waiting on, if they came.
+    fn poll(&mut self) {
+        let Bytes::Loading(loading) = &self.bytes else {
+            return;
+        };
+        let read = match loading.try_recv() {
+            Ok(read) => read,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => Err(io::Error::other("the loader stopped")),
+        };
         self.hex.reload();
         self.bytes = match read {
             Ok(bytes) => Bytes::Read(bytes),
@@ -95,8 +112,9 @@ impl OpenFile {
     }
 
     pub fn ui(&mut self, ui: &mut Ui) {
+        self.poll();
         match &self.bytes {
-            Bytes::Loading => notice(ui, "Loading…"),
+            Bytes::Unasked | Bytes::Loading(_) => notice(ui, "Loading…"),
             Bytes::Failed(err) => notice(ui, err),
             Bytes::Read(bytes) if bytes.is_empty() => notice(ui, "Empty file"),
             Bytes::Read(bytes) => self.hex.ui(ui, bytes),

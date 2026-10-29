@@ -8,6 +8,6 @@ pub mod settings;
 mod tree_reader;
 mod watch;
 
-pub use file_loader::FileLoader;
+pub use file_loader::{FileLoader, Loaded};
 pub use tree_reader::TreeReader;
 pub use watch::Watch;
