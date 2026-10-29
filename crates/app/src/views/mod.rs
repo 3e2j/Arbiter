@@ -4,7 +4,7 @@
 mod inspection;
 mod lines;
 
-pub use inspection::{FieldKind, Inspection, Row};
+pub use inspection::{Field, FieldKind, Inspection, Row};
 #[cfg(test)]
 pub use lines::RunKind;
 pub use lines::{Find, Lines, line};

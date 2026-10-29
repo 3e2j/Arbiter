@@ -22,7 +22,16 @@ use crate::components::{
     self, ListScroll, TextField, fit_list, line_box, notice, text_field, toggle, toolbar,
 };
 use crate::theme;
-use crate::views::{self, Find, Inspection, Lines};
+use crate::views::{self, Field, Find, Inspection, Lines};
+
+const POSITION: Field = Field {
+    label: "Position",
+    help: Some("Where it sits in the file, from 0. Flows name a message by this."),
+};
+const ATTRIBUTES: Field = Field {
+    label: "Attributes",
+    help: Some("The bytes beside its text offset, as stored."),
+};
 
 pub struct Messages {
     /// The file's name, the root of the breadcrumb.
@@ -180,16 +189,8 @@ impl Messages {
         inspection.crumb(format_args!("Message {id}"));
         inspection.card("Message", id);
         inspection.section("Entry");
-        inspection.number(
-            "Position",
-            index,
-            "Where it sits in the file, from 0. Flows name a message by this.",
-        );
-        inspection.bytes(
-            "Attributes",
-            &message.attributes,
-            "The bytes beside its text offset, as stored.",
-        );
+        inspection.number(&POSITION, index);
+        inspection.bytes(&ATTRIBUTES, &message.attributes);
         Some(inspection)
     }
 }

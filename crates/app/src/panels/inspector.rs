@@ -16,14 +16,20 @@ use crate::components::{
     Chip, IconState, Run, Scroll, Tooltip, icon_button, notice, rule, scroll, tooltip, wrapped,
 };
 use crate::theme::{self, HOVER_THUMB};
-use crate::views::{FieldKind, Inspection, Row};
+use crate::views::{Field, FieldKind, Inspection, Row};
 
 /// A label's share of its field's width.
 const LABEL_SHARE: f32 = 0.38;
 /// The narrowest a label gets, however narrow the panel.
 const LABEL_MIN: f32 = 64.;
-/// The pin's tooltip key, past any row's.
-const PIN: u32 = u32::MAX;
+const PIN: Field = Field {
+    label: "Pin",
+    help: Some("Keep showing this as the selection changes."),
+};
+const UNPIN: Field = Field {
+    label: "Unpin",
+    help: Some("Follow the selection again, closing the live inspector."),
+};
 
 pub struct Inspector {
     mode: Mode,
@@ -34,7 +40,15 @@ pub struct Inspector {
     shut_cards: Vec<String>,
     /// The titles of the sections folded shut.
     shut_sections: Vec<String>,
-    tooltip: Tooltip,
+    tooltip: Tooltip<Over>,
+}
+
+/// What the pointer is over, for the tooltip.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Over {
+    Pin,
+    /// The row at this position in the [`Inspection`].
+    Row(u32),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -140,15 +154,8 @@ impl Inspector {
         if pin.clicked {
             *mode = if pinned { Mode::Claiming } else { Mode::Pinned };
         }
-        let pin_help = if pinned {
-            (
-                "Unpin",
-                "Follow the selection again, closing the live inspector.",
-            )
-        } else {
-            ("Pin", "Keep showing this as the selection changes.")
-        };
-        let mut over = pin.hovered.then_some((PIN, pin_help.0, pin_help.1));
+        let pin_field = if pinned { &UNPIN } else { &PIN };
+        let mut over = pin.hovered.then_some((Over::Pin, pin_field));
         let body = Element {
             padding: [0., 0., 0., s.gap],
             ..Element::column()
@@ -181,17 +188,16 @@ impl Inspector {
                     let clicked = ui.element(group, |ui| {
                         let clicked = section(ui, title, open);
                         while let Some((
-                            key,
+                            at,
                             Row::Field {
-                                label,
+                                field: f,
                                 value,
-                                help,
                                 kind,
                             },
                         )) = fields()
                         {
-                            if open && field(ui, label, value, kind) && !help.is_empty() {
-                                over = Some((key, label, help));
+                            if open && field(ui, f.label, value, kind) && f.help.is_some() {
+                                over = Some((Over::Row(at), f));
                             }
                         }
                         clicked
@@ -202,10 +208,16 @@ impl Inspector {
                 }
             }
         });
-        if let Some(at) = tip.rest(ui, over.map(|(key, ..)| key))
-            && let Some((_, title, text)) = over
+        if let Some(at) = tip.rest(ui, over.map(|(key, _)| key))
+            && let Some((
+                _,
+                &Field {
+                    label,
+                    help: Some(help),
+                },
+            )) = over
         {
-            tooltip(ui, at, title, text);
+            tooltip(ui, at, label, help);
         }
     }
 }

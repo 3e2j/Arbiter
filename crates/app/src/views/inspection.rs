@@ -20,7 +20,16 @@ enum Kind {
     Crumb,
     Card,
     Section,
-    Field(FieldKind),
+    Field(FieldKind, &'static Field),
+}
+
+/// What a field is, apart from its value. Each document declares its own as
+/// consts.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Field {
+    pub label: &'static str,
+    /// What it does, for its tooltip.
+    pub help: Option<&'static str>,
 }
 
 /// How a field's value is drawn.
@@ -36,9 +45,8 @@ pub enum FieldKind {
 impl Kind {
     const fn pieces(self) -> usize {
         match self {
-            Self::Crumb | Self::Section => 1,
+            Self::Crumb | Self::Section | Self::Field(..) => 1,
             Self::Card => 2,
-            Self::Field(_) => 3,
         }
     }
 }
@@ -53,10 +61,8 @@ pub enum Row<'a> {
     /// Starts a section of the card, which folds.
     Section(&'a str),
     Field {
-        label: &'a str,
+        field: &'static Field,
         value: &'a str,
-        /// What it does, for its tooltip. May be empty.
-        help: &'a str,
         kind: FieldKind,
     },
 }
@@ -74,18 +80,17 @@ impl Inspection {
         self.push(Kind::Section, [&title as &dyn Display]);
     }
 
-    pub fn number(&mut self, label: impl Display, value: impl Display, help: impl Display) {
+    pub fn number(&mut self, field: &'static Field, value: impl Display) {
         self.push(
-            Kind::Field(FieldKind::Number),
-            [&label as &dyn Display, &value, &help],
+            Kind::Field(FieldKind::Number, field),
+            [&value as &dyn Display],
         );
     }
 
-    pub fn bytes(&mut self, label: impl Display, bytes: &[u8], help: impl Display) {
-        let hex = Hex(bytes);
+    pub fn bytes(&mut self, field: &'static Field, bytes: &[u8]) {
         self.push(
-            Kind::Field(FieldKind::Bytes),
-            [&label as &dyn Display, &hex, &help],
+            Kind::Field(FieldKind::Bytes, field),
+            [&Hex(bytes) as &dyn Display],
         );
     }
 
@@ -114,10 +119,9 @@ impl Inspection {
                 id: next(),
             },
             Kind::Section => Row::Section(next()),
-            &Kind::Field(kind) => Row::Field {
-                label: next(),
+            &Kind::Field(kind, field) => Row::Field {
+                field,
                 value: next(),
-                help: next(),
                 kind,
             },
         })
@@ -143,6 +147,15 @@ impl Display for Hex<'_> {
 mod tests {
     use super::*;
 
+    const KIND: Field = Field {
+        label: "Kind",
+        help: Some("Which box."),
+    };
+    const ATTRIBUTES: Field = Field {
+        label: "Attributes",
+        help: None,
+    };
+
     #[test]
     fn rows_come_back_in_order_with_their_text() {
         let mut inspection = Inspection::default();
@@ -150,8 +163,8 @@ mod tests {
         inspection.crumb(format_args!("Message {}", 12));
         inspection.card("Message", 12);
         inspection.section("Box");
-        inspection.number("Kind", 3, "Which box.");
-        inspection.bytes("Attributes", &[0, 0x1F], "");
+        inspection.number(&KIND, 3);
+        inspection.bytes(&ATTRIBUTES, &[0, 0x1F]);
         assert_eq!(
             inspection.rows().collect::<Vec<_>>(),
             [
@@ -163,15 +176,13 @@ mod tests {
                 },
                 Row::Section("Box"),
                 Row::Field {
-                    label: "Kind",
+                    field: &KIND,
                     value: "3",
-                    help: "Which box.",
                     kind: FieldKind::Number
                 },
                 Row::Field {
-                    label: "Attributes",
+                    field: &ATTRIBUTES,
                     value: "00 1F",
-                    help: "",
                     kind: FieldKind::Bytes
                 },
             ]

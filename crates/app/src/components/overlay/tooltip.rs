@@ -17,11 +17,12 @@ const MAX_WIDTH: f32 = 280.;
 /// Below the pointer, so the pointer doesn't cover its first line.
 const DROP: f32 = 20.;
 
-/// What a [`tooltip`] is waiting on, owned by the caller.
-#[derive(Clone, Copy, PartialEq, Debug, Default)]
-pub struct Tooltip {
+/// What a [`tooltip`] is waiting on, owned by the caller, who picks the key
+/// `K` that tells what's under the pointer apart.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Tooltip<K> {
     /// The caller's key for what's under the pointer.
-    over: Option<u32>,
+    over: Option<K>,
     /// Seconds the pointer has rested on `over`.
     rested: f32,
     /// Where it shows, fixed when it first does so it doesn't trail the
@@ -29,11 +30,21 @@ pub struct Tooltip {
     at: Option<[f32; 2]>,
 }
 
-impl Tooltip {
+impl<K> Default for Tooltip<K> {
+    fn default() -> Self {
+        Self {
+            over: None,
+            rested: 0.,
+            at: None,
+        }
+    }
+}
+
+impl<K: PartialEq> Tooltip<K> {
     /// Counts how long the pointer has rested on `over`, the caller's key
     /// for what's under it. Returns where to show it, once it has rested
     /// long enough.
-    pub fn rest(&mut self, ui: &mut Ui, over: Option<u32>) -> Option<[f32; 2]> {
+    pub fn rest(&mut self, ui: &mut Ui, over: Option<K>) -> Option<[f32; 2]> {
         let input = ui.input();
         let pressed = [PointerButton::Left, PointerButton::Right]
             .into_iter()
