@@ -25,9 +25,8 @@ use gui::{
     platform::window,
     ui::{Element, Ui, window::window_edges},
 };
-pub use panels::Capture;
-use panels::{FileTree, OpenFile, Output, Panel, PanelKind};
-use project::{Log, Project};
+use panels::{FileTree, OpenFile, Panel, PanelKind};
+use project::{LOG, Project};
 use settings::Settings;
 use theme::ThemeFonts;
 use workspace::{Place, Session, Workspace, status_bar, title_bar};
@@ -49,13 +48,13 @@ pub enum AppError {
 }
 
 /// Opens the editor in a window, with `project` open if given, and blocks
-/// until it's closed. `log` follows whichever project is open.
+/// until it's closed. The [`LOG`] follows whichever project is open.
 ///
 /// # Errors
 ///
 /// When the editor can't start, or the window fails.
-pub fn run(log: Arc<Log>, project: Option<Project>) -> Result<(), AppError> {
-    window::run::<Editor>((log, project))?;
+pub fn run(project: Option<Project>) -> Result<(), AppError> {
+    window::run::<Editor>(project)?;
     Ok(())
 }
 
@@ -66,7 +65,6 @@ struct Editor {
     view: ContextMenu,
     /// Kept for each theme the settings pick.
     fonts: ThemeFonts,
-    log: Arc<Log>,
     /// The open one, whose session the workspace is saved to on close.
     project: Option<Arc<Project>>,
     /// The open project's, unless it couldn't be watched.
@@ -81,7 +79,7 @@ struct Editor {
 impl Editor {
     /// Logs into `project` from here on, in place of the one before.
     fn open(&mut self, project: Project) {
-        if let Err(err) = self.log.attach(&project.root) {
+        if let Err(err) = LOG.attach(&project.root) {
             tracing::warn!("can't write a log in {}: {err}", project.root.display());
         }
         tracing::info!("opened {}", project.root.display());
@@ -153,12 +151,9 @@ impl App for Editor {
     const TITLE: &str = "Arbiter";
     const MIN_SIZE: [f32; 2] = [1024., 600.];
     const DECORATED: bool = false;
-    type Args = (Arc<Log>, Option<Project>);
+    type Args = Option<Project>;
 
-    fn new(
-        start: &mut Startup,
-        (log, project): Self::Args,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    fn new(start: &mut Startup, project: Self::Args) -> Result<Self, Box<dyn std::error::Error>> {
         let settings = Settings::load();
         let fonts = assets::fonts(start.glyphs)?;
         assets::load_icons(start.glyphs)?;
@@ -174,7 +169,6 @@ impl App for Editor {
             settings,
             view: ContextMenu::CLOSED,
             fonts,
-            log,
             project: None,
             watch: None,
             reader: None,
@@ -265,10 +259,6 @@ impl App for Editor {
             title_bar::ui(ui, Self::TITLE, &mut self.settings, &mut self.view);
             // Settings covers everything under the title bar.
             ui.element(Element::column(), |ui| {
-                Output::deliver(self.workspace.panels_mut().filter_map(|panel| match panel {
-                    Panel::Output(output) => Some(output),
-                    _ => None,
-                }));
                 self.workspace.ui(ui);
                 let picked: Vec<_> = self
                     .workspace

@@ -1,18 +1,24 @@
-//! The open project's log, `.arbiter/logs/arbiter.log`, and the few before it.
+//! Everything logged since startup, kept in one [`LOG`] for whatever shows
+//! it, and written to the open project's `.arbiter/logs/arbiter.log`, with
+//! the few before it kept beside.
 //!
-//! Lines collect in memory and a thread writes them out together every [`INTERVAL`],
-//! or sooner for a warning, an error, or a lot at once. What's logged before
-//! a project opens waits until one does.
+//! A thread writes new entries out together every [`INTERVAL`], or sooner for
+//! a warning, an error, or a lot at once. What's logged before a project
+//! opens waits until one does.
 
 use std::{
+    fmt::Write as _,
     fs::{self, File},
     io::{self, Write},
-    mem,
+    ops::Range,
     path::Path,
-    sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError},
+    sync::{Condvar, Mutex, MutexGuard, PoisonError},
     thread,
     time::Duration,
 };
+
+/// The one log, which anything can push to and read from.
+pub static LOG: Log = Log::new();
 
 /// Under the project root.
 const DIR: &str = ".arbiter/logs";
@@ -20,87 +26,142 @@ const DIR: &str = ".arbiter/logs";
 const NAME: &str = "arbiter";
 /// How many old logs are kept beside the current one.
 const KEEP: u32 = 4;
-/// How many lines wait for a project before the oldest half are dropped.
-const WAITING: usize = 10_000;
-/// The longest a line waits to be written. A hard crash loses at most this
+/// How many entries are kept before the oldest half are dropped.
+const CAP: usize = 10_000;
+/// The longest an entry waits to be written. A hard crash loses at most this
 /// much, less any warnings and errors.
 const INTERVAL: Duration = Duration::from_millis(100);
-/// How many bytes waiting wake the writer early.
-const SOON: usize = 64 * 1024;
+/// How many entries waiting wake the writer early.
+const SOON: usize = 1_000;
 
-/// Written to through a [`LogWriter`], one line per write. Dropping it writes
-/// out what's left.
-pub struct Log(Arc<Shared>);
-
-/// One line on its way to a [`Log`].
-pub struct LogWriter<'a> {
-    log: &'a Log,
-    /// Wakes the writer instead of waiting for the interval.
-    urgent: bool,
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum Level {
+    Error,
+    Warning,
+    Info,
+    /// Debug and trace.
+    Verbose,
 }
 
-struct Shared {
-    lines: Mutex<Lines>,
-    /// Held while writing, so lines land in the order they came in.
+/// An entry, less its text.
+#[derive(Clone, Copy, Debug)]
+pub struct Entry {
+    pub level: Level,
+    pub target: &'static str,
+    /// Since startup.
+    pub at: Duration,
+    /// Whether the entry before has the same level, target and text.
+    pub repeat: bool,
+}
+
+pub struct Log {
+    entries: Mutex<Entries>,
+    /// Held while writing, so entries land in the order they came in.
     file: Mutex<Option<File>>,
     wake: Condvar,
 }
 
-#[derive(Default)]
-struct Lines {
-    /// Not written yet, back to back.
-    pending: Vec<u8>,
-    /// Where each line in `pending` ends, until a project opens.
-    ends: Option<Vec<usize>>,
+/// An entry's index counts from startup, dropped ones included.
+struct Entries {
+    list: Vec<(Entry, Range<usize>)>,
+    /// Every entry's text, back to back.
+    text: String,
+    /// How many were dropped off the front.
+    dropped: usize,
+    /// How many the file has been given.
+    written: usize,
     /// Whether the writer was woken and should write without waiting.
     due: bool,
-    /// Whether a writer thread runs. Without one, each line is written as it
+    /// Whether a writer thread runs. Without one, each entry is written as it
     /// comes in.
     threaded: bool,
-    closed: bool,
+}
+
+impl Level {
+    pub const ALL: [Self; 4] = [Self::Error, Self::Warning, Self::Info, Self::Verbose];
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Error => "ERROR",
+            Self::Warning => "WARN",
+            Self::Info => "INFO",
+            Self::Verbose => "DEBUG",
+        }
+    }
 }
 
 impl Log {
-    /// Starts the writer thread.
-    #[must_use]
-    pub fn start() -> Self {
-        let shared = Arc::new(Shared {
-            lines: Mutex::new(Lines {
-                ends: Some(Vec::new()),
-                ..Lines::default()
+    const fn new() -> Self {
+        Self {
+            entries: Mutex::new(Entries {
+                list: Vec::new(),
+                text: String::new(),
+                dropped: 0,
+                written: 0,
+                due: false,
+                threaded: false,
             }),
-            file: Mutex::default(),
+            file: Mutex::new(None),
             wake: Condvar::new(),
-        });
-        let writer = Arc::clone(&shared);
+        }
+    }
+
+    /// Starts the writer thread.
+    pub fn start(&'static self) {
         let spawned = thread::Builder::new()
             .name("log".into())
-            .spawn(move || writer.write_behind());
-        shared.lines().threaded = spawned.is_ok();
-        Self(shared)
+            .spawn(|| self.write_behind());
+        self.entries().threaded = spawned.is_ok();
     }
 
-    /// For one line. `urgent` writes it out without waiting for the interval.
-    #[must_use]
-    pub const fn writer(&self, urgent: bool) -> LogWriter<'_> {
-        LogWriter { log: self, urgent }
+    pub fn push(&self, level: Level, target: &'static str, at: Duration, text: &str) {
+        let mut entries = self.entries();
+        entries.push(level, target, at, text);
+        if !entries.threaded {
+            drop(entries);
+            let _ = self.flush();
+        } else if level <= Level::Warning || entries.end() - entries.written >= SOON {
+            entries.due = true;
+            self.wake.notify_one();
+        }
     }
 
-    /// Starts a new log in the project at `root`, moving its old ones back by
-    /// one and dropping the oldest. The log before keeps every line up to
-    /// now, and the first project also gets what waited for it.
+    /// Calls `each` with every entry kept from `from` on, by its index.
+    /// Returns the indices kept. Logging from `each` deadlocks.
+    pub fn read(&self, from: usize, mut each: impl FnMut(usize, &Entry)) -> Range<usize> {
+        let entries = self.entries();
+        let kept = entries.dropped..entries.end();
+        for index in from.max(kept.start)..kept.end {
+            if let Some((entry, _)) = entries.get(index) {
+                each(index, entry);
+            }
+        }
+        kept
+    }
+
+    /// Entry `index`, with its text in `text`, while it's kept.
+    pub fn entry(&self, index: usize, text: &mut String) -> Option<Entry> {
+        let entries = self.entries();
+        let (entry, said) = entries.get(index)?;
+        text.clear();
+        text.push_str(said);
+        Some(*entry)
+    }
+
+    /// Starts a new log file in the project at `root`, moving its old ones
+    /// back by one and dropping the oldest. The file before keeps every entry
+    /// up to now, and the first project also gets what waited for it.
     ///
     /// # Errors
     ///
-    /// When a log can't be written, moved or created. Lines wait for the next
-    /// project.
+    /// When a log can't be written, moved or created. Entries wait for the
+    /// next project.
     pub fn attach(&self, root: &Path) -> io::Result<()> {
-        let mut file = self.0.file();
+        let mut file = self.file();
         if let Some(old) = &mut *file {
-            self.0.write_out(old, &mut Vec::new())?;
+            self.write_out(old, &mut String::new())?;
         }
         *file = None;
-        self.0.lines().ends = Some(Vec::new());
         let dir = root.join(DIR);
         fs::create_dir_all(&dir)?;
         let path = |age| dir.join(file_name(age));
@@ -110,23 +171,118 @@ impl Log {
                 moved => moved?,
             }
         }
-        let mut new = File::create(path(0))?;
-        let mut lines = self.0.lines();
-        new.write_all(&lines.pending)?;
-        lines.pending.clear();
-        lines.ends = None;
-        drop(lines);
-        *file = Some(new);
-        Ok(())
+        let new = file.insert(File::create(path(0))?);
+        self.write_out(new, &mut String::new())
     }
 
-    /// Writes out every line so far, on this thread.
+    /// Writes out every entry so far, on this thread.
     ///
     /// # Errors
     ///
     /// When the file can't be written to.
     pub fn flush(&self) -> io::Result<()> {
-        self.0.flush(&mut Vec::new())
+        self.flush_into(&mut String::new())
+    }
+
+    /// A panic while holding either lock leaves nothing half done, so a
+    /// poisoned one is still fine to use.
+    fn entries(&self) -> MutexGuard<'_, Entries> {
+        self.entries.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn file(&self) -> MutexGuard<'_, Option<File>> {
+        self.file.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The writer thread: writes what's new every [`INTERVAL`], or when
+    /// woken. It reports no errors, since logging one would only feed it
+    /// another entry.
+    fn write_behind(&self) {
+        let mut spare = String::new();
+        loop {
+            {
+                let mut entries = self.entries();
+                if !entries.due {
+                    entries = self
+                        .wake
+                        .wait_timeout(entries, INTERVAL)
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .0;
+                }
+                entries.due = false;
+            }
+            let _ = self.flush_into(&mut spare);
+        }
+    }
+
+    /// Writes what's new, if there's a file. `spare` is formatted into, so
+    /// it doesn't allocate again.
+    fn flush_into(&self, spare: &mut String) -> io::Result<()> {
+        match &mut *self.file() {
+            Some(file) => self.write_out(file, spare),
+            None => Ok(()),
+        }
+    }
+
+    /// Lets entries keep coming in while it writes.
+    fn write_out(&self, file: &mut File, spare: &mut String) -> io::Result<()> {
+        {
+            let mut entries = self.entries();
+            for index in entries.written.max(entries.dropped)..entries.end() {
+                if let Some((entry, text)) = entries.get(index) {
+                    let (at, level) = (entry.at.as_secs_f64(), entry.level.name());
+                    let _ = writeln!(spare, "{at:>12.6}s {level:>5} {}: {text}", entry.target);
+                }
+            }
+            entries.written = entries.end();
+        }
+        let written = file.write_all(spare.as_bytes());
+        spare.clear();
+        written
+    }
+}
+
+impl Entries {
+    const fn end(&self) -> usize {
+        self.dropped + self.list.len()
+    }
+
+    fn get(&self, index: usize) -> Option<(&Entry, &str)> {
+        let (entry, text) = self.list.get(index.checked_sub(self.dropped)?)?;
+        Some((entry, self.text.get(text.clone()).unwrap_or_default()))
+    }
+
+    fn push(&mut self, level: Level, target: &'static str, at: Duration, text: &str) {
+        let last = self.end().checked_sub(1).and_then(|last| self.get(last));
+        let repeat = last.is_some_and(|(last, said)| {
+            last.level == level && last.target == target && said == text
+        });
+        let start = self.text.len();
+        self.text.push_str(text);
+        let entry = Entry {
+            level,
+            target,
+            at,
+            repeat,
+        };
+        self.list.push((entry, start..self.text.len()));
+        if self.list.len() > CAP {
+            self.drop_oldest_half();
+        }
+    }
+
+    fn drop_oldest_half(&mut self) {
+        let half = self.list.len() / 2;
+        self.list.drain(..half);
+        self.dropped += half;
+        let cut = self
+            .list
+            .first()
+            .map_or(self.text.len(), |(_, text)| text.start);
+        self.text.drain(..cut);
+        for (_, text) in &mut self.list {
+            *text = text.start - cut..text.end - cut;
+        }
     }
 }
 
@@ -138,175 +294,86 @@ fn file_name(age: u32) -> String {
     }
 }
 
-impl Drop for Log {
-    fn drop(&mut self) {
-        self.0.lines().closed = true;
-        self.0.wake.notify_one();
-        let _ = self.flush();
-    }
-}
-
-impl Shared {
-    /// A panic while holding either lock leaves nothing half done, so a
-    /// poisoned one is still fine to use.
-    fn lines(&self) -> MutexGuard<'_, Lines> {
-        self.lines.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    fn file(&self) -> MutexGuard<'_, Option<File>> {
-        self.file.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// The writer thread: writes what's pending every [`INTERVAL`], or when
-    /// woken, until the log is dropped. It reports no errors, since logging
-    /// one would only feed it another line.
-    fn write_behind(&self) {
-        let mut spare = Vec::new();
-        loop {
-            {
-                let mut lines = self.lines();
-                if !lines.due && !lines.closed {
-                    lines = self
-                        .wake
-                        .wait_timeout(lines, INTERVAL)
-                        .unwrap_or_else(PoisonError::into_inner)
-                        .0;
-                }
-                if lines.closed {
-                    return;
-                }
-                lines.due = false;
-            }
-            let _ = self.flush(&mut spare);
-        }
-    }
-
-    /// Writes what's pending, if there's a file and anything to write.
-    /// `spare` is swapped in for it, so neither allocates again.
-    fn flush(&self, spare: &mut Vec<u8>) -> io::Result<()> {
-        match &mut *self.file() {
-            Some(file) => self.write_out(file, spare),
-            None => Ok(()),
-        }
-    }
-
-    /// Lets lines keep coming in while it writes.
-    fn write_out(&self, file: &mut File, spare: &mut Vec<u8>) -> io::Result<()> {
-        {
-            let mut lines = self.lines();
-            if lines.pending.is_empty() {
-                return Ok(());
-            }
-            mem::swap(&mut lines.pending, spare);
-        }
-        let written = file.write_all(spare);
-        spare.clear();
-        written
-    }
-}
-
-impl Write for LogWriter<'_> {
-    fn write(&mut self, line: &[u8]) -> io::Result<usize> {
-        let shared = &self.log.0;
-        let mut guard = shared.lines();
-        let lines = &mut *guard;
-        lines.pending.extend_from_slice(line);
-        if let Some(ends) = &mut lines.ends {
-            ends.push(lines.pending.len());
-            if ends.len() > WAITING {
-                let cut = ends.drain(..ends.len() / 2).next_back().unwrap_or(0);
-                lines.pending.drain(..cut);
-                for end in ends {
-                    *end -= cut;
-                }
-            }
-        } else if !lines.threaded {
-            drop(guard);
-            shared.flush(&mut Vec::new())?;
-        } else if self.urgent || lines.pending.len() >= SOON {
-            lines.due = true;
-            shared.wake.notify_one();
-        }
-        Ok(line.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.log.flush()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn read(root: &Path, age: u32) -> String {
-        fs::read_to_string(root.join(DIR).join(file_name(age))).unwrap_or_default()
+    /// One with no writer thread, so each entry is written as it comes in.
+    fn log() -> &'static Log {
+        Box::leak(Box::new(Log::new()))
     }
 
-    fn line(log: &Log, text: &str) {
-        log.writer(false).write_all(text.as_bytes()).unwrap();
+    fn info(log: &Log, text: &str) {
+        log.push(Level::Info, "test", Duration::ZERO, text);
+    }
+
+    /// The text of each line in the log `age` runs back.
+    fn read(root: &Path, age: u32) -> Vec<String> {
+        let path = root.join(DIR).join(file_name(age));
+        let file = fs::read_to_string(path).unwrap_or_default();
+        let text = |line: &str| line.split_once(": ").map(|(_, text)| text.to_owned());
+        file.lines().filter_map(text).collect()
     }
 
     #[test]
     fn what_waited_is_written_on_attach() {
         let dir = tempfile::tempdir().unwrap();
-        let log = Log::start();
-        line(&log, "before\n");
+        let log = log();
+        info(log, "before");
         log.attach(dir.path()).unwrap();
-        line(&log, "after\n");
-        log.flush().unwrap();
-        assert_eq!(read(dir.path(), 0), "before\nafter\n");
-    }
-
-    #[test]
-    fn dropping_writes_out_the_rest() {
-        let dir = tempfile::tempdir().unwrap();
-        let log = Log::start();
-        log.attach(dir.path()).unwrap();
-        line(&log, "last\n");
-        drop(log);
-        assert_eq!(read(dir.path(), 0), "last\n");
+        info(log, "after");
+        assert_eq!(read(dir.path(), 0), ["before", "after"]);
     }
 
     #[test]
     fn keeps_the_current_and_four_old() {
         let dir = tempfile::tempdir().unwrap();
         for run in 0..7 {
-            let log = Log::start();
+            let log = log();
             log.attach(dir.path()).unwrap();
-            line(&log, &format!("{run}\n"));
+            info(log, &run.to_string());
         }
-        assert_eq!(read(dir.path(), 0), "6\n");
-        assert_eq!(read(dir.path(), KEEP), "2\n");
+        assert_eq!(read(dir.path(), 0), ["6"]);
+        assert_eq!(read(dir.path(), KEEP), ["2"]);
         assert_eq!(fs::read_dir(dir.path().join(DIR)).unwrap().count(), 5);
     }
 
     #[test]
     fn another_project_keeps_the_tail_of_the_one_before() {
         let (first, second) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-        let log = Log::start();
-        line(&log, "start\n");
+        let log = log();
+        info(log, "start");
         log.attach(first.path()).unwrap();
-        line(&log, "first\n");
+        info(log, "first");
         log.attach(second.path()).unwrap();
-        line(&log, "second\n");
-        log.flush().unwrap();
-        assert_eq!(read(first.path(), 0), "start\nfirst\n");
-        assert_eq!(read(second.path(), 0), "second\n");
+        info(log, "second");
+        assert_eq!(read(first.path(), 0), ["start", "first"]);
+        assert_eq!(read(second.path(), 0), ["second"]);
     }
 
     #[test]
-    fn too_much_waiting_drops_the_oldest_half() {
-        let log = Log::start();
-        for n in 0..=WAITING {
-            line(&log, &format!("{n}\n"));
+    fn the_same_again_is_a_repeat() {
+        let log = log();
+        for text in ["x", "x", "y", "x"] {
+            info(log, text);
         }
-        let lines = log.0.lines();
-        assert_eq!(lines.ends.as_ref().map(Vec::len), Some(WAITING / 2 + 1));
-        assert!(
-            lines
-                .pending
-                .starts_with(format!("{}\n", WAITING / 2).as_bytes())
-        );
+        log.push(Level::Warning, "test", Duration::ZERO, "x");
+        let mut repeats = Vec::new();
+        log.read(0, |_, entry| repeats.push(entry.repeat));
+        assert_eq!(repeats, [false, true, false, false, false]);
+    }
+
+    #[test]
+    fn past_the_cap_drops_the_oldest_half() {
+        let log = log();
+        for n in 0..=CAP {
+            info(log, &n.to_string());
+        }
+        let kept = log.read(0, |_, _| {});
+        assert_eq!(kept, CAP / 2..CAP + 1);
+        let mut text = String::new();
+        log.entry(kept.start, &mut text).unwrap();
+        assert_eq!(text, (CAP / 2).to_string());
+        assert!(log.entry(kept.start - 1, &mut text).is_none());
     }
 }

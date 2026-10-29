@@ -3,4 +3,4 @@
 mod log;
 mod session;
 
-pub use log::{Log, LogWriter};
+pub use log::{Entry, LOG, Level, Log};

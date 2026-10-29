@@ -7,11 +7,10 @@ mod unpack;
 use std::{
     path::{Path, PathBuf},
     process::ExitCode,
-    sync::Arc,
 };
 
 use clap::{Parser, Subcommand};
-use project::{Log, Project};
+use project::{LOG, Project};
 use unpack::unpack;
 
 #[derive(Parser)]
@@ -59,23 +58,23 @@ enum Error {
 
 fn main() -> ExitCode {
     let Cli { command, project } = Cli::parse();
-    let log = logging::init(command.is_none());
+    logging::init();
     let result = match command {
         None => project
             .as_deref()
             .map(Project::open)
             .transpose()
             .map_err(Error::from)
-            .and_then(|p| app::run(Arc::clone(&log), p).map_err(Error::from)),
-        Some(Command::New { dir, discs, force }) => new(&dir, &discs, force, &log),
+            .and_then(|p| app::run(p).map_err(Error::from)),
+        Some(Command::New { dir, discs, force }) => new(&dir, &discs, force),
         Some(Command::Unpack { discs, project }) => Project::open(&project)
             .map_err(Error::from)
             .and_then(|mut p| {
-                logging::attach(&log, &p.root);
+                logging::attach(&p.root);
                 unpack(&mut p, &discs)
             }),
     };
-    if let Err(err) = log.flush() {
+    if let Err(err) = LOG.flush() {
         eprintln!("warning: the log's last lines weren't written: {err}");
     }
     match result {
@@ -95,11 +94,11 @@ fn main() -> ExitCode {
 }
 
 /// Logs into the project once it's finished, writing out everything before.
-fn new(dir: &Path, discs: &[PathBuf], force: bool, log: &Log) -> Result<(), Error> {
+fn new(dir: &Path, discs: &[PathBuf], force: bool) -> Result<(), Error> {
     let mut draft = Project::create(dir, force)?;
     unpack(&mut draft.project, discs)?;
     let project = draft.finish()?;
-    logging::attach(log, &project.root);
+    logging::attach(&project.root);
     println!("created mod project at {}", dir.display());
     Ok(())
 }

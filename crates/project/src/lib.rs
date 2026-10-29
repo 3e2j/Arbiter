@@ -35,7 +35,7 @@ pub use create::DraftProject;
 use diag::Diagnostics;
 pub use formats::games::edition::{DumpVerdict, Game};
 use hash::Hash;
-pub use local::{Log, LogWriter};
+pub use local::{Entry, LOG, Level, Log};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
