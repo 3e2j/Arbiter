@@ -3,8 +3,10 @@
 //!
 //! Includes Search, Filter, and View options.
 
+mod view;
+
 use crate::components::{
-    self, IconState, ListScroll, TextField, icon_button, list, notice, rule, text_field, toolbar,
+    self, IconState, TextField, icon_button, list, notice, rule, text_field, toolbar,
 };
 use crate::keymap::{self, AppCommand, Chord, ChordAction, KeyContext};
 use gui::{
@@ -14,14 +16,13 @@ use gui::{
 use serde::{Deserialize, Serialize};
 
 use project::tree::{
-    GitStatus, Narrowed, NodeId, NodeKind, NodeStatus, SortKey, SortOrder, Tree, TreeFilter,
-    TreeRow, Trees,
+    GitStatus, NodeKind, NodeStatus, SortKey, SortOrder, Tree, TreeFilter, TreeRow, Trees,
 };
 
 use crate::assets::Icon;
 use crate::commands::Command;
-use crate::theme::HOVER_THUMB;
 use crate::workspace::Places;
+use view::View;
 
 use crate::components::popover::{WIDTH as POPOVER, check, heading};
 use crate::theme;
@@ -90,27 +91,6 @@ impl Default for FilesView {
     }
 }
 
-/// The open folders, a bit per node by [`NodeId::index`].
-#[derive(Default)]
-struct Open(Vec<u64>);
-
-/// What a tab remembers of its tree, so switching back finds it as it was.
-#[derive(Default)]
-struct View {
-    open: Open,
-    /// Folders clicked while searching or filtering, which flip how the
-    /// results show them. Kept apart from `open`, and emptied when the results
-    /// change.
-    flipped: Open,
-    narrowed: Narrowed,
-    selected: Option<NodeId>,
-    scroll: ListScroll,
-    /// The lines shown, rebuilt when `stale`.
-    rows: Vec<TreeRow>,
-    /// Something changed what's shown, so `rows` are rebuilt next pass.
-    stale: bool,
-}
-
 /// An open project's trees, and what each tab remembers of its own.
 struct Opened {
     trees: Trees,
@@ -137,73 +117,6 @@ pub struct FileTree {
     /// The file last double clicked, relative to the project root, until
     /// [`Self::take_picked`].
     picked: Option<String>,
-}
-
-impl Open {
-    fn has(&self, id: NodeId) -> bool {
-        let i = id.index();
-        self.0
-            .get(i / 64)
-            .is_some_and(|word| word >> (i % 64) & 1 != 0)
-    }
-
-    fn toggle(&mut self, id: NodeId) {
-        let i = id.index();
-        if self.0.len() <= i / 64 {
-            self.0.resize(i / 64 + 1, 0);
-        }
-        if let Some(word) = self.0.get_mut(i / 64) {
-            *word ^= 1 << (i % 64);
-        }
-    }
-
-    fn clear(&mut self) {
-        self.0.clear();
-    }
-
-    /// Itself with each node moved to its id in `map`, by old
-    /// [`NodeId::index`], and those with none dropped.
-    fn remapped(&self, map: &[Option<NodeId>]) -> Self {
-        let mut open = Self::default();
-        let words = map.chunks(64).zip(&self.0);
-        for (ids, &word) in words {
-            let set = ids.iter().zip(0..).filter(|&(_, bit)| word >> bit & 1 != 0);
-            for new in set.filter_map(|(&new, _)| new) {
-                open.toggle(new);
-            }
-        }
-        open
-    }
-}
-
-impl View {
-    fn new() -> Self {
-        Self {
-            scroll: ListScroll::TOP.thumb(HOVER_THUMB),
-            stale: true,
-            ..Self::default()
-        }
-    }
-
-    /// Moves what it remembers of each node to its id in `map`, by old
-    /// [`NodeId::index`], and forgets those with none.
-    fn remap(&mut self, map: &[Option<NodeId>]) {
-        self.open = self.open.remapped(map);
-        self.flipped = self.flipped.remapped(map);
-        self.selected = self
-            .selected
-            .and_then(|id| map.get(id.index()).copied().flatten());
-        self.stale = true;
-    }
-
-    /// Whether `id` shows open, by `narrowed` while `narrowing`.
-    fn is_open(&self, id: NodeId, narrowing: bool) -> bool {
-        if narrowing {
-            self.narrowed.revealed(id) != self.flipped.has(id)
-        } else {
-            self.open.has(id)
-        }
-    }
 }
 
 impl FileTree {
@@ -329,9 +242,7 @@ impl FileTree {
     /// Rebuilds every tab's rows from the top for a new search or filter.
     fn renarrow(&mut self) {
         for view in self.opened.iter_mut().flat_map(|opened| &mut opened.views) {
-            view.flipped.clear();
-            view.scroll.jump_to_top();
-            view.stale = true;
+            view.renarrow();
         }
     }
 
@@ -346,7 +257,6 @@ impl FileTree {
         self.toolbar(ui);
         let query = self.search.text.trim();
         let filter = self.filter(self.tab);
-        let narrowing = !query.is_empty() || !filter.is_empty();
         let Some(opened) = self.opened.as_deref_mut() else {
             return;
         };
@@ -358,20 +268,7 @@ impl FileTree {
         if tree.is_empty() {
             return notice(ui, "Nothing here yet");
         }
-        if view.stale {
-            if narrowing {
-                tree.narrow(query, filter, &mut view.narrowed);
-            }
-            let mut rows = std::mem::take(&mut view.rows);
-            rows.clear();
-            rows.extend(tree.rows(
-                |id| view.is_open(id, narrowing),
-                |id| !narrowing || view.narrowed.kept(id),
-                self.compact,
-            ));
-            view.rows = rows;
-            view.stale = false;
-        }
+        view.rebuild(tree, query, filter, self.compact);
         if view.rows.is_empty() {
             return notice(ui, "No matches");
         }
@@ -383,7 +280,7 @@ impl FileTree {
         let mut clicked = None;
         let mut scroll = view.scroll;
         list(ui, &mut scroll, &view.rows, height, |ui, &row| {
-            let open = view.is_open(row.last, narrowing);
+            let open = view.is_open(row.last);
             let selected = view.selected == Some(row.last);
             if row_ui(ui, tree, row, open, selected, columns) {
                 clicked = Some(row.last);
@@ -411,12 +308,7 @@ impl FileTree {
                 }
             }
             if tree[id].kind == NodeKind::Folder {
-                if narrowing {
-                    view.flipped.toggle(id);
-                } else {
-                    view.open.toggle(id);
-                }
-                view.stale = true;
+                view.toggle(id);
             }
         }
     }
