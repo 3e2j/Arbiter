@@ -2,9 +2,11 @@
 
 use crate::components::{notice, switch};
 use gui::{
-    anim::{Tween, ease_in_out},
     clipboard::Clipboard,
-    ui::{Align, Direction, Element, Length, Ui},
+    ui::{
+        Align, Direction, Element, Length, Ui,
+        anim::{Tween, ease_in_out},
+    },
 };
 
 use serde::{Deserialize, Serialize};

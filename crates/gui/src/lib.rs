@@ -5,7 +5,6 @@
 //! only part that knows winit, [`render`] the only part that knows wgpu,
 //! and [`clipboard`] the only part that knows the system's clipboard.
 
-pub mod anim;
 pub mod canvas;
 pub mod clipboard;
 pub mod host;

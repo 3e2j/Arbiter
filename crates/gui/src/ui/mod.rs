@@ -14,6 +14,7 @@
 //! - Each item of a list that can insert or reorder goes in [`Ui::keyed`].
 //! - A component called from several places can take `#[track_caller]`.
 
+pub mod anim;
 pub(crate) mod layout;
 #[cfg(any(test, feature = "test-util"))]
 pub mod testing;

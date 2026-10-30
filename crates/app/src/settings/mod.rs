@@ -13,10 +13,12 @@ use std::path::PathBuf;
 use crate::components::{IconState, Scroll, icon_button, notice, rule, scroll, spacer};
 use crate::keymap::{self, AppCommand, Chord, KeyContext, Keymap};
 use gui::{
-    anim::{Tween, ease_out},
     canvas::Color,
     input::{CursorIcon, Key, Modifiers, PointerButton},
-    ui::{Align, Anchor, Direction, Element, Length, Ui},
+    ui::{
+        Align, Anchor, Direction, Element, Length, Ui,
+        anim::{Tween, ease_out},
+    },
 };
 
 use crate::assets::Icon;

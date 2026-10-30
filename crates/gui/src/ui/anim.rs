@@ -4,7 +4,7 @@
 //! any frame rate, and asks for frames through [`Ui::animate`] until it
 //! arrives. What it moves, and how, is the caller's: put its progress through
 //! a curve, such as [`ease_out`] or one of the caller's own, and onto any
-//! [`Element`](crate::ui::Element) value, such as an offset or a colour's
+//! [`Element`](super::Element) value, such as an offset or a colour's
 //! alpha.
 //!
 //! ```ignore
@@ -12,7 +12,7 @@
 //! element.offset[0] = (1. - shown) * -width;
 //! ```
 
-use crate::ui::Ui;
+use super::Ui;
 
 /// Progress from 0 to 1, heading for one end or the other. The caller keeps
 /// it, as with a component's state.
