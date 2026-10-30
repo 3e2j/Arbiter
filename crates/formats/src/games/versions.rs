@@ -6,6 +6,8 @@
 pub struct Versions(u16);
 
 impl Versions {
+    /// What a row holds for when it doesn't say.
+    pub const ANY: Self = Self(u16::MAX);
     pub const NONE: Self = Self(0);
 
     pub(crate) const fn bit(at: u8) -> Self {

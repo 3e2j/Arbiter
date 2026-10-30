@@ -1,6 +1,6 @@
 [package]
 name = "arbiter-app"
-description = "The editor: everything the user sees that knows Arbiter, drawn through gui."
+description = "The editor: its panels, menus, settings and the open project, drawn through gui."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

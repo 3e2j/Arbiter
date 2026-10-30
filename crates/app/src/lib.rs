@@ -1,4 +1,4 @@
-//! The editor: everything the user sees that knows Arbiter. `gui` gives the
+//! The editor: its panels, menus, settings and the open project. `gui` gives the
 //! mechanisms, and this crate decides the policy.
 //!
 //! A panel moves out to its own crate when it brings heavy dependencies or
@@ -59,7 +59,7 @@ pub fn run(project: Option<Project>) -> Result<(), AppError> {
     Ok(())
 }
 
-/// The editor, as one [`App`]. Owns what only Arbiter knows about.
+/// The editor, as one [`App`].
 struct Editor {
     workspace: Workspace,
     settings: Settings,
