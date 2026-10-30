@@ -1,6 +1,8 @@
-//! Both project kinds, and how their files are stored: open, save, check, build.
+//! Arbiter projects, mod or game ([`config::ProjectKind`]), and how their
+//! files are stored: creating and opening one, unpacking discs into its base,
+//! and reading its files into a [`tree`] for the editor.
 //!
-//! A mod project, as `Project::create` writes it. The root is also the git root.
+//! A mod project as [`Project::create`] writes it, rooted at its git root:
 //!
 //! ```text
 //! my-mod/

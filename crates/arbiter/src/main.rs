@@ -1,4 +1,8 @@
-//! The CLI, or the editor with no subcommand.
+//! The `arbiter` binary. With no subcommand it opens the editor, on the
+//! project given if any.
+//!
+//! `new` makes a mod project from discs, and `unpack` adds discs to an
+//! existing project's base.
 
 mod logging;
 mod prompt;
