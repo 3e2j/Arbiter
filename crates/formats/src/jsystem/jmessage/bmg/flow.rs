@@ -20,7 +20,7 @@
 
 use std::collections::HashMap;
 
-use super::{MessageId, malformed, positions, too_large};
+use super::{MessageKey, malformed, positions, too_large};
 use crate::{Be16, ByteReader, ByteWriter, Record, Result, record};
 
 /// Stable handle for a node, held by edges and roots. Assigned on decode as
@@ -34,7 +34,7 @@ pub enum Node {
     /// Displays a message, then carries on.
     Text {
         id: NodeId,
-        message: MessageId,
+        message: MessageKey,
         /// `None` ends the conversation.
         next: Option<NodeId>,
     },
@@ -72,7 +72,7 @@ impl Node {
 pub struct Root {
     /// What the game is asked for. TP sends ids from 3000 up to the stage's
     /// own flow file instead.
-    pub public_id: u16,
+    pub id: u16,
     pub node: NodeId,
 }
 
@@ -204,7 +204,7 @@ pub(super) fn read(flw1: &[u8], fli1: &[u8]) -> Result<Flow> {
                 }
                 Node::Text {
                     id,
-                    message: MessageId(u32::from(text.message.get())),
+                    message: MessageKey(u32::from(text.message.get())),
                     next: edge(next),
                 }
             }
@@ -245,7 +245,7 @@ pub(super) fn read(flw1: &[u8], fli1: &[u8]) -> Result<Flow> {
     let roots = entries
         .iter()
         .map(|e| Root {
-            public_id: e.flow_id.get(),
+            id: e.flow_id.get(),
             node: NodeId(u32::from(e.node.get())),
         })
         .collect();
@@ -254,7 +254,10 @@ pub(super) fn read(flw1: &[u8], fli1: &[u8]) -> Result<Flow> {
 
 /// FLW1 and FLI1. Edges, roots and text nodes' messages are written as
 /// positions. The table fills in node order, which is where retail puts it.
-pub(super) fn write(flow: &Flow, messages: &HashMap<MessageId, u16>) -> Result<(Vec<u8>, Vec<u8>)> {
+pub(super) fn write(
+    flow: &Flow,
+    messages: &HashMap<MessageKey, u16>,
+) -> Result<(Vec<u8>, Vec<u8>)> {
     let node_at = positions(
         flow.nodes.iter().map(Node::id),
         "two flow nodes share an id",
@@ -355,7 +358,7 @@ fn write_roots(roots: &[Root], position: impl Fn(NodeId) -> Result<u16>) -> Resu
     });
     for root in roots {
         fli1.record(&Fli1Entry {
-            flow_id: Be16::new(root.public_id),
+            flow_id: Be16::new(root.id),
             pad_2: [0; 2],
             node: Be16::new(position(root.node)?),
             pad_6: [0; 2],
@@ -401,8 +404,8 @@ mod tests {
         (flw1, fli1)
     }
 
-    fn one_message() -> HashMap<MessageId, u16> {
-        HashMap::from([(MessageId(0), 0)])
+    fn one_message() -> HashMap<MessageKey, u16> {
+        HashMap::from([(MessageKey(0), 0)])
     }
 
     fn is_malformed<T>(result: &Result<T>) -> bool {
@@ -418,7 +421,7 @@ mod tests {
             [
                 Node::Text {
                     id: NodeId(0),
-                    message: MessageId(0),
+                    message: MessageKey(0),
                     next: Some(NodeId(1)),
                 },
                 Node::Branch {
@@ -439,11 +442,11 @@ mod tests {
             flow.roots,
             [
                 Root {
-                    public_id: 3000,
+                    id: 3000,
                     node: NodeId(0),
                 },
                 Root {
-                    public_id: 3001,
+                    id: 3001,
                     node: NodeId(2),
                 },
             ]

@@ -6,19 +6,19 @@ fn sample() -> Bmg {
         record_len: 6,
         mid1: Some(Mid1Header::default()),
         messages: vec![Message {
-            public_id: 5,
-            id: MessageId(0),
+            id: 5,
+            key: MessageKey(0),
             attributes: Box::new([0, 5]),
             text: vec![TextSegment::Text(b"Hi".to_vec())],
         }],
         flow: Some(Flow {
             nodes: vec![Node::Text {
                 id: NodeId(0),
-                message: MessageId(0),
+                message: MessageKey(0),
                 next: None,
             }],
             roots: vec![Root {
-                public_id: 3000,
+                id: 3000,
                 node: NodeId(0),
             }],
         }),
@@ -118,7 +118,7 @@ fn round_trips() {
         flow: None,
         ..sample()
     };
-    bmg.messages[0].public_id = 0;
+    bmg.messages[0].id = 0;
     assert_eq!(decode(&encode(&bmg).unwrap()).unwrap(), bmg);
 }
 

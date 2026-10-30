@@ -23,7 +23,7 @@ pub(super) fn encode(bmg: &Bmg, out: &mut ByteWriter) -> Result<()> {
     let stated = sections.len();
     if let Some(graph) = &bmg.flow {
         let messages = positions(
-            bmg.messages.iter().map(|m| m.id),
+            bmg.messages.iter().map(|m| m.key),
             "two messages share an id",
         )?;
         let (flw1, fli1) = flow::write(graph, &messages)?;

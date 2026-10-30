@@ -5,18 +5,18 @@
 use super::{malformed, too_large};
 use crate::{Be16, Be32, ByteReader, ByteWriter, Record, Result, record};
 
-/// Stable handle for a message, held by whatever refers to one. Assigned on
-/// decode as the message's position, and meaningless after that.
+/// Internal stable handle for a message, held by whatever refers to one.
+/// Initially assigned from the message's position, and kept as messages move.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct MessageId(pub u32);
+pub struct MessageKey(pub u32);
 
 /// One message: what it's called, how it's displayed, and what it says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
     /// What the game looks the message up by, from MID1. Zero in a file
     /// without one. The attributes may hold a copy, left as found.
-    pub public_id: u16,
-    pub id: MessageId,
+    pub id: u16,
+    pub key: MessageKey,
     /// The INF1 record after the text offset: box style, sound, speaker and
     /// the rest, whichever byte is which being game data.
     pub attributes: Box<[u8]>,
@@ -102,17 +102,17 @@ pub(super) fn read(
         .transpose()?;
 
     let mut messages = Vec::with_capacity(count);
-    for id in (0u32..).take(count) {
+    for key in (0u32..).take(count) {
         let text_at = r.u32()? as usize;
         let attributes = r.bytes(attributes_len)?.into();
-        let public_id = match ids.and_then(|ids| ids.get(id as usize)) {
+        let id = match ids.and_then(|ids| ids.get(key as usize)) {
             Some(stored) => u16::try_from(stored.get())
                 .map_err(|_| malformed("a MID1 id doesn't fit in 16 bits"))?,
             None => 0,
         };
         messages.push(Message {
-            public_id,
-            id: MessageId(id),
+            id,
+            key: MessageKey(key),
             attributes,
             text: read_text(dat1, text_at)?,
         });
@@ -176,7 +176,7 @@ fn read_mid1(mid1: &[u8], messages: &[Message]) -> Result<Mid1Header> {
 }
 
 fn sorted(messages: &[Message]) -> bool {
-    messages.is_sorted_by_key(|m| m.public_id)
+    messages.is_sorted_by_key(|m| m.id)
 }
 
 /// INF1, DAT1, and MID1 when the file has one.
@@ -267,7 +267,7 @@ fn write_mid1(header: Mid1Header, messages: &[Message], count: u16) -> Result<Ve
         pad: [0; 4],
     });
     for message in messages {
-        out.u32(u32::from(message.public_id));
+        out.u32(u32::from(message.id));
     }
     Ok(out.finish())
 }
@@ -289,10 +289,10 @@ mod tests {
         TextSegment::Text(run.to_vec())
     }
 
-    fn message(id: u32, public_id: u16, attributes: &[u8], text: &[TextSegment]) -> Message {
+    fn message(key: u32, id: u16, attributes: &[u8], text: &[TextSegment]) -> Message {
         Message {
-            public_id,
-            id: MessageId(id),
+            id,
+            key: MessageKey(key),
             attributes: attributes.into(),
             text: text.to_vec(),
         }
@@ -426,8 +426,8 @@ mod tests {
         ids.extend(5u32.to_be_bytes());
         ids.extend(0x0102u32.to_be_bytes());
         let (messages, _, mid1) = read(&inf1, dat1, Some(&ids)).unwrap();
-        assert_eq!(messages[0].public_id, 5);
-        assert_eq!(messages[1].public_id, 0x0102);
+        assert_eq!(messages[0].id, 5);
+        assert_eq!(messages[1].id, 0x0102);
         assert_eq!(mid1, Some(HEADER));
     }
 

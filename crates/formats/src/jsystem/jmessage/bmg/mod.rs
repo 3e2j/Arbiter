@@ -41,7 +41,7 @@ use encoding_rs::{SHIFT_JIS, UTF_8, UTF_16BE, WINDOWS_1252};
 use crate::{Be32, ByteWriter, Decode, Encode, FormatError, Result, record};
 
 pub use flow::{Flow, Node, NodeId, Root};
-pub use message::{Message, MessageId, Mid1Header, TextSegment};
+pub use message::{Message, MessageKey, Mid1Header, TextSegment};
 
 /// A message file taken apart.
 #[derive(Debug, Clone, PartialEq, Eq)]
