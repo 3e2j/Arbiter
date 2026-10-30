@@ -1,8 +1,8 @@
 //! The game's file formats as plain structures. Knows no project.
 //!
-//! Formats are grouped by the engine library that defines them ([`jsystem`]),
-//! one folder per format, which knows no game. [`games`] holds the known disc
-//! editions.
+//! Formats are grouped by the engine library that defines them (ie: [`jsystem`]),
+//! one folder per format.
+//! [`games`] holds the known disc editions, and each game's versions as the decomp tells them apart.
 //!
 //! Every format implements [`Decode`] and [`Encode`].
 //! One that can be edited implements:
