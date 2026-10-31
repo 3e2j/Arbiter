@@ -110,6 +110,8 @@ pub struct ThemeSizes {
 pub struct ThemeFonts {
     /// Labels, tabs and lists.
     pub ui: FontId,
+    /// Headings, bolder than `ui`.
+    pub strong: FontId,
     /// Code and logs, where text lines up in columns.
     pub buffer: FontId,
 }

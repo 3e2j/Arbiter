@@ -20,19 +20,24 @@ macro_rules! asset {
 // TODO: from the user's Settings, once the editor reads them. Noto Sans JP
 // defaults to its thinnest weight, so the weight is always set.
 const WEIGHT: f32 = 400.;
+/// Headings, in [`ThemeFonts::strong`].
+const STRONG: f32 = 600.;
 
 /// Adds the fonts to `glyphs`. UI text falls back to Noto Sans JP, such as
 /// for Japanese file names, and code to Noto Sans then Noto Sans JP, so a
 /// missing character keeps the closest style there is. The system's fonts
 /// take what all of them lack.
 pub fn fonts(glyphs: &mut Glyphs) -> Result<ThemeFonts, GlyphError> {
-    let ui = glyphs.add_font(
-        FontFile {
-            name: "Noto Sans",
-            data: asset!("fonts/noto-sans/NotoSans[wdth,wght].ttf"),
-        },
-        WEIGHT,
-    )?;
+    let noto = FontFile {
+        name: "Noto Sans",
+        data: asset!("fonts/noto-sans/NotoSans[wdth,wght].ttf"),
+    };
+    let noto_jp = FontFile {
+        name: "Noto Sans JP",
+        data: asset!("fonts/noto-sans-jp/NotoSansJP[wght].ttf"),
+    };
+    let ui = glyphs.add_font(noto, WEIGHT)?;
+    let strong = glyphs.add_font(noto, STRONG)?;
     let buffer = glyphs.add_font(
         FontFile {
             name: "JetBrains Mono",
@@ -40,16 +45,12 @@ pub fn fonts(glyphs: &mut Glyphs) -> Result<ThemeFonts, GlyphError> {
         },
         WEIGHT,
     )?;
-    let jp = glyphs.add_font(
-        FontFile {
-            name: "Noto Sans JP",
-            data: asset!("fonts/noto-sans-jp/NotoSansJP[wght].ttf"),
-        },
-        WEIGHT,
-    )?;
+    let jp = glyphs.add_font(noto_jp, WEIGHT)?;
+    let strong_jp = glyphs.add_font(noto_jp, STRONG)?;
     glyphs.set_fallbacks(ui, &[jp]);
+    glyphs.set_fallbacks(strong, &[strong_jp]);
     glyphs.set_fallbacks(buffer, &[ui, jp]);
-    Ok(ThemeFonts { ui, buffer })
+    Ok(ThemeFonts { ui, strong, buffer })
 }
 
 /// The icons in `assets/icons`, all drawn on a 24 unit grid.
