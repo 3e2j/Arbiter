@@ -51,6 +51,10 @@ pub struct MessageText {
     raw: bool,
     text: String,
     selection: Selection,
+    /// The selection before this pass's typing.
+    selection_before: Selection,
+    /// Taken by the next load of the message it's in, as an undo leaves it.
+    restore: Option<Selection>,
     /// What each tag character stands for, by its index.
     tags: Vec<RawTag>,
     /// Each tag's chip label, end to end, and where each ends.
@@ -198,9 +202,19 @@ impl MessageText {
         self.picked
     }
 
+    /// The selection before and after this pass's typing.
+    pub const fn selections(&self) -> [Selection; 2] {
+        [self.selection_before, self.selection]
+    }
+
     /// Shows the file's text again on the next pass, even while it has the
-    /// keyboard, for when the text changed under it.
-    pub const fn reload(&mut self) {
+    /// keyboard, for when the text changed under it. The selection becomes
+    /// `selection` if the change `touched` the message shown.
+    pub fn reload(&mut self, touched: &[MessageKey], selection: Selection) {
+        self.restore = self
+            .key
+            .is_some_and(|key| touched.contains(&key))
+            .then_some(selection);
         self.key = None;
     }
 
@@ -239,6 +253,7 @@ impl MessageText {
             .map_or(f32::INFINITY, |rect| rect.w - 2. * padding - CARET_WIDTH);
         self.lay_out(ui, style, width);
         let before = self.selection;
+        self.selection_before = before;
         let mut changed = false;
         if let Some(origin) = origin {
             changed |= self.point(ui, style, version, origin);
@@ -320,7 +335,14 @@ impl MessageText {
                 }
             }
         }
-        self.selection = Selection::at(self.text.len().min(self.selection.caret));
+        let selection = self
+            .restore
+            .take()
+            .unwrap_or(Selection::at(self.selection.caret));
+        self.selection = Selection {
+            caret: self.text.floor_char_boundary(selection.caret),
+            anchor: self.text.floor_char_boundary(selection.anchor),
+        };
     }
 
     /// `tag` onto the end of the text, as a chip.

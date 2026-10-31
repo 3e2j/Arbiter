@@ -186,18 +186,12 @@ impl Inspector {
             return;
         };
         for &command in commands {
-            let moved = if command == RAW && format.tables() {
+            if command == RAW && format.tables() {
                 self.fields.flip_raw();
-                false
             } else if command == UNDO {
-                format.undo()
+                format.undo(&mut self.fields);
             } else if command == REDO {
-                format.redo()
-            } else {
-                false
-            };
-            if moved {
-                self.fields.message.reload();
+                format.redo(&mut self.fields);
             }
         }
     }

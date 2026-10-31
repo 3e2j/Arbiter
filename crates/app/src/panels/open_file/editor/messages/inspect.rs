@@ -72,7 +72,8 @@ impl MessagesDoc {
                 if picked {
                     self.history.seal();
                 }
-                self.edit(BmgEdit::Text { message: key, text });
+                let selections = fields.message.selections();
+                self.edit(BmgEdit::Text { message: key, text }, selections);
                 if picked {
                     self.history.seal();
                 }
@@ -93,11 +94,13 @@ impl MessagesDoc {
                 attribute_bytes(ui, fields, layout, attributes, &mut over)
             };
             if let Some((at, bytes)) = set {
-                self.edit(BmgEdit::Attributes {
+                let [_, selection] = fields.message.selections();
+                let edit = BmgEdit::Attributes {
                     message: key,
                     at,
                     bytes,
-                });
+                };
+                self.edit(edit, [selection; 2]);
             }
         });
         over

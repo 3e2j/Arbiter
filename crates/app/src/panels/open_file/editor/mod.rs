@@ -64,17 +64,19 @@ impl Format {
         }
     }
 
-    /// Reverses its last edit. Returns whether there was one.
-    pub fn undo(&mut self) -> bool {
+    /// Reverses its last edit, putting the cursor in `fields` back to
+    /// before it.
+    pub fn undo(&mut self, fields: &mut Fields) {
         match self {
-            Self::Messages(doc) => doc.undo(),
+            Self::Messages(doc) => doc.undo(&mut fields.message),
         }
     }
 
-    /// Does its last edit undone again. Returns whether there was one.
-    pub fn redo(&mut self) -> bool {
+    /// Does its last edit undone again, putting the cursor in `fields` back
+    /// to after it.
+    pub fn redo(&mut self, fields: &mut Fields) {
         match self {
-            Self::Messages(doc) => doc.redo(),
+            Self::Messages(doc) => doc.redo(&mut fields.message),
         }
     }
 
