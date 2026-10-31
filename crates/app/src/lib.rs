@@ -26,7 +26,7 @@ use gui::{
     ui::{Element, Ui, window::window_edges},
 };
 use keymap::{AppCommand, KeyContext};
-use panels::{Context, Event, PanelKind, route};
+use panels::{Context, Event, FileTree, Output, PanelDesc, route};
 use project::{LOG, Project};
 use settings::Settings;
 use theme::ThemeFonts;
@@ -35,12 +35,9 @@ use workspace::{Session, Workspace, status_bar, title_bar};
 /// How far in from the window's edges a drag resizes it, in logical pixels.
 const RESIZE_EDGE: f32 = 4.;
 
-/// What the View menu offers, in order.
-const MENU_PANELS: [PanelKind; 3] = [PanelKind::FileTree, PanelKind::Output, PanelKind::Inspector];
-
 /// What a project without a session opens, in tab order. The inspector
 /// waits for a selection.
-const STARTING_LAYOUT: [PanelKind; 2] = [PanelKind::FileTree, PanelKind::Output];
+const STARTING_LAYOUT: [&PanelDesc; 2] = [&FileTree::DESC, &Output::DESC];
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
@@ -123,7 +120,7 @@ impl Editor {
         } else {
             self.workspace
                 .focused()
-                .and_then(|panel| panel.key_context())
+                .and_then(|panel| panel.desc().key_context)
         };
         // Asking GLOBAL twice finds nothing more.
         let contexts = [first.unwrap_or(KeyContext::GLOBAL), KeyContext::GLOBAL];
@@ -147,7 +144,7 @@ impl App for Editor {
         let session = project
             .as_ref()
             .and_then(session)
-            .unwrap_or_else(|| Session::of(&STARTING_LAYOUT.map(|kind| (kind, kind.place()))));
+            .unwrap_or_else(|| Session::of(&STARTING_LAYOUT.map(|desc| (desc.id, desc.opens_at))));
         let mut app = Self {
             workspace: Workspace::new(&session),
             settings,
@@ -231,8 +228,8 @@ impl App for Editor {
                 status_bar::ui(ui, &mut self.workspace);
                 self.settings.panel(ui);
             });
-            if let Some(kind) = title_bar::view_menu(ui, &mut self.view, &MENU_PANELS) {
-                cx.post(Event::Add(kind));
+            if let Some(desc) = title_bar::view_menu(ui, &mut self.view) {
+                cx.post(Event::Add(desc));
                 // A new files panel has no tree until it's read.
                 if let Some(reader) = &self.reader {
                     reader.ask();

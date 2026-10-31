@@ -1,6 +1,7 @@
-//! What the user works in, one per tab. Each panel is its own state plus a
-//! title and a `ui`, and knows no other panel. They reach each other by
-//! posting [`Event`]s, which [`route`] offers to every panel in turn.
+//! What the user works in, one per tab. Each panel is its own state behind
+//! [`Panel`], declared once by its [`PanelDesc`] in [`PANELS`], and knows no
+//! other panel. They reach each other by posting [`Event`]s, which [`route`]
+//! offers to every panel in turn.
 
 mod file_tree;
 pub mod inspector;
@@ -11,7 +12,7 @@ pub mod route;
 use gui::ui::Ui;
 use project::Project;
 use project::tree::Trees;
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::fs::FileLoader;
 use crate::keymap::{AppCommand, KeyContext};
@@ -23,148 +24,58 @@ use inspector::Page;
 pub use open_file::{Hex, OpenFile};
 pub use output::Output;
 
-/// What a panel is, as the session saves its tab.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub enum PanelKind {
-    FileTree,
-    OpenFile,
-    Output,
-    Inspector,
-}
+/// Every kind of panel there is. A session's tab whose id isn't here is
+/// left out.
+pub static PANELS: [PanelDesc; 4] = [
+    FileTree::DESC,
+    OpenFile::DESC,
+    Output::DESC,
+    Inspector::DESC,
+];
 
-impl PanelKind {
-    /// The title a panel of this kind opens with.
-    pub const fn title(self) -> &'static str {
-        match self {
-            Self::FileTree => FileTree::TITLE,
-            Self::OpenFile => "File",
-            Self::Output => Output::TITLE,
-            Self::Inspector => Inspector::TITLE,
-        }
-    }
-
-    /// Where a new panel of this kind opens.
-    pub const fn place(self) -> Place {
-        match self {
-            Self::FileTree => Place::LeftInnerTop,
-            Self::OpenFile => Place::Main,
-            Self::Output => Place::BelowMain,
-            Self::Inspector => Place::RightInnerTop,
-        }
-    }
-}
-
-/// Every panel, by type, so a tab holds one inline.
-pub enum Panel {
-    FileTree(FileTree),
-    OpenFile(OpenFile),
-    Output(Output),
-    Inspector(Inspector),
-}
-
-impl Panel {
-    /// A panel of `kind` given back what [`Self::state`] kept, or `None`
-    /// when no panel is. A file's tab can't open without its state.
-    pub fn open(kind: PanelKind, state: Option<&toml::Value>) -> Option<Self> {
-        Some(match kind {
-            PanelKind::FileTree => {
-                Self::FileTree(FileTree::new(read(kind, state).unwrap_or_default()))
-            }
-            PanelKind::OpenFile => {
-                if state.is_none() {
-                    tracing::warn!("the session has a file tab without its file");
-                }
-                Self::OpenFile(OpenFile::from_state(read(kind, state)?))
-            }
-            PanelKind::Output => Self::Output(Output::new()),
-            PanelKind::Inspector => Self::Inspector(Inspector::from_state(
-                &read(kind, state).unwrap_or_default(),
-            )),
-        })
-    }
-
-    /// What [`Self::open`] makes it from, which stays put when its title
-    /// changes.
-    pub const fn kind(&self) -> PanelKind {
-        match self {
-            Self::FileTree(_) => PanelKind::FileTree,
-            Self::OpenFile(_) => PanelKind::OpenFile,
-            Self::Output(_) => PanelKind::Output,
-            Self::Inspector(_) => PanelKind::Inspector,
-        }
-    }
-
-    /// What it keeps of itself in the session, if anything.
-    pub fn state(&self) -> Option<toml::Value> {
-        match self {
-            Self::FileTree(panel) => toml::Value::try_from(panel.view())
-                .inspect_err(|err| tracing::warn!("can't save the files panel's view: {err}"))
-                .ok(),
-            Self::OpenFile(panel) => toml::Value::try_from(panel.state())
-                .inspect_err(|err| tracing::warn!("can't save {}'s tab: {err}", panel.path()))
-                .ok(),
-            Self::Inspector(panel) => toml::Value::try_from(panel.state())
-                .inspect_err(|err| tracing::warn!("can't save an inspector's tab: {err}"))
-                .ok(),
-            Self::Output(_) => None,
-        }
-    }
-
-    pub fn title(&self) -> &str {
-        match self {
-            Self::FileTree(_) => FileTree::TITLE,
-            Self::OpenFile(panel) => panel.title(),
-            Self::Output(_) => Output::TITLE,
-            Self::Inspector(panel) => panel.title(),
-        }
-    }
-
+/// What's known of a kind of panel before one exists. Each panel declares
+/// its own as `DESC`.
+pub struct PanelDesc {
+    /// What the session saves its tabs as.
+    pub id: &'static str,
+    /// Its tab's, unless [`Panel::title`] names it.
+    pub title: &'static str,
+    /// Where a new one opens.
+    pub opens_at: Place,
     /// Where its tab may sit.
-    pub const fn places(&self) -> Places {
-        match self {
-            Self::FileTree(_) => FileTree::PLACES,
-            Self::OpenFile(_) => OpenFile::PLACES,
-            Self::Output(_) | Self::Inspector(_) => Places::BANDS,
-        }
-    }
-
+    pub places: Places,
     /// Where its keys are bound while it has focus, if anywhere.
-    pub const fn key_context(&self) -> Option<KeyContext> {
-        match self {
-            Self::FileTree(_) => Some(file_tree::FILES),
-            Self::OpenFile(_) => Some(open_file::HEX),
-            Self::Output(_) | Self::Inspector(_) => None,
-        }
+    pub key_context: Option<KeyContext>,
+    /// Whether the View menu offers it.
+    pub in_menu: bool,
+    /// One given back what [`Panel::saved`] kept, or `None` when none can
+    /// open from it.
+    pub open: fn(Option<&toml::Value>) -> Option<Box<dyn Panel>>,
+}
+
+/// What every panel does, each with a default for a panel that doesn't.
+pub trait Panel {
+    fn desc(&self) -> &'static PanelDesc;
+
+    /// Declares its contents into the box `ui` has open.
+    fn ui(&mut self, ui: &mut Ui, cx: &mut Context);
+
+    fn title(&self) -> &str {
+        self.desc().title
     }
 
     /// Does `commands`, pressed while it has focus, before its `ui`.
-    pub fn act(&mut self, ui: &mut Ui, commands: &[AppCommand]) {
-        match self {
-            Self::FileTree(panel) => panel.act(commands),
-            Self::OpenFile(panel) => panel.act(ui, commands),
-            Self::Output(_) | Self::Inspector(_) => {}
-        }
-    }
+    fn act(&mut self, _ui: &mut Ui, _commands: &[AppCommand]) {}
 
-    /// Declares its contents into the box `ui` has open.
-    pub fn ui(&mut self, ui: &mut Ui, cx: &mut Context) {
-        match self {
-            Self::FileTree(panel) => panel.ui(ui, cx),
-            Self::OpenFile(panel) => panel.ui(ui, cx),
-            Self::Output(panel) => panel.ui(ui, cx),
-            Self::Inspector(panel) => panel.ui(ui, cx),
-        }
+    /// What it keeps of itself in the session, if anything, for
+    /// [`PanelDesc::open`] to read back.
+    fn saved(&self) -> Option<toml::Value> {
+        None
     }
 
     /// Takes `event` as it's offered, in turn with every other panel.
-    pub fn receive(&mut self, event: &mut Event) -> Reply {
-        match self {
-            Self::FileTree(panel) => panel.receive(event),
-            Self::OpenFile(panel) => panel.receive(event),
-            Self::Inspector(panel) => panel.receive(event),
-            Self::Output(_) => Reply::Pass,
-        }
+    fn receive(&mut self, _event: &mut Event) -> Reply {
+        Reply::Pass
     }
 }
 
@@ -186,7 +97,7 @@ pub enum Event<'a> {
     /// An inspector was just unlocked, so the unlocked one before it closes.
     Unlocked,
     /// The View menu asked for another panel of this kind.
-    Add(PanelKind),
+    Add(&'static PanelDesc),
     /// The open project's trees, read again.
     Read(&'a Trees),
 }
@@ -216,16 +127,24 @@ impl<'a> Context<'a> {
     }
 }
 
-/// What [`Panel::state`] kept, if there is any and it's readable.
-fn read<T: DeserializeOwned>(kind: PanelKind, state: Option<&toml::Value>) -> Option<T> {
+/// The kind of panel `id` names, if any.
+pub fn find(id: &str) -> Option<&'static PanelDesc> {
+    PANELS.iter().find(|desc| desc.id == id)
+}
+
+/// What [`Panel::saved`] kept, if there is any and it's readable, for a
+/// panel titled `title`.
+fn read<T: DeserializeOwned>(title: &str, state: Option<&toml::Value>) -> Option<T> {
     state?
         .clone()
         .try_into()
-        .inspect_err(|err| {
-            tracing::warn!(
-                "a {} tab in the session isn't readable: {err}",
-                kind.title()
-            );
-        })
+        .inspect_err(|err| tracing::warn!("a {title} tab in the session isn't readable: {err}"))
+        .ok()
+}
+
+/// `state` as the session keeps it, for `what`'s tab.
+fn save(state: &impl Serialize, what: &str) -> Option<toml::Value> {
+    toml::Value::try_from(state)
+        .inspect_err(|err| tracing::warn!("can't save {what}'s tab: {err}"))
         .ok()
 }

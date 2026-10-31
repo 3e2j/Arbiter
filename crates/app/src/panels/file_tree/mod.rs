@@ -20,9 +20,9 @@ use project::tree::{NodeKind, SortKey, SortOrder, Tree, TreeFilter, Trees};
 
 use crate::assets::Icon;
 use crate::commands::Command;
-use crate::workspace::Places;
+use crate::workspace::{Place, Places};
 
-use super::{Context, Event, Reply};
+use super::{Context, Event, Panel, PanelDesc, Reply};
 use row::{Columns, row_ui};
 use tab_state::TabState;
 
@@ -111,8 +111,18 @@ pub struct FileTree {
 }
 
 impl FileTree {
-    pub const TITLE: &str = "Files";
-    pub const PLACES: Places = Places::BANDS;
+    pub const DESC: PanelDesc = PanelDesc {
+        id: "file-tree",
+        title: "Files",
+        opens_at: Place::LeftInnerTop,
+        places: Places::BANDS,
+        key_context: Some(FILES),
+        in_menu: true,
+        open: |state| {
+            let view = super::read("Files", state).unwrap_or_default();
+            Some(Box::new(Self::new(view)))
+        },
+    };
 
     /// Once for every file tree.
     pub const COMMANDS: [Command; 1] = [Command {
@@ -122,7 +132,7 @@ impl FileTree {
         chords: &[Chord::new(Key::Char('f'), Modifiers::COMMAND)],
     }];
 
-    pub fn new(view: FilesView) -> Self {
+    fn new(view: FilesView) -> Self {
         Self {
             opened: None,
             tab: view.tab,
@@ -138,7 +148,7 @@ impl FileTree {
         }
     }
 
-    pub const fn view(&self) -> FilesView {
+    const fn view(&self) -> FilesView {
         FilesView {
             tab: self.tab,
             modded: self.filter.modded,
@@ -178,14 +188,6 @@ impl FileTree {
         opened.trees = trees;
     }
 
-    /// Takes each tree read again, as its own copy to sort.
-    pub fn receive(&mut self, event: &mut Event) -> Reply {
-        if let Event::Read(trees) = event {
-            self.refresh(Trees::clone(trees));
-        }
-        Reply::Pass
-    }
-
     /// The filter as `tab`'s tree takes it.
     fn filter(&self, tab: Tab) -> TreeFilter {
         match tab {
@@ -219,78 +221,6 @@ impl FileTree {
             state.renarrow();
         }
     }
-
-    /// Does `commands`, the [`FILES`] ones pressed while it has focus.
-    pub fn act(&mut self, commands: &[AppCommand]) {
-        if self.opened.is_some() && commands.contains(&SEARCH) {
-            self.search.focus = true;
-        }
-    }
-
-    pub fn ui(&mut self, ui: &mut Ui, cx: &mut Context) {
-        self.tabs(ui);
-        if self.opened.is_none() {
-            return notice(ui, "No project open");
-        }
-        self.toolbar(ui);
-        let query = self.search.text.trim();
-        let filter = self.filter(self.tab);
-        let Some(opened) = self.opened.as_deref_mut() else {
-            return;
-        };
-        let tree = match self.tab {
-            Tab::Game => &opened.trees.game,
-            Tab::Project => &opened.trees.project,
-        };
-        let state = &mut opened.states[self.tab as usize];
-        if tree.is_empty() {
-            return notice(ui, "Nothing here yet");
-        }
-        state.rebuild(tree, query, filter, self.compact);
-        if state.rows.is_empty() {
-            return notice(ui, "No matches");
-        }
-        let height = theme::current().size.row;
-        let columns = Columns {
-            gutter: self.tab == Tab::Game,
-            letters: self.letters,
-        };
-        let mut clicked = None;
-        let mut scroll = state.scroll;
-        list(ui, &mut scroll, &state.rows, height, |ui, &row| {
-            let open = state.is_open(row.last);
-            let selected = state.selected == Some(row.last);
-            if row_ui(ui, tree, row, open, selected, columns) {
-                clicked = Some(row.last);
-            }
-        });
-        state.scroll = scroll;
-        if let Some(id) = clicked {
-            state.selected = Some(id);
-            if tree[id].kind == NodeKind::File && ui.input().pressed_again(PointerButton::Left) {
-                let mut path = String::new();
-                let found = match self.tab {
-                    Tab::Game => opened.trees.game_file(id, &mut path),
-                    Tab::Project => {
-                        tree.path(id, &mut path);
-                        true
-                    }
-                };
-                if found {
-                    cx.post(Event::Pick(path));
-                } else {
-                    tracing::info!(
-                        "{} is only a change, with nothing to show yet",
-                        tree.name(id)
-                    );
-                }
-            }
-            if tree[id].kind == NodeKind::Folder {
-                state.toggle(id);
-            }
-        }
-    }
-
     /// The search across, then Filter on the Game tab, then View.
     fn toolbar(&mut self, ui: &mut Ui) {
         toolbar(ui, |ui| {
@@ -442,18 +372,103 @@ impl FileTree {
     }
 }
 
+impl Panel for FileTree {
+    fn desc(&self) -> &'static PanelDesc {
+        &Self::DESC
+    }
+
+    fn saved(&self) -> Option<toml::Value> {
+        super::save(&self.view(), "the files panel")
+    }
+
+    /// Takes each tree read again, as its own copy to sort.
+    fn receive(&mut self, event: &mut Event) -> Reply {
+        if let Event::Read(trees) = event {
+            self.refresh(Trees::clone(trees));
+        }
+        Reply::Pass
+    }
+
+    /// Does `commands`, the [`FILES`] ones pressed while it has focus.
+    fn act(&mut self, _ui: &mut Ui, commands: &[AppCommand]) {
+        if self.opened.is_some() && commands.contains(&SEARCH) {
+            self.search.focus = true;
+        }
+    }
+
+    fn ui(&mut self, ui: &mut Ui, cx: &mut Context) {
+        self.tabs(ui);
+        if self.opened.is_none() {
+            return notice(ui, "No project open");
+        }
+        self.toolbar(ui);
+        let query = self.search.text.trim();
+        let filter = self.filter(self.tab);
+        let Some(opened) = self.opened.as_deref_mut() else {
+            return;
+        };
+        let tree = match self.tab {
+            Tab::Game => &opened.trees.game,
+            Tab::Project => &opened.trees.project,
+        };
+        let state = &mut opened.states[self.tab as usize];
+        if tree.is_empty() {
+            return notice(ui, "Nothing here yet");
+        }
+        state.rebuild(tree, query, filter, self.compact);
+        if state.rows.is_empty() {
+            return notice(ui, "No matches");
+        }
+        let height = theme::current().size.row;
+        let columns = Columns {
+            gutter: self.tab == Tab::Game,
+            letters: self.letters,
+        };
+        let mut clicked = None;
+        let mut scroll = state.scroll;
+        list(ui, &mut scroll, &state.rows, height, |ui, &row| {
+            let open = state.is_open(row.last);
+            let selected = state.selected == Some(row.last);
+            if row_ui(ui, tree, row, open, selected, columns) {
+                clicked = Some(row.last);
+            }
+        });
+        state.scroll = scroll;
+        if let Some(id) = clicked {
+            state.selected = Some(id);
+            if tree[id].kind == NodeKind::File && ui.input().pressed_again(PointerButton::Left) {
+                let mut path = String::new();
+                let found = match self.tab {
+                    Tab::Game => opened.trees.game_file(id, &mut path),
+                    Tab::Project => {
+                        tree.path(id, &mut path);
+                        true
+                    }
+                };
+                if found {
+                    cx.post(Event::Pick(path));
+                } else {
+                    tracing::info!(
+                        "{} is only a change, with nothing to show yet",
+                        tree.name(id)
+                    );
+                }
+            }
+            if tree[id].kind == NodeKind::Folder {
+                state.toggle(id);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use project::tree::SortKey;
 
-    use super::super::{Panel, PanelKind};
     use super::*;
 
-    fn view(panel: &Panel) -> FilesView {
-        match panel {
-            Panel::FileTree(files) => files.view(),
-            _ => FilesView::default(),
-        }
+    fn view(panel: &dyn Panel) -> FilesView {
+        panel.saved().unwrap().try_into().unwrap()
     }
 
     #[test]
@@ -465,16 +480,16 @@ mod tests {
             order = { key = "type", descending = true }
         "#;
         let state = toml::from_str(text).unwrap();
-        let panel = Panel::open(PanelKind::FileTree, Some(&state)).unwrap();
-        let again = Panel::open(PanelKind::FileTree, panel.state().as_ref()).unwrap();
-        assert_eq!(view(&again), view(&panel));
+        let panel = (FileTree::DESC.open)(Some(&state)).unwrap();
+        let again = (FileTree::DESC.open)(panel.saved().as_ref()).unwrap();
+        assert_eq!(view(&*again), view(&*panel));
         let FilesView {
             tab,
             modded,
             compact,
             letters,
             order,
-        } = view(&again);
+        } = view(&*again);
         assert_eq!(tab, Tab::Game);
         assert!(modded && !compact && letters);
         assert_eq!(
@@ -489,7 +504,7 @@ mod tests {
     #[test]
     fn unreadable_state_opens_a_new_panel() {
         let state = toml::from_str("tab = \"nowhere\"").unwrap();
-        let panel = Panel::open(PanelKind::FileTree, Some(&state)).unwrap();
-        assert_eq!(view(&panel), FilesView::default());
+        let panel = (FileTree::DESC.open)(Some(&state)).unwrap();
+        assert_eq!(view(&*panel), FilesView::default());
     }
 }

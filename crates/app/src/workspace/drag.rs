@@ -94,7 +94,7 @@ impl Workspace {
             gap: GUTTER,
             tab_height: tab_height(size),
         };
-        if let Some(landing) = drops.at(drag.grip, pointer, panel.places()) {
+        if let Some(landing) = drops.at(drag.grip, pointer, panel.desc().places) {
             move_tab(&mut self.docks, drag.grip, landing);
         }
     }
@@ -137,7 +137,7 @@ impl Workspace {
             gap: GUTTER,
             tab_height: tab_height(size),
         };
-        let landing = drops.at(grip, pointer, panel.places());
+        let landing = drops.at(grip, pointer, panel.desc().places);
         let copy = Rect {
             x: drag.grip.rect.x + pointer[0] - x,
             y: drag.grip.rect.y + pointer[1] - y,
@@ -403,7 +403,7 @@ mod tests {
     fn dock(titles: &[&str], rect: Rect) -> Dock {
         let tabs = titles
             .iter()
-            .map(|&title| Panel::OpenFile(OpenFile::new(title.to_owned())));
+            .map(|&title| Box::new(OpenFile::new(title.to_owned())) as Box<dyn Panel>);
         let shown = (0..).zip(titles).map(|(i, _): (u16, _)| {
             let x = f32::from(i).mul_add(74., rect.x + 6.);
             (usize::from(i), Rect::new(x, rect.y + 4., 72., TAB))
@@ -580,7 +580,7 @@ mod tests {
     }
 
     fn titles(dock: &Dock) -> Vec<&str> {
-        dock.tabs.iter().map(Panel::title).collect()
+        dock.tabs.iter().map(|panel| panel.title()).collect()
     }
 
     #[test]

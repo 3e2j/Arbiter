@@ -1,9 +1,10 @@
 //! The workspace as the project's session keeps it: each dock's tabs, one
-//! panel each by kind, and each band's size, split and whether it's hidden.
+//! panel each by its kind's id, and each band's size, split and whether it's
+//! hidden.
 
 use serde::{Deserialize, Serialize};
 
-use crate::panels::{Panel, PanelKind};
+use crate::panels;
 
 use super::place::{Band, Place};
 use super::{MIN_DOCK, Workspace};
@@ -34,18 +35,11 @@ struct SavedDock {
 /// One panel, and what it keeps of itself, read by the panel alone.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct SavedTab {
-    kind: SavedKind,
+    /// Its [`PanelDesc::id`](panels::PanelDesc::id). One no panel has any
+    /// more, such as one from a newer Arbiter, leaves out only its tab.
+    kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     state: Option<toml::Value>,
-}
-
-/// A kind no panel is any more, such as one from a newer Arbiter, reads as
-/// its name, so its tab is left out rather than the whole session.
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-#[serde(untagged)]
-enum SavedKind {
-    Known(PanelKind),
-    Gone(String),
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -59,13 +53,13 @@ struct SavedBand {
 }
 
 impl Session {
-    /// A panel of each kind in `layout` in its place, in order, every band
-    /// at its default size.
-    pub fn of(layout: &[(PanelKind, Place)]) -> Self {
+    /// A panel of each kind id in `layout` in its place, in order, every
+    /// band at its default size.
+    pub fn of(layout: &[(&str, Place)]) -> Self {
         let mut docks: Vec<SavedDock> = Vec::new();
         for &(kind, place) in layout {
             let tab = SavedTab {
-                kind: SavedKind::Known(kind),
+                kind: kind.to_owned(),
                 state: None,
             };
             match docks.iter_mut().find(|dock| dock.place == place) {
@@ -116,21 +110,19 @@ impl Workspace {
         for saved in &session.docks {
             let dock = &mut workspace.docks[saved.place.index()];
             for (at, tab) in (0..).zip(&saved.tabs) {
-                let kind = match &tab.kind {
-                    SavedKind::Known(kind) => *kind,
-                    SavedKind::Gone(name) => {
-                        tracing::warn!(
-                            "the session has a `{name}` panel, but no such panel exists, so it's skipped"
-                        );
-                        continue;
-                    }
-                };
-                let Some(panel) = Panel::open(kind, tab.state.as_ref()) else {
-                    tracing::warn!("the session's {kind:?} panel can't open");
+                let kind = &tab.kind;
+                let Some(desc) = panels::find(kind) else {
+                    tracing::warn!(
+                        "the session has a `{kind}` panel, but no such panel exists, so it's skipped"
+                    );
                     continue;
                 };
-                if !panel.places().contains(saved.place) {
-                    tracing::warn!("a {kind:?} panel can't sit at {:?}", saved.place);
+                let Some(panel) = (desc.open)(tab.state.as_ref()) else {
+                    tracing::warn!("the session's `{kind}` panel can't open");
+                    continue;
+                };
+                if !desc.places.contains(saved.place) {
+                    tracing::warn!("a `{kind}` panel can't sit at {:?}", saved.place);
                     continue;
                 }
                 if at == saved.active {
@@ -165,8 +157,8 @@ impl Workspace {
                         .tabs
                         .iter()
                         .map(|panel| SavedTab {
-                            kind: SavedKind::Known(panel.kind()),
-                            state: panel.state(),
+                            kind: panel.desc().id.to_owned(),
+                            state: panel.saved(),
                         })
                         .collect(),
                 })
@@ -187,18 +179,18 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::panels::Output;
+    use crate::panels::{FileTree, Output};
     use crate::workspace::Side;
 
-    const LAYOUT: [(PanelKind, Place); 3] = [
-        (PanelKind::FileTree, Place::LeftInnerTop),
-        (PanelKind::Output, Place::LeftInnerTop),
-        (PanelKind::Output, Place::RightInnerTop),
+    const LAYOUT: [(&str, Place); 3] = [
+        (FileTree::DESC.id, Place::LeftInnerTop),
+        (Output::DESC.id, Place::LeftInnerTop),
+        (Output::DESC.id, Place::RightInnerTop),
     ];
 
     fn titles(workspace: &Workspace, place: Place) -> Vec<&str> {
         let dock = &workspace.docks[place.index()];
-        dock.tabs.iter().map(Panel::title).collect()
+        dock.tabs.iter().map(|panel| panel.title()).collect()
     }
 
     #[test]
@@ -228,8 +220,8 @@ mod tests {
         workspace.docks[Place::RightInnerTop.index()].remove(0);
         let below = &mut workspace.docks[Place::BelowMain.index()];
         below.tabs.extend([
-            Panel::open(PanelKind::FileTree, None).unwrap(),
-            Panel::Output(Output::new()),
+            (FileTree::DESC.open)(None).unwrap(),
+            Box::new(Output::new()),
         ]);
         below.active = 1;
         workspace.sizes[Band::BelowMain.index()] = 300.;

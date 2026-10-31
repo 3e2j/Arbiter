@@ -10,7 +10,6 @@ use gui::{
 };
 
 use crate::assets::Icon;
-use crate::panels::Panel;
 
 use super::Workspace;
 use super::dock::{Dock, TAB_GAP, TAB_PADDING, dock_radius, tab_height};
@@ -153,7 +152,7 @@ fn menu_ui(ui: &mut Ui, menu: Menu, docks: &[Dock; Place::COUNT], window: Rect) 
     let allowed = dock
         .tabs
         .get(menu.tab)
-        .map_or(Places::default(), Panel::places);
+        .map_or(Places::default(), |panel| panel.desc().places);
     let inner = TAB_PADDING.mul_add(-2., WIDTH);
     let map = [inner, (inner * MAP[1] / MAP[0]).round()];
     let rows: f32 = dock.tabs.iter().map(|_| tab_height(size)).sum();

@@ -12,8 +12,9 @@ use project::{Entry, LOG, Level};
 
 use crate::assets::Icon;
 use crate::theme::{self, ThemeColors};
+use crate::workspace::{Place, Places};
 
-use super::Context;
+use super::{Context, Panel, PanelDesc};
 
 pub struct Output {
     /// Where Clear left the log. Entries before it aren't shown or counted.
@@ -39,7 +40,15 @@ struct Row {
 }
 
 impl Output {
-    pub const TITLE: &str = "Output";
+    pub const DESC: PanelDesc = PanelDesc {
+        id: "output",
+        title: "Output",
+        opens_at: Place::BelowMain,
+        places: Places::BANDS,
+        key_context: None,
+        in_menu: true,
+        open: |_| Some(Box::new(Self::new())),
+    };
 
     pub const fn new() -> Self {
         Self {
@@ -51,29 +60,6 @@ impl Output {
             scroll: ListScroll::TOP,
             follow: true,
         }
-    }
-
-    pub fn ui(&mut self, ui: &mut Ui, _cx: &mut Context) {
-        self.toolbar(ui);
-        self.read_new();
-        let height = theme::current().size.row;
-        ui.element(Element::column(), |ui| {
-            let view = ui.rect().map(|rect| rect.h);
-            if let Some(view) = view
-                && self.follow
-            {
-                self.scroll.jump_to_end(view, height, self.rows.len());
-            }
-            let (mut text, mut time) = (String::new(), String::new());
-            list(ui, &mut self.scroll, &self.rows, height, |ui, row| {
-                if let Some(entry) = LOG.entry(row.index, &mut text) {
-                    entry_ui(ui, &entry, row.repeats, &text, &mut time);
-                }
-            });
-            if let Some(view) = view {
-                self.follow = self.scroll.at_end(view, height, self.rows.len());
-            }
-        });
     }
 
     /// Takes in what the log has had since last pass, and lets go of rows
@@ -124,6 +110,35 @@ impl Output {
                     self.shown[level as usize] = !shown;
                     self.reread();
                 }
+            }
+        });
+    }
+}
+
+impl Panel for Output {
+    fn desc(&self) -> &'static PanelDesc {
+        &Self::DESC
+    }
+
+    fn ui(&mut self, ui: &mut Ui, _cx: &mut Context) {
+        self.toolbar(ui);
+        self.read_new();
+        let height = theme::current().size.row;
+        ui.element(Element::column(), |ui| {
+            let view = ui.rect().map(|rect| rect.h);
+            if let Some(view) = view
+                && self.follow
+            {
+                self.scroll.jump_to_end(view, height, self.rows.len());
+            }
+            let (mut text, mut time) = (String::new(), String::new());
+            list(ui, &mut self.scroll, &self.rows, height, |ui, row| {
+                if let Some(entry) = LOG.entry(row.index, &mut text) {
+                    entry_ui(ui, &entry, row.repeats, &text, &mut time);
+                }
+            });
+            if let Some(view) = view {
+                self.follow = self.scroll.at_end(view, height, self.rows.len());
             }
         });
     }

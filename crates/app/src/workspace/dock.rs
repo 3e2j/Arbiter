@@ -15,7 +15,7 @@ use crate::theme::{self, ThemeSizes};
 
 #[derive(Default)]
 pub(super) struct Dock {
-    pub(super) tabs: Vec<Panel>,
+    pub(super) tabs: Vec<Box<dyn Panel>>,
     /// The tab whose panel is drawn.
     pub(super) active: usize,
     /// Each tab's width this pass, kept so a pass allocates nothing.
@@ -158,7 +158,7 @@ impl Dock {
 
     /// Takes out the tab at `index`, showing the one that slides into its
     /// place, or the new last.
-    pub(super) fn remove(&mut self, index: usize) -> Option<Panel> {
+    pub(super) fn remove(&mut self, index: usize) -> Option<Box<dyn Panel>> {
         if index >= self.tabs.len() {
             return None;
         }

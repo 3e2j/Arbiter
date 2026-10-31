@@ -2,8 +2,8 @@
 //! go right of the title, and what else goes in it, such as settings, goes
 //! left of the window's buttons.
 //!
-//! The View menu lists the panels a project opens with. Picking one adds
-//! another where that kind first sits, as many as are wanted.
+//! The View menu lists each kind of panel whose desc puts it there. Picking
+//! one adds another where that kind opens, as many as are wanted.
 
 use crate::components::{
     ContextMenu, IconState, MenuItem, context_menu, icon_button, spacer, toolbar,
@@ -14,7 +14,7 @@ use gui::{
 };
 
 use crate::assets::Icon;
-use crate::panels::PanelKind;
+use crate::panels::{PANELS, PanelDesc};
 use crate::settings::Settings;
 use crate::theme;
 
@@ -104,16 +104,14 @@ fn menu_button(ui: &mut Ui, label: &str, menu: &mut ContextMenu) {
 }
 
 /// The View menu while it's open, over everything declared before it.
-/// `panels` are the kinds it offers. Returns the one picked.
-pub fn view_menu(ui: &mut Ui, menu: &mut ContextMenu, panels: &[PanelKind]) -> Option<PanelKind> {
+/// Returns the kind picked.
+pub fn view_menu(ui: &mut Ui, menu: &mut ContextMenu) -> Option<&'static PanelDesc> {
     if !menu.is_open() {
         return None;
     }
-    let items: Vec<_> = panels
-        .iter()
-        .map(|kind| MenuItem::new(kind.title()))
-        .collect();
-    panels.get(context_menu(ui, menu, &items)?).copied()
+    let kinds: Vec<_> = PANELS.iter().filter(|desc| desc.in_menu).collect();
+    let items: Vec<_> = kinds.iter().map(|desc| MenuItem::new(desc.title)).collect();
+    kinds.get(context_menu(ui, menu, &items)?).copied()
 }
 
 #[cfg(test)]
