@@ -120,6 +120,37 @@ fn edges_land_on_physical_pixels() {
 }
 
 #[test]
+fn padding_is_as_thick_on_each_side_at_a_fractional_scale() {
+    let mut layout = Layout::default();
+    layout.clear();
+    let centred = Element {
+        align: [Align::Center; 2],
+        ..Element::row()
+    };
+    let track = Element {
+        padding: [2.; 4],
+        border: Some(Border {
+            width: 1.,
+            color: Color::TRANSPARENT,
+        }),
+        ..Element::DEFAULT
+    };
+    layout.open(slot(0), centred);
+    layout.open(slot(1), track);
+    leaf(&mut layout, 2, fixed(50., 24.));
+    layout.close();
+    layout.close();
+    layout.solve(WINDOW, 1.25);
+    let rects = rects(&layout);
+    let (outer, inner) = (rects[2], rects[3]);
+    assert_eq!(inner.y - outer.y, outer.bottom() - inner.bottom());
+    assert_eq!(
+        layout.nodes[2].element.border.map(|border| border.width),
+        Some(0.8)
+    );
+}
+
+#[test]
 fn an_unchanged_pass_hasnt_moved() {
     let mut layout = Layout::default();
     let pass = |layout: &mut Layout| {

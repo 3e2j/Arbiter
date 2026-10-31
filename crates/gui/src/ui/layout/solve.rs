@@ -20,8 +20,17 @@ impl Layout {
         };
         window.end = len;
         window.element.size = [Length::Fixed(root.w), Length::Fixed(root.h)];
+        // Whole pixels, so an inset or border is as thick on every side.
+        for node in &mut self.nodes {
+            let element = &mut node.element;
+            element.padding = element.padding.map(|value| px(value, scale));
+            element.gap = px(element.gap, scale);
+            if let Some(border) = &mut element.border {
+                border.width = px(border.width, scale).max(1. / scale);
+            }
+        }
         for axis in [0, 1] {
-            self.fit(axis);
+            self.fit(axis, scale);
             self.grow(axis);
         }
         self.nodes[0].rect = root;
@@ -35,8 +44,9 @@ impl Layout {
                 .any(|(node, last)| node.rect != last.rect)
     }
 
-    /// Leaves first, so each box's children are sized before it is.
-    fn fit(&mut self, axis: usize) {
+    /// Leaves first, so each box's children are sized before it is, each a
+    /// whole number of physical pixels at `scale`.
+    fn fit(&mut self, axis: usize, scale: f32) {
         for index in (0..self.nodes.len()).rev() {
             let node = &self.nodes[index];
             let intrinsic = match node.content {
@@ -62,7 +72,7 @@ impl Layout {
                 Length::Grow if node.element.clip => padding(node, axis),
                 Length::Fit | Length::Grow => used + padding(node, axis),
             };
-            node.size[axis] = size.max(node.element.min[axis]);
+            node.size[axis] = px(size.max(node.element.min[axis]), scale);
         }
     }
 
@@ -129,7 +139,7 @@ impl Layout {
                 count += 1;
             }
             used += element.gap * f32::from(count.saturating_sub(1));
-            let mut pen = share(element.align[main], inner[main] - used);
+            let mut pen = px(share(element.align[main], inner[main] - used), scale);
             let mut across = 0f32;
             self.each_child(index, |child| {
                 let size = child.size;
@@ -157,8 +167,8 @@ impl Layout {
                     None => {
                         let mut at = [0.; 2];
                         at[main] = origin[main] + pen;
-                        at[cross] =
-                            origin[cross] + share(element.align[cross], inner[cross] - size[cross]);
+                        let slack = inner[cross] - size[cross];
+                        at[cross] = origin[cross] + px(share(element.align[cross], slack), scale);
                         pen += size[main] + element.gap;
                         across = across.max(size[cross]);
                         at
@@ -227,8 +237,13 @@ fn inside(at: [f32; 2], size: [f32; 2], window: Rect) -> [f32; 2] {
     std::array::from_fn(|axis| at[axis].min(end[axis] - size[axis]).max(start[axis]))
 }
 
+/// `value` logical pixels, rounded to whole physical pixels at `scale`.
+fn px(value: f32, scale: f32) -> f32 {
+    (value * scale).round() / scale
+}
+
 fn snap(at: [f32; 2], size: [f32; 2], scale: f32) -> Rect {
-    let edge = |value: f32| (value * scale).round() / scale;
+    let edge = |value: f32| px(value, scale);
     let [x, y] = at.map(edge);
     Rect::new(x, y, edge(at[0] + size[0]) - x, edge(at[1] + size[1]) - y)
 }
