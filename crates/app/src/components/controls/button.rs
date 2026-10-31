@@ -74,6 +74,8 @@ pub struct Clicks {
     pub pressed: bool,
     /// The left button came up over it after going down over it.
     pub clicked: bool,
+    /// It's under the pointer, for its tooltip.
+    pub hovered: bool,
 }
 
 /// An icon in a square box.
@@ -102,6 +104,7 @@ pub fn icon_button(ui: &mut Ui, icon: impl Into<IconId>, state: IconState) -> Cl
         Clicks {
             pressed: enabled && ui.pressed(PointerButton::Left),
             clicked: enabled && ui.clicked(PointerButton::Left),
+            hovered,
         }
     })
 }

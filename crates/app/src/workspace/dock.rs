@@ -298,11 +298,13 @@ fn close_button(ui: &mut Ui) -> Clicks {
         ..Element::DEFAULT
     };
     ui.element(element, |ui| {
-        let lit = if ui.hovered() { color.text } else { color.dim };
+        let hovered = ui.hovered();
+        let lit = if hovered { color.text } else { color.dim };
         ui.icon(Icon::Close, size.icon, lit);
         Clicks {
             pressed: ui.pressed(PointerButton::Left),
             clicked: ui.clicked(PointerButton::Left),
+            hovered,
         }
     })
 }

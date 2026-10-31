@@ -208,7 +208,8 @@ impl Inspector {
             .as_ref()
             .is_some_and(|(_, format)| format.tables())
             .then_some(fields.raw);
-        let (pinned, flipped) = header(ui, crumbs.iter().flatten().copied(), *locked, raw);
+        let (pinned, flipped, mut over) =
+            header(ui, crumbs.iter().flatten().copied(), *locked, raw);
         if pinned {
             *locked = !*locked;
             if !*locked {
@@ -218,18 +219,20 @@ impl Inspector {
         if flipped {
             fields.flip_raw();
         }
-        let Some((shown, format)) = format else {
-            return notice(ui, "Nothing selected");
-        };
-        let body = Element {
-            padding: [0., 0., 0., theme::current().size.gap],
-            ..Element::column()
-        };
-        let mut over = None;
-        scroll(ui, body_scroll, body, |ui| {
-            fields.drawn = 0;
-            over = format.inspect(ui, shown.item, fields);
-        });
+        if let Some((shown, format)) = format {
+            let body = Element {
+                padding: [0., 0., 0., theme::current().size.gap],
+                ..Element::column()
+            };
+            scroll(ui, body_scroll, body, |ui| {
+                fields.drawn = 0;
+                if let Some(field) = format.inspect(ui, shown.item, fields) {
+                    over = Some(field);
+                }
+            });
+        } else {
+            notice(ui, "Nothing selected");
+        }
         if let Some(at) = tip.rest(ui, over.clone())
             && let Some((label, help)) = &over
         {
@@ -240,14 +243,15 @@ impl Inspector {
 
 /// The breadcrumb, each step of `crumbs`, the last brightest, then the Raw
 /// button if given, lit while `raw`, then the lock, lit while `locked`.
-/// Returns whether the lock and the Raw button were clicked.
+/// Returns whether the lock and the Raw button were clicked, and the hint of
+/// the one under the pointer.
 #[track_caller]
 fn header<'a>(
     ui: &mut Ui,
     crumbs: impl Iterator<Item = &'a str>,
     locked: bool,
     raw: Option<bool>,
-) -> (bool, bool) {
+) -> (bool, bool, Option<(&'static str, String)>) {
     let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let bar = Element {
@@ -286,8 +290,40 @@ fn header<'a>(
                 IconState::Normal
             }
         };
-        let flipped = raw.is_some_and(|on| icon_button(ui, Icon::Raw, lit(on)).clicked);
-        (icon_button(ui, Icon::Pin, lit(locked)).clicked, flipped)
+        let mut hint = None;
+        let flipped = raw.is_some_and(|on| {
+            let button = icon_button(ui, Icon::Raw, lit(on));
+            if button.hovered {
+                hint = Some(if on {
+                    (
+                        "Show decoded",
+                        "Values and definitions derived from the game.",
+                    )
+                } else {
+                    (
+                        "Show raw",
+                        "Values as the file holds it. Ignores any game-derived data.",
+                    )
+                });
+            }
+            button.clicked
+        });
+        let pin = icon_button(ui, Icon::Pin, lit(locked));
+        if pin.hovered {
+            hint = Some(if locked {
+                (
+                    "Unpin",
+                    "Follow the selection again, closing the other unpinned inspector.",
+                )
+            } else {
+                (
+                    "Pin",
+                    "Keep showing this. The next selection opens another inspector.",
+                )
+            });
+        }
+        let hint = hint.map(|(title, help)| (title, help.to_owned()));
+        (pin.clicked, flipped, hint)
     })
 }
 
