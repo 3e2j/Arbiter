@@ -27,21 +27,21 @@ use gui::{
     ui::{Element, Ui, window::window_edges},
 };
 use keymap::{AppCommand, KeyContext};
-use panels::{FileTree, OpenFile, Panel, PanelKind};
+use panels::{FileTree, OpenFile, Panel, PanelKind, route};
 use project::{LOG, Project};
 use settings::Settings;
 use theme::ThemeFonts;
-use workspace::{Place, Session, Workspace, status_bar, title_bar};
+use workspace::{Session, Workspace, status_bar, title_bar};
 
 /// How far in from the window's edges a drag resizes it, in logical pixels.
 const RESIZE_EDGE: f32 = 4.;
 
-/// Each panel's kind and place in a project without a session, in tab order.
-/// The View menu offers them, and adds another where it sits here.
-const LAYOUT: [(PanelKind, Place); 2] = [
-    (PanelKind::FileTree, Place::LeftInnerTop),
-    (PanelKind::Output, Place::BelowMain),
-];
+/// What the View menu offers, in order.
+const MENU_PANELS: [PanelKind; 3] = [PanelKind::FileTree, PanelKind::Output, PanelKind::Inspector];
+
+/// What a project without a session opens, in tab order. The inspector
+/// waits for a selection.
+const STARTING_LAYOUT: [PanelKind; 2] = [PanelKind::FileTree, PanelKind::Output];
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
@@ -139,7 +139,8 @@ impl Editor {
         }
         let mut file = OpenFile::new(path.to_owned());
         file.load(loader.ask(project.root.join(path)), version(project, path));
-        self.workspace.add(Place::Main, Panel::OpenFile(file));
+        self.workspace
+            .add(PanelKind::OpenFile.place(), Panel::OpenFile(file));
     }
 
     /// What the keys pressed this pass do: as text while a box has the
@@ -158,6 +159,21 @@ impl Editor {
         // Asking GLOBAL twice finds nothing more.
         let contexts = [first.unwrap_or(KeyContext::GLOBAL), KeyContext::GLOBAL];
         keymap::commands(ui.input().keys(), &contexts).collect()
+    }
+
+    /// Adds a panel of `kind` at its place, or for an inspector, shows the
+    /// unlocked one if there is one.
+    fn add_panel(&mut self, kind: PanelKind) {
+        if kind == PanelKind::Inspector && route::show_unlocked(&mut self.workspace) {
+            return;
+        }
+        if let Some(panel) = Panel::open(kind, None) {
+            self.workspace.add(kind.place(), panel);
+        }
+        // A new files panel has no tree until it's read.
+        if kind == PanelKind::FileTree {
+            self.read_trees();
+        }
     }
 
     fn file_trees(&mut self) -> impl Iterator<Item = &mut FileTree> {
@@ -184,7 +200,7 @@ impl App for Editor {
         let session = project
             .as_ref()
             .and_then(session)
-            .unwrap_or_else(|| Session::of(&LAYOUT));
+            .unwrap_or_else(|| Session::of(&STARTING_LAYOUT.map(|kind| (kind, kind.place()))));
         let mut app = Self {
             workspace: Workspace::new(&session),
             settings,
@@ -283,15 +299,12 @@ impl App for Editor {
                 for path in &picked {
                     self.open_file(path);
                 }
+                route::update(&mut self.workspace);
                 status_bar::ui(ui, &mut self.workspace);
                 self.settings.panel(ui);
             });
-            let added = title_bar::view_menu(ui, &mut self.view, &mut self.workspace, &LAYOUT);
-            if let Some(kind) = added {
-                // A new files panel has no tree until it's read.
-                if kind == PanelKind::FileTree {
-                    self.read_trees();
-                }
+            if let Some(kind) = title_bar::view_menu(ui, &mut self.view, &MENU_PANELS) {
+                self.add_panel(kind);
             }
             window_edges(ui, RESIZE_EDGE);
         });

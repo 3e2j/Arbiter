@@ -8,7 +8,10 @@
 //! Find above narrows the list to the messages whose text holds the query,
 //! never counting a tag's. A query of only digits also finds the message
 //! with that id.
+//!
+//! Clicking a message inspects it, as [`inspect`] shows it.
 
+mod inspect;
 mod lines;
 
 use std::fmt::Write;
@@ -21,8 +24,9 @@ use formats::jsystem::jmessage::bmg::{Bmg, TextSegment};
 use gui::ui::{Direction, Element, Length, TextStyle, Ui};
 
 use crate::components::{
-    ListScroll, TextField, fit_list, line_box, notice, rule, text_field, toggle, toolbar,
+    ListScroll, TextField, fit_list, line_box, notice, row, rule, text_field, toggle, toolbar,
 };
+use crate::panels::inspector::Page;
 use crate::theme;
 use lines::{Find, Lines, line};
 
@@ -30,6 +34,9 @@ const ID: &str = "ID";
 const POSITION: &str = "Pos";
 
 pub struct Messages {
+    bmg: Bmg,
+    /// Whose tables name the tags and the records' fields.
+    version: Option<Version>,
     /// By position. `None` for a file without MID1.
     ids: Option<Vec<u16>>,
     /// The widest id's or position's, or its heading's, so the text lines
@@ -47,6 +54,10 @@ pub struct Messages {
     shown: Vec<usize>,
     /// What find found, or how many messages there are.
     count: String,
+    /// The position of the message last clicked.
+    selected: Option<usize>,
+    /// Clicked since [`Self::take_inspected`] last asked.
+    picked: Option<usize>,
 }
 
 impl Messages {
@@ -62,7 +73,7 @@ impl Messages {
                 for item in &diag.items {
                     tracing::warn!("{path}: {}", item.message);
                 }
-                Some(Self::new(&bmg, version))
+                Some(Self::new(bmg, version))
             }
             Err(err) => {
                 tracing::warn!("can't read {path} as a message file: {err}");
@@ -72,7 +83,7 @@ impl Messages {
     }
 
     /// `bmg`'s messages, its tags named by `version`'s tables when given.
-    pub fn new(bmg: &Bmg, version: Option<Version>) -> Self {
+    pub fn new(bmg: Bmg, version: Option<Version>) -> Self {
         let ids = bmg
             .mid1
             .map(|_| bmg.messages.iter().map(|m| m.id).collect::<Vec<_>>());
@@ -84,16 +95,21 @@ impl Messages {
             .chain(bmg.messages.len().checked_sub(1))
             .max()
             .unwrap_or(0);
+        let lines = lines(&bmg, version);
         let mut messages = Self {
+            bmg,
+            version,
             ids,
             digits: widest.to_string().len().max(POSITION.len()),
-            lines: lines(bmg, version),
+            lines,
             scroll: ListScroll::TOP,
             search: TextField::default(),
             case: false,
             word: false,
             shown: Vec::new(),
             count: String::new(),
+            selected: None,
+            picked: None,
         };
         messages.refind();
         messages
@@ -174,13 +190,14 @@ impl Messages {
             ui.element(line_box(height), |ui| ui.text(dim_style, "Text"));
         });
         rule(ui);
-        fit_list(ui, &mut self.scroll, self.shown.len(), |ui, row| {
-            let Some(&index) = self.shown.get(row) else {
+        fit_list(ui, &mut self.scroll, self.shown.len(), |ui, at| {
+            let Some(&index) = self.shown.get(at) else {
                 return;
             };
             position.clear();
             let _ = write!(position, "{index:>digits$}");
-            ui.element(element, |ui| {
+            let selected = self.selected == Some(index);
+            let (clicked, ()) = row(ui, element, selected, |ui| {
                 ui.element(line_box(height), |ui| ui.text(dim_style, &position));
                 if let Some(&number) = ids.and_then(|ids| ids.get(index)) {
                     id.clear();
@@ -189,7 +206,16 @@ impl Messages {
                 }
                 line(ui, &self.lines, index, height);
             });
+            if clicked {
+                self.selected = Some(index);
+                self.picked = Some(index);
+            }
         });
+    }
+
+    /// The message clicked since last asked, as a page under `file`'s name.
+    pub fn take_inspected(&mut self, file: &str) -> Option<Page> {
+        inspect::page(&self.bmg, self.version, self.picked.take()?, file)
     }
 }
 
@@ -314,7 +340,7 @@ mod tests {
     #[test]
     fn find_narrows_the_list_and_counts() {
         let file = bmg(&[&[text(b"a cat")], &[text(b"dog")], &[text(b"cat, cat")]]);
-        let mut messages = Messages::new(&file, None);
+        let mut messages = Messages::new(file, None);
         assert_eq!(messages.shown, [0, 1, 2]);
         assert_eq!(messages.count, "3 messages");
         messages.search.text = "cat".to_owned();
@@ -326,7 +352,7 @@ mod tests {
     #[test]
     fn find_by_digits_also_finds_that_id() {
         let file = bmg(&[&[text(b"101 cats")], &[text(b"dog")], &[text(b"cat")]]);
-        let mut messages = Messages::new(&file, None);
+        let mut messages = Messages::new(file, None);
         messages.search.text = "101".to_owned();
         messages.refind();
         assert_eq!(messages.shown, [0, 1]);
@@ -337,7 +363,7 @@ mod tests {
     fn without_mid1_rows_go_by_position() {
         let mut file = bmg(&[&[text(b"a")], &[text(b"b")]]);
         file.mid1 = None;
-        let mut messages = Messages::new(&file, None);
+        let mut messages = Messages::new(file, None);
         messages.search.text = "1".to_owned();
         messages.refind();
         assert_eq!(messages.shown, [1]);

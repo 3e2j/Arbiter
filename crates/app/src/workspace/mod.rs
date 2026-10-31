@@ -96,6 +96,20 @@ impl Workspace {
         false
     }
 
+    /// Closes every panel `close` picks out.
+    pub fn close(&mut self, mut close: impl FnMut(&mut Panel) -> bool) {
+        for dock in &mut self.docks {
+            let mut at = 0;
+            while let Some(panel) = dock.tabs.get_mut(at) {
+                if close(panel) {
+                    dock.remove(at);
+                } else {
+                    at += 1;
+                }
+            }
+        }
+    }
+
     /// Adds `panel` as the last tab at `place`, and shows it and its band.
     pub fn add(&mut self, place: Place, panel: Panel) {
         let dock = &mut self.docks[place.index()];

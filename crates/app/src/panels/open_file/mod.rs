@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::components::{notice, segmented, toolbar};
 use crate::fs::Loaded;
 use crate::keymap::AppCommand;
+use crate::panels::inspector::Page;
 use crate::workspace::Places;
 use editor::Editor;
 use hex::HexState;
@@ -104,7 +105,12 @@ impl OpenFile {
 
     /// The file's name.
     pub fn title(&self) -> &str {
-        self.path.rsplit('/').next().unwrap_or(&self.path)
+        file_name(&self.path)
+    }
+
+    /// What was clicked in its editor since last asked, to inspect.
+    pub fn take_inspected(&mut self) -> Option<Page> {
+        self.editor.as_mut()?.take_inspected(file_name(&self.path))
     }
 
     /// Shows the bytes `loading` brings, once they come, their values named
@@ -181,6 +187,10 @@ impl OpenFile {
             _ => self.hex.ui(ui, bytes),
         }
     }
+}
+
+fn file_name(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
 }
 
 #[cfg(test)]

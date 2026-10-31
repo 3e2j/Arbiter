@@ -14,11 +14,9 @@ use gui::{
 };
 
 use crate::assets::Icon;
-use crate::panels::{Panel, PanelKind};
+use crate::panels::PanelKind;
 use crate::settings::Settings;
 use crate::theme;
-
-use super::{Place, Workspace};
 
 /// `title`, the View button, then the settings and the window's buttons at
 /// the right end.
@@ -106,24 +104,16 @@ fn menu_button(ui: &mut Ui, label: &str, menu: &mut ContextMenu) {
 }
 
 /// The View menu while it's open, over everything declared before it.
-/// `panels` are the kinds it offers, each with where it opens. Returns the
-/// kind of the panel it added.
-pub fn view_menu(
-    ui: &mut Ui,
-    menu: &mut ContextMenu,
-    workspace: &mut Workspace,
-    panels: &[(PanelKind, Place)],
-) -> Option<PanelKind> {
+/// `panels` are the kinds it offers. Returns the one picked.
+pub fn view_menu(ui: &mut Ui, menu: &mut ContextMenu, panels: &[PanelKind]) -> Option<PanelKind> {
     if !menu.is_open() {
         return None;
     }
     let items: Vec<_> = panels
         .iter()
-        .map(|&(kind, _)| MenuItem::new(kind.title()))
+        .map(|kind| MenuItem::new(kind.title()))
         .collect();
-    let &(kind, place) = panels.get(context_menu(ui, menu, &items)?)?;
-    workspace.add(place, Panel::open(kind, None)?);
-    Some(kind)
+    panels.get(context_menu(ui, menu, &items)?).copied()
 }
 
 #[cfg(test)]

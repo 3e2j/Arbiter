@@ -1,17 +1,20 @@
 //! What the user works in, one per tab. Each panel is its own state plus a
-//! title and a `ui`, and knows no other panel.
+//! title and a `ui`, and knows no other panel. [`route`] connects them.
 
 mod file_tree;
+pub mod inspector;
 mod open_file;
 mod output;
+pub mod route;
 
 use gui::ui::Ui;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::keymap::{AppCommand, KeyContext};
-use crate::workspace::Places;
+use crate::workspace::{Place, Places};
 
 pub use file_tree::FileTree;
+pub use inspector::Inspector;
 pub use open_file::{Hex, OpenFile};
 pub use output::Output;
 
@@ -22,6 +25,7 @@ pub enum PanelKind {
     FileTree,
     OpenFile,
     Output,
+    Inspector,
 }
 
 impl PanelKind {
@@ -31,6 +35,17 @@ impl PanelKind {
             Self::FileTree => FileTree::TITLE,
             Self::OpenFile => "File",
             Self::Output => Output::TITLE,
+            Self::Inspector => Inspector::TITLE,
+        }
+    }
+
+    /// Where a new panel of this kind opens.
+    pub const fn place(self) -> Place {
+        match self {
+            Self::FileTree => Place::LeftInnerTop,
+            Self::OpenFile => Place::Main,
+            Self::Output => Place::BelowMain,
+            Self::Inspector => Place::RightInnerTop,
         }
     }
 }
@@ -40,6 +55,7 @@ pub enum Panel {
     FileTree(FileTree),
     OpenFile(OpenFile),
     Output(Output),
+    Inspector(Inspector),
 }
 
 impl Panel {
@@ -57,6 +73,9 @@ impl Panel {
                 Self::OpenFile(OpenFile::from_state(read(kind, state)?))
             }
             PanelKind::Output => Self::Output(Output::new()),
+            PanelKind::Inspector => Self::Inspector(Inspector::from_state(
+                &read(kind, state).unwrap_or_default(),
+            )),
         })
     }
 
@@ -67,6 +86,7 @@ impl Panel {
             Self::FileTree(_) => PanelKind::FileTree,
             Self::OpenFile(_) => PanelKind::OpenFile,
             Self::Output(_) => PanelKind::Output,
+            Self::Inspector(_) => PanelKind::Inspector,
         }
     }
 
@@ -79,6 +99,9 @@ impl Panel {
             Self::OpenFile(panel) => toml::Value::try_from(panel.state())
                 .inspect_err(|err| tracing::warn!("can't save {}'s tab: {err}", panel.path()))
                 .ok(),
+            Self::Inspector(panel) => toml::Value::try_from(panel.state())
+                .inspect_err(|err| tracing::warn!("can't save an inspector's tab: {err}"))
+                .ok(),
             Self::Output(_) => None,
         }
     }
@@ -88,6 +111,7 @@ impl Panel {
             Self::FileTree(_) => FileTree::TITLE,
             Self::OpenFile(panel) => panel.title(),
             Self::Output(_) => Output::TITLE,
+            Self::Inspector(panel) => panel.title(),
         }
     }
 
@@ -96,7 +120,7 @@ impl Panel {
         match self {
             Self::FileTree(_) => FileTree::PLACES,
             Self::OpenFile(_) => OpenFile::PLACES,
-            Self::Output(_) => Places::BANDS,
+            Self::Output(_) | Self::Inspector(_) => Places::BANDS,
         }
     }
 
@@ -105,7 +129,7 @@ impl Panel {
         match self {
             Self::FileTree(_) => Some(file_tree::FILES),
             Self::OpenFile(_) => Some(open_file::HEX),
-            Self::Output(_) => None,
+            Self::Output(_) | Self::Inspector(_) => None,
         }
     }
 
@@ -114,7 +138,7 @@ impl Panel {
         match self {
             Self::FileTree(panel) => panel.act(commands),
             Self::OpenFile(panel) => panel.act(ui, commands),
-            Self::Output(_) => {}
+            Self::Output(_) | Self::Inspector(_) => {}
         }
     }
 
@@ -124,6 +148,7 @@ impl Panel {
             Self::FileTree(panel) => panel.ui(ui),
             Self::OpenFile(panel) => panel.ui(ui),
             Self::Output(panel) => panel.ui(ui),
+            Self::Inspector(panel) => panel.ui(ui),
         }
     }
 }

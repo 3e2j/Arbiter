@@ -6,6 +6,7 @@ mod messages;
 use formats::games::tp::Version;
 use gui::ui::Ui;
 
+use crate::panels::inspector::Page;
 use messages::Messages;
 
 pub enum Editor {
@@ -24,6 +25,14 @@ impl Editor {
     pub const fn name(&self) -> &'static str {
         match self {
             Self::Messages(_) => "Messages",
+        }
+    }
+
+    /// What was clicked since last asked, as a [`Page`] under
+    /// `file`'s name.
+    pub fn take_inspected(&mut self, file: &str) -> Option<Page> {
+        match self {
+            Self::Messages(messages) => messages.take_inspected(file),
         }
     }
 
