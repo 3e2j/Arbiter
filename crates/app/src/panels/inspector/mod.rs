@@ -67,6 +67,8 @@ pub struct Fields {
     pub view: u16,
     /// The titles of the sections closed, kept across selections.
     closed: Vec<&'static str>,
+    /// How far in fields start, for the subsections they're in.
+    indent: f32,
     /// Boxed, as it's most of an inspector's size.
     pub message: Box<MessageText>,
 }
@@ -238,7 +240,7 @@ pub fn section(ui: &mut Ui, fields: &mut Fields, title: &'static str) -> bool {
 }
 
 /// A section within another: its heading, then while it's open, what `body`
-/// draws, a step in. Opens and closes as [`section`] does.
+/// draws, its fields a step in. Opens and closes as [`section`] does.
 #[track_caller]
 pub fn subsection(
     ui: &mut Ui,
@@ -249,12 +251,10 @@ pub fn subsection(
     if !heading(ui, fields, title) {
         return;
     }
-    let element = Element {
-        size: [Length::Grow, Length::Fit],
-        padding: [theme::current().size.gap * 1.5, 0., 0., 0.],
-        ..Element::DEFAULT
-    };
-    ui.element(element, |ui| body(ui, fields));
+    let step = theme::current().size.gap * 1.5;
+    fields.indent += step;
+    body(ui, fields);
+    fields.indent -= step;
 }
 
 /// `title` in bold after a chevron, opening or closing when clicked.
@@ -310,46 +310,50 @@ pub fn view_switch(ui: &mut Ui, fields: &mut Fields, labels: &[&str]) {
     }
 }
 
-/// `label`, and `value` in a sunken box beside it.
+/// `label`, and `value` beside it in dim code text, without the box of a
+/// field that can be typed in.
 /// Returns whether it's under the pointer, for its tooltip.
 #[track_caller]
-pub fn field(ui: &mut Ui, label: &str, value: &str) -> bool {
+pub fn field(ui: &mut Ui, fields: &Fields, label: &str, value: &str) -> bool {
     let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let code = TextStyle {
         font: theme.font.buffer,
         size: s.text - 1.,
-        ..theme.ui_text(c.text)
+        ..theme.ui_text(c.dim)
     };
-    let well = Element {
-        size: [Length::Grow, Length::Fixed(s.row - 2.)],
+    let value_box = Element {
         padding: [s.gap * 0.75, 0., s.gap * 0.75, 0.],
-        background: Some(c.sunken),
-        radius: [s.radius - 1.; 4],
         clip: true,
-        ..Element::line(0.)
+        ..Element::line(s.row - 2.)
     };
-    labelled(ui, label, |ui| ui.element(well, |ui| ui.text(code, value))).0
+    let shown = |ui: &mut Ui| ui.element(value_box, |ui| ui.text(code, value));
+    labelled(ui, fields.indent, label, shown).0
 }
 
-/// `label`, then what `body` draws beside it. Returns whether it's under the
-/// pointer, for its tooltip, and what `body` returned.
+/// `label` `indent` in, then what `body` draws beside it, where it would
+/// be without the indent. Returns whether it's under the pointer, for its
+/// tooltip, and what `body` returned.
 #[track_caller]
-fn labelled<R>(ui: &mut Ui, label: &str, body: impl FnOnce(&mut Ui) -> R) -> (bool, R) {
+fn labelled<R>(
+    ui: &mut Ui,
+    indent: f32,
+    label: &str,
+    body: impl FnOnce(&mut Ui) -> R,
+) -> (bool, R) {
     let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
-    let indent = s.gap;
     let element = Element {
-        padding: [indent, 0., s.gap, 0.],
+        padding: [s.gap + indent, 0., s.gap, 0.],
         gap: s.gap,
         clip: true,
         ..Element::line(s.row + 2.)
     };
     ui.element(element, |ui| {
-        let width = ui.rect().map_or(0., |rect| rect.w - indent - s.gap);
+        let width = ui.rect().map_or(0., |rect| rect.w - 2. * s.gap);
         let label_box = Element {
             size: [
-                Length::Fixed((width * LABEL_SHARE).max(LABEL_MIN)),
+                Length::Fixed((width * LABEL_SHARE).max(LABEL_MIN) - indent),
                 Length::Fit,
             ],
             clip: true,
@@ -372,9 +376,11 @@ pub fn number(
     value: u16,
     max: u16,
 ) -> (bool, Option<u16>) {
-    let (hovered, (typed, refused)) =
-        labelled(ui, label, |ui| number_box(ui, fields, value, max, 10));
-    refused_note(ui, refused, max, 10);
+    let indent = fields.indent;
+    let (hovered, (typed, refused)) = labelled(ui, indent, label, |ui| {
+        number_box(ui, fields, value, max, 10)
+    });
+    refused_note(ui, indent, refused, max, 10);
     (hovered, typed)
 }
 
@@ -400,7 +406,8 @@ pub fn named(
         size: [Length::Fixed(NUMBER_WIDTH), Length::Fit],
         ..Element::DEFAULT
     };
-    let (hovered, (set, refused)) = labelled(ui, label, |ui| {
+    let indent = fields.indent;
+    let (hovered, (set, refused)) = labelled(ui, indent, label, |ui| {
         ui.element(row, |ui| {
             let key = fields.drawn;
             fields.values.clear();
@@ -439,7 +446,7 @@ pub fn named(
             (picked.filter(|&picked| picked != value).or(typed), refused)
         })
     });
-    refused_note(ui, refused, max, 10);
+    refused_note(ui, indent, refused, max, 10);
     (hovered, set)
 }
 
@@ -512,7 +519,7 @@ pub fn byte_grid(
         }
         (over, typed, refused)
     });
-    refused_note(ui, refused, 0xFF, 16);
+    refused_note(ui, fields.indent, refused, 0xFF, 16);
     (over, typed)
 }
 
@@ -542,10 +549,10 @@ fn read_number(text: &str, max: u16, radix: u32) -> Result<Option<u16>, Refused>
         .ok_or(Refused::Past(typed))
 }
 
-/// Under a field whose box holds what it `refused`, in `radix` up to `max`,
-/// why it wasn't written.
+/// Under a field `indent` in whose box holds what it `refused`, in `radix`
+/// up to `max`, why it wasn't written.
 #[track_caller]
-fn refused_note(ui: &mut Ui, refused: Option<Refused>, max: u16, radix: u32) {
+fn refused_note(ui: &mut Ui, indent: f32, refused: Option<Refused>, max: u16, radix: u32) {
     let Some(refused) = refused else {
         return;
     };
@@ -565,7 +572,7 @@ fn refused_note(ui: &mut Ui, refused: Option<Refused>, max: u16, radix: u32) {
         Refused::NotNumber => write!(note, "Not a number."),
     };
     note.push_str(" Not written.");
-    labelled(ui, "", |ui| ui.text(style, &note));
+    labelled(ui, indent, "", |ui| ui.text(style, &note));
 }
 
 /// A box `value` is typed into in `radix`, up to `max`, filling its parent

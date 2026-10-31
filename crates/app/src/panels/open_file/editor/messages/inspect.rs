@@ -43,11 +43,11 @@ impl MessagesDoc {
         let mut value = String::new();
         if section(ui, fields, "File") {
             let _ = write!(value, "{index}");
-            field(ui, "Position", &value);
+            field(ui, fields, "Position", &value);
             if self.bmg.mid1.is_some() {
                 value.clear();
                 let _ = write!(value, "{}", message.id);
-                if field(ui, "ID", &value) {
+                if field(ui, fields, "ID", &value) {
                     over = Some(("ID", "From MID1, what the game looks it up by".to_owned()));
                 }
             }
