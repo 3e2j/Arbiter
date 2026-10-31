@@ -8,9 +8,9 @@
 //! those whose label or note holds it, labels starting with it first.
 //! Backspace past its start closes it.
 
-use crate::components::{ListScroll, indexed_list};
+use crate::components::{ListScroll, dot, indexed_list};
 use crate::theme::{self, Theme};
-use gui::canvas::FontId;
+use gui::canvas::{Color, FontId};
 use gui::input::{CursorIcon, Key, PointerButton, TypedInput};
 use gui::ui::{Align, Anchor, Border, Direction, Element, Length, TextCaret, TextStyle, Ui};
 
@@ -41,6 +41,8 @@ pub struct Choice<'a> {
     pub detail: Option<&'a str>,
     /// A smaller line under it. Every row is two lines tall if any has one.
     pub note: Option<&'a str>,
+    /// A dot of it before its label, such as the color it names.
+    pub swatch: Option<Color>,
 }
 
 /// What a searched list shows over its choices: a title, then a box with
@@ -179,6 +181,7 @@ impl<'a> Choice<'a> {
             font: None,
             detail: None,
             note: None,
+            swatch: None,
         }
     }
 
@@ -195,6 +198,15 @@ impl<'a> Choice<'a> {
     #[must_use]
     pub const fn note(self, note: Option<&'a str>) -> Self {
         Self { note, ..self }
+    }
+
+    /// With a dot of `color` before its label.
+    #[must_use]
+    pub const fn swatch(self, color: Color) -> Self {
+        Self {
+            swatch: Some(color),
+            ..self
+        }
     }
 
     /// Its label drawn in `font`.
@@ -325,6 +337,13 @@ pub fn choice_list(
     let noted = choices.iter().any(|choice| choice.note.is_some());
     let row = if noted { s.row + s.text } else { s.row };
     let height: f32 = found.iter().take(ROWS).map(|_| row).sum();
+    // Clear of the scroll thumb, which is drawn over the rows half its
+    // width in from their edge.
+    let bar = if found.len() > ROWS {
+        1.5 * s.scroll_bar
+    } else {
+        0.
+    };
     let element = Element {
         size: [Length::Fixed(width), Length::Fit],
         padding: [DROP; 4],
@@ -354,7 +373,7 @@ pub fn choice_list(
                     return;
                 };
                 let lit = marked == Some(place);
-                let size = [width - 2. * DROP, row];
+                let size = [width - 2. * DROP - bar, row];
                 let (over, click) = choice_line(ui, choice, size, lit, selected == Some(index));
                 if over {
                     hovered = Some(index);
@@ -492,6 +511,9 @@ fn choice_line(
         let over = ui.hovered();
         ui.style().background = (over || marked).then_some(c.hover);
         ui.element(top, |ui| {
+            if let Some(color) = choice.swatch {
+                dot(ui, color);
+            }
             ui.element(label, |ui| ui.text(text(&theme, choice), choice.label));
             if let Some(detail) = choice.detail {
                 ui.text(small(theme.font.buffer), detail);

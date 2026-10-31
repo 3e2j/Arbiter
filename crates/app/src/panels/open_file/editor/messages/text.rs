@@ -3,7 +3,8 @@
 //!
 //! Typing `{` opens a [`choice_list`] of the tags the tables name, narrowed
 //! by what's typed after it, name or notes. Enter or a click picks, and `{{`
-//! types a `{`.
+//! types a `{`. A tag whose argument the tables name values for, like a
+//! color, then opens a list of them, as clicking its chip does later.
 //!
 //! The Raw view is the same text with every tag written out raw, `{group:code}`
 //! or `{group:code:args}` with the argument bytes in hex, and `{{` for a `{`.
@@ -17,13 +18,15 @@
 
 use std::fmt::Write;
 
+use formats::games::Entry;
 use formats::games::tp::Version;
-use formats::games::tp::jsystem::jmessage::{Args, Tag, tags};
+use formats::games::tp::jsystem::jmessage::{Args, Tag, find_tag, tags, text_color, values};
 use formats::jsystem::jmessage::bmg::{Encoding, Message, MessageKey, TextSegment};
+use gui::canvas::Color;
 use gui::input::{CursorIcon, Key, Modifiers, PointerButton, TypedInput};
 use gui::ui::{Align, Anchor, Element, Length, TextCaret, TextHighlight, TextStyle, Ui};
 
-use super::push_tag;
+use super::{push_tag, tag_swatch};
 use crate::components::{
     Atom, Chip, Choice, Dropdown, Run, Search, chip_on, choice_list, segmented, wrap,
 };
@@ -53,10 +56,12 @@ pub struct MessageText {
     /// Each tag's chip label, end to end, and where each ends.
     labels: String,
     label_ends: Vec<usize>,
+    /// Each tag's chip swatch.
+    swatches: Vec<Option<Color>>,
     /// Laid out to the box's width, in order, and each line's.
     pieces: Vec<Piece>,
     lines: Vec<Line>,
-    menu: Option<Dropdown>,
+    menu: Option<Menu>,
     /// Where Up and Down aim across, kept while they repeat.
     goal: Option<f32>,
     /// Why the text isn't written.
@@ -68,6 +73,27 @@ struct RawTag {
     group: u8,
     code: u16,
     args: Box<[u8]>,
+}
+
+/// An open menu, picking a value for the tag at `of`, or a tag to insert
+/// when `None`.
+struct Menu {
+    list: Dropdown,
+    of: Option<usize>,
+}
+
+impl Menu {
+    const TAGS: Self = Self {
+        list: Dropdown::OPEN,
+        of: None,
+    };
+
+    const fn values_of(index: usize) -> Self {
+        Self {
+            list: Dropdown::OPEN,
+            of: Some(index),
+        }
+    }
 }
 
 /// A stretch of one line: text, or one tag.
@@ -200,7 +226,7 @@ impl MessageText {
         let before = self.selection;
         let mut changed = false;
         if let Some(origin) = origin {
-            changed |= self.point(ui, style, origin);
+            changed |= self.point(ui, style, version, origin);
         }
         if focused {
             let (typed, done) = self.type_in(ui, style, width, version);
@@ -243,6 +269,7 @@ impl MessageText {
         self.tags.clear();
         self.labels.clear();
         self.label_ends.clear();
+        self.swatches.clear();
         self.menu = None;
         self.goal = None;
         self.refused = None;
@@ -282,10 +309,34 @@ impl MessageText {
         let Some(ch) = tag_char(self.tags.len()) else {
             return;
         };
+        self.label_tag(tag, version);
+        self.text.push(ch);
+    }
+
+    /// `tag` onto the tags, with its chip's label and swatch.
+    fn label_tag(&mut self, tag: RawTag, version: Option<Version>) {
         push_tag(&mut self.labels, version, tag.group, tag.code, &tag.args);
         self.label_ends.push(self.labels.len());
+        self.swatches
+            .push(tag_swatch(version, tag.group, tag.code, &tag.args));
         self.tags.push(tag);
-        self.text.push(ch);
+    }
+
+    /// Every chip's label and swatch again, once a tag's arguments change.
+    fn relabel(&mut self, version: Option<Version>) {
+        self.labels.clear();
+        self.label_ends.clear();
+        self.swatches.clear();
+        for tag in &self.tags {
+            push_tag(&mut self.labels, version, tag.group, tag.code, &tag.args);
+            self.label_ends.push(self.labels.len());
+            self.swatches
+                .push(tag_swatch(version, tag.group, tag.code, &tag.args));
+        }
+    }
+
+    fn swatch(&self, index: usize) -> Option<Color> {
+        self.swatches.get(index).copied().flatten()
     }
 
     /// The text as the file holds it.
@@ -404,7 +455,7 @@ impl MessageText {
             }
             let measure = |ui: &mut Ui, run: Run<usize>| match run {
                 Run::Text(text) => ui.measure(style, text)[0],
-                Run::Atom(_, label) => Chip(None).width(ui, label),
+                Run::Atom(index, label) => Chip(self.swatch(index)).width(ui, label),
             };
             let broken = wrap(runs, width, |run| measure(ui, run));
             let (mut at, mut x) = (start, 0.);
@@ -486,6 +537,32 @@ impl MessageText {
         piece.start + ui.index_for_x(style, text, x - piece.x)
     }
 
+    /// The tag whose chip is at `[x, y]` from the text's top left.
+    fn tag_at(&self, [x, y]: [f32; 2]) -> Option<usize> {
+        let height = theme::current().size.row;
+        let row = self
+            .lines
+            .iter()
+            .position(|line| (line.y..line.y + height).contains(&y))?;
+        self.line_pieces(row)
+            .iter()
+            .find(|piece| (piece.x..piece.x + piece.width).contains(&x))?
+            .tag
+    }
+
+    /// The line the chip of the tag at `index` is on, and how far across.
+    fn chip_at(&self, index: usize) -> (usize, f32) {
+        (0..self.lines.len())
+            .find_map(|row| {
+                let piece = self
+                    .line_pieces(row)
+                    .iter()
+                    .find(|piece| piece.tag == Some(index))?;
+                Some((row, piece.x))
+            })
+            .unwrap_or_default()
+    }
+
     /// The caret's line, and how far across it is.
     fn caret_at(&self, ui: &mut Ui, style: TextStyle) -> (usize, f32) {
         let caret = self.selection.caret;
@@ -509,9 +586,15 @@ impl MessageText {
         (row, x)
     }
 
-    /// Moves the caret to the pointer, or pastes there. Returns whether the
-    /// text changed.
-    fn point(&mut self, ui: &mut Ui, style: TextStyle, [left, top]: [f32; 2]) -> bool {
+    /// Moves the caret to the pointer, or pastes there, and opens a chip's
+    /// values when it's clicked. Returns whether the text changed.
+    fn point(
+        &mut self,
+        ui: &mut Ui,
+        style: TextStyle,
+        version: Option<Version>,
+        [left, top]: [f32; 2],
+    ) -> bool {
         let Some(pointer) = ui.input().pointer() else {
             return false;
         };
@@ -522,14 +605,27 @@ impl MessageText {
         if on_menu || !(press || dragged || middle) {
             return false;
         }
-        let index = self.index_at(ui, style, [pointer[0] - left, pointer[1] - top]);
+        let at = [pointer[0] - left, pointer[1] - top];
+        let index = self.index_at(ui, style, at);
         self.goal = None;
-        self.menu = None;
         let extend = ui.input().modifiers().contains(Modifiers::SHIFT);
         if (press && !extend) || middle {
             self.selection = Selection::at(index);
         } else {
             self.selection.caret = index;
+        }
+        // Only the press, as the passes while it's held would close what it
+        // opened.
+        if press || middle {
+            let valued = |raw: &RawTag| {
+                version
+                    .and_then(|version| find_tag(version, raw.group, raw.code))
+                    .is_some_and(|tag| tag.values.is_some())
+            };
+            self.menu = self
+                .tag_at(at)
+                .filter(|&tag| press && !extend && self.tags.get(tag).is_some_and(valued))
+                .map(Menu::values_of);
         }
         middle
             && ui
@@ -540,7 +636,7 @@ impl MessageText {
 
     /// Whether the pointer was over the menu last pass.
     fn on_menu(&self) -> bool {
-        self.menu.as_ref().is_some_and(Dropdown::over)
+        self.menu.as_ref().is_some_and(|menu| menu.list.over())
     }
 
     /// `pasted` at the caret: raw text with its tags as chips in the Text
@@ -558,6 +654,7 @@ impl MessageText {
             tags: std::mem::take(&mut self.tags),
             labels: std::mem::take(&mut self.labels),
             label_ends: std::mem::take(&mut self.label_ends),
+            swatches: std::mem::take(&mut self.swatches),
             ..Self::default()
         };
         // Tags keep the label the raw text gave them, named or not.
@@ -565,6 +662,7 @@ impl MessageText {
         self.tags = chips.tags;
         self.labels = chips.labels;
         self.label_ends = chips.label_ends;
+        self.swatches = chips.swatches;
         let with = if read { chips.text } else { pasted };
         let changed = !range.is_empty() || !with.is_empty();
         self.text.replace_range(range.clone(), &with);
@@ -599,18 +697,19 @@ impl MessageText {
             match typed {
                 TypedInput::Text(text) => changed |= self.type_text(text, version),
                 TypedInput::Key(press) => {
-                    if self.menu.is_some() {
+                    if let Some(menu) = &self.menu {
+                        // The menu takes these, and the `{` menu the text typed.
+                        let search = menu.of.is_none();
                         match press.key {
-                            // The menu takes these, and the text typed.
                             Key::Up
                             | Key::Down
                             | Key::Enter
                             | Key::Tab
                             | Key::Escape
-                            | Key::Backspace
                             | Key::Shift
                             | Key::Alt => continue,
-                            Key::Char(_) if press.modifiers.types() => continue,
+                            Key::Backspace if search => continue,
+                            Key::Char(_) if search && press.modifiers.types() => continue,
                             _ => self.menu = None,
                         }
                     }
@@ -666,14 +765,15 @@ impl MessageText {
         self.goal = None;
         let mut changed = false;
         for ch in text.chars().filter(|&ch| tag_index(ch).is_none()) {
-            if let Some(menu) = &self.menu {
-                if ch == '{' && menu.query().is_empty() {
+            if let Some(menu) = self.menu.as_ref().filter(|menu| menu.of.is_none()) {
+                if ch == '{' && menu.list.query().is_empty() {
                     self.menu = None;
                     changed |= self.insert("{");
                 }
             } else if ch == '{' && !self.raw && version.is_some() {
-                self.menu = Some(Dropdown::OPEN);
+                self.menu = Some(Menu::TAGS);
             } else {
+                self.menu = None;
                 let mut chunk = [0; 4];
                 changed |= self.insert(ch.encode_utf8(&mut chunk));
             }
@@ -741,7 +841,7 @@ impl MessageText {
                         } else {
                             c.selected
                         };
-                        chip_on(ui, self.label(index), None, fill);
+                        chip_on(ui, self.label(index), self.swatch(index), fill);
                         continue;
                     }
                     let text = self.text.get(piece.start..piece.end).unwrap_or_default();
@@ -768,13 +868,19 @@ impl MessageText {
         }
     }
 
-    /// The `{` menu under the caret, `padding` in from the box's top left,
-    /// listing the tags `version`'s tables name. Returns whether a pick
-    /// changed the text.
+    /// The open menu, under the caret for the `{` menu or under the chip it
+    /// picks a value for, `padding` in from the box's top left. Returns
+    /// whether a pick changed the text.
     #[track_caller]
     fn menu(&mut self, ui: &mut Ui, version: Option<Version>, [left, top]: [f32; 2]) -> bool {
+        let Some(of) = self.menu.as_ref().map(|menu| menu.of) else {
+            return false;
+        };
         let theme = theme::current();
-        let (row, x) = self.caret_at(ui, theme.ui_text(theme.color.text));
+        let (row, x) = match of {
+            Some(index) => self.chip_at(index),
+            None => self.caret_at(ui, theme.ui_text(theme.color.text)),
+        };
         let below = top + self.lines.get(row).map_or(0., |line| line.y) + theme.size.row;
         let float = Anchor::Parent {
             parent: [Align::Start; 2],
@@ -782,6 +888,15 @@ impl MessageText {
             offset: [left + x, below],
             clipped: false,
         };
+        match of {
+            Some(index) => self.value_menu(ui, version, index, float),
+            None => self.tag_menu(ui, version, float),
+        }
+    }
+
+    /// The tags `version`'s tables name, to insert one.
+    #[track_caller]
+    fn tag_menu(&mut self, ui: &mut Ui, version: Option<Version>, float: Anchor) -> bool {
         let Some(menu) = &mut self.menu else {
             return false;
         };
@@ -805,20 +920,76 @@ impl MessageText {
             title: "Twilight Princess tags",
             placeholder: "Search tags",
         };
-        let chosen = choice_list(ui, menu, &choices, None, Some(search), MENU_WIDTH, float);
-        if !menu.is_open() {
+        let list = &mut menu.list;
+        let chosen = choice_list(ui, list, &choices, None, Some(search), MENU_WIDTH, float);
+        if !list.is_open() {
             self.menu = None;
         }
         let Some(tag) = chosen.picked.and_then(|at| rows.get(at)) else {
             return false;
         };
-        self.menu = None;
-        let tag = RawTag {
+        let index = self.tags.len();
+        let raw = RawTag {
             group: tag.group,
             code: tag.code,
-            args: default_args(tag.args),
+            args: new_args(tag.args, 0),
         };
-        self.insert_tag(tag, version)
+        let inserted = self.insert_tag(raw, version);
+        self.menu = (inserted && tag.values.is_some()).then(|| Menu::values_of(index));
+        inserted
+    }
+
+    /// The values `version`'s tables name for the argument of the tag at
+    /// `index`, with a swatch for each color, to change it to one.
+    #[track_caller]
+    fn value_menu(
+        &mut self,
+        ui: &mut Ui,
+        version: Option<Version>,
+        index: usize,
+        float: Anchor,
+    ) -> bool {
+        let found = self.tags.get(index).and_then(|raw| {
+            let version = version?;
+            let tag = find_tag(version, raw.group, raw.code)?;
+            let rows: Vec<&Entry> = values(version, tag.values?).collect();
+            let selected = rows
+                .iter()
+                .position(|entry| new_args(tag.args, entry.value) == raw.args);
+            Some((tag, rows, selected))
+        });
+        let (Some((tag, rows, selected)), Some(menu)) = (found, &mut self.menu) else {
+            self.menu = None;
+            return false;
+        };
+        let details: Vec<String> = rows.iter().map(|entry| entry.value.to_string()).collect();
+        let choices: Vec<Choice> = rows
+            .iter()
+            .zip(&details)
+            .map(|(entry, detail)| {
+                let choice = Choice::new(entry.name).detail(detail).note(entry.notes);
+                match (tag.args, u8::try_from(entry.value)) {
+                    (Args::Color, Ok(color)) => choice.swatch(Color::hex(text_color(color))),
+                    _ => choice,
+                }
+            })
+            .collect();
+        let list = &mut menu.list;
+        let chosen = choice_list(ui, list, &choices, selected, None, MENU_WIDTH, float);
+        if !list.is_open() {
+            self.menu = None;
+        }
+        let Some(entry) = chosen.picked.and_then(|at| rows.get(at)) else {
+            return false;
+        };
+        self.menu = None;
+        let args = new_args(tag.args, entry.value);
+        let Some(raw) = self.tags.get_mut(index).filter(|raw| raw.args != args) else {
+            return false;
+        };
+        raw.args = args;
+        self.relabel(version);
+        true
     }
 
     /// `tag` as a chip in place of the selection.
@@ -826,9 +997,7 @@ impl MessageText {
         let Some(ch) = tag_char(self.tags.len()) else {
             return false;
         };
-        push_tag(&mut self.labels, version, tag.group, tag.code, &tag.args);
-        self.label_ends.push(self.labels.len());
-        self.tags.push(tag);
+        self.label_tag(tag, version);
         let mut chunk = [0; 4];
         self.insert(ch.encode_utf8(&mut chunk))
     }
@@ -865,15 +1034,15 @@ impl RawTag {
     }
 }
 
-/// A new tag's arguments, all zero.
-fn default_args(args: Args) -> Box<[u8]> {
-    let len = match args {
-        Args::None => 0,
-        Args::U8 | Args::Ruby => 1,
-        Args::U16 => 2,
-        Args::U32 => 4,
-    };
-    vec![0; len].into()
+/// A new tag's arguments, holding `value`.
+fn new_args(args: Args, value: u16) -> Box<[u8]> {
+    let [high, low] = value.to_be_bytes();
+    match args {
+        Args::None => Box::new([]),
+        Args::U8 | Args::Color | Args::Ruby => Box::new([low]),
+        Args::U16 => Box::new([high, low]),
+        Args::U32 => Box::new([0, 0, high, low]),
+    }
 }
 
 /// `text` onto `out` with each `{` doubled, as raw text writes it.
@@ -1053,6 +1222,8 @@ mod tests {
         fn click(&mut self, at: [f32; 2]) {
             self.push(Event::Pointer(Some(at)));
             self.push(Event::Pressed(PointerButton::Left));
+            // The host runs passes while it's held, before it comes up.
+            self.pass();
             self.push(Event::Released(PointerButton::Left));
         }
 
@@ -1093,7 +1264,7 @@ mod tests {
                 TextSegment::Tag {
                     group: third.group,
                     code: third.code,
-                    args: default_args(third.args).into(),
+                    args: new_args(third.args, 0).into(),
                 },
             ])
         );
@@ -1127,6 +1298,42 @@ mod tests {
             args: vec![0, 0],
         };
         assert_eq!(driver.written, Some(vec![pause]));
+    }
+
+    #[test]
+    fn a_color_opens_its_colors_and_clicking_its_chip_opens_them_again() {
+        let color = |index| TextSegment::Tag {
+            group: 255,
+            code: 0,
+            args: vec![index],
+        };
+        let mut driver = Driver::new();
+        driver.type_text("{color");
+        driver.key(Key::Enter);
+        assert_eq!(driver.written, Some(vec![color(0)]));
+        assert!(
+            driver
+                .text
+                .menu
+                .as_ref()
+                .is_some_and(|menu| menu.of == Some(0))
+        );
+        driver.pass();
+        driver.key(Key::Down);
+        driver.key(Key::Enter);
+        assert_eq!(driver.written, Some(vec![color(1)]));
+        assert_eq!(driver.text.label(0), "Color Red");
+        assert!(driver.text.swatch(0).is_some());
+        assert!(driver.text.menu.is_none());
+        // The text's top left is at [0, 26], and the chip is 6 wide.
+        driver.click([3., 36.]);
+        assert!(
+            driver
+                .text
+                .menu
+                .as_ref()
+                .is_some_and(|menu| menu.of == Some(0))
+        );
     }
 
     #[test]

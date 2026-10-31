@@ -16,23 +16,30 @@ pub fn chip(ui: &mut Ui, label: &str, swatch: Option<Color>) {
 #[track_caller]
 pub fn chip_on(ui: &mut Ui, label: &str, swatch: Option<Color>, background: Color) {
     let theme = theme::current();
-    let (element, dot) = pill(&theme);
+    let (element, _) = pill(&theme);
     let element = Element {
         background: Some(background),
         ..element
     };
     ui.element(element, |ui| {
         if let Some(color) = swatch {
-            let dot = Element {
-                size: [Length::Fixed(dot); 2],
-                radius: [dot / 2.; 4],
-                background: Some(color),
-                ..Element::DEFAULT
-            };
-            ui.element(dot, |_| {});
+            dot(ui, color);
         }
         ui.text(label_style(&theme), label);
     });
+}
+
+/// A dot of `color`, as a [`chip`] shows its swatch.
+#[track_caller]
+pub fn dot(ui: &mut Ui, color: Color) {
+    let (_, size) = pill(&theme::current());
+    let dot = Element {
+        size: [Length::Fixed(size); 2],
+        radius: [size / 2.; 4],
+        background: Some(color),
+        ..Element::DEFAULT
+    };
+    ui.element(dot, |_| {});
 }
 
 /// A [`chip`] in wrapped text, with its swatch.

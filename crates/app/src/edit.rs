@@ -25,7 +25,9 @@ pub struct Selection {
 pub enum Motion {
     Grapheme,
     /// Past anything between, then to the word's far end. Words stop at
-    /// anything but letters and digits, such as the `/` and `_` in a path.
+    /// anything but letters and digits, such as the `/` and `_` in a path. A
+    /// private-use character, such as a chip standing in the text, is a word
+    /// of its own.
     Word,
     /// To the line's start or end.
     Line,
@@ -205,18 +207,26 @@ fn to(text: &str, at: usize, motion: Motion, forward: bool) -> usize {
             let mut graphemes = before
                 .grapheme_indices(true)
                 .rev()
-                .skip_while(|&(_, g)| !in_word(g));
-            graphemes
-                .find(|&(_, g)| !in_word(g))
-                .map_or(0, |(start, g)| start + g.len())
+                .skip_while(|&(_, g)| between(g));
+            match graphemes.next() {
+                Some((start, g)) if alone(g) => start,
+                Some(_) => graphemes
+                    .find(|&(_, g)| !in_word(g))
+                    .map_or(0, |(start, g)| start + g.len()),
+                None => 0,
+            }
         }
         (Motion::Word, true) => {
             let mut graphemes = after
                 .grapheme_indices(true)
-                .skip_while(|&(_, g)| !in_word(g));
-            at + graphemes
-                .find(|&(_, g)| !in_word(g))
-                .map_or(after.len(), |(start, _)| start)
+                .skip_while(|&(_, g)| between(g));
+            at + match graphemes.next() {
+                Some((start, g)) if alone(g) => start + g.len(),
+                Some(_) => graphemes
+                    .find(|&(_, g)| !in_word(g))
+                    .map_or(after.len(), |(start, _)| start),
+                None => after.len(),
+            }
         }
         (Motion::Line, false) => before.rfind('\n').map_or(0, |line| line + 1),
         (Motion::Line, true) => at + after.find('\n').unwrap_or(after.len()),
@@ -227,6 +237,18 @@ fn to(text: &str, at: usize, motion: Motion, forward: bool) -> usize {
 
 fn in_word(grapheme: &str) -> bool {
     grapheme.chars().next().is_some_and(char::is_alphanumeric)
+}
+
+/// A word by itself, as [`Motion::Word`] says.
+fn alone(grapheme: &str) -> bool {
+    grapheme.chars().next().is_some_and(|c| {
+        matches!(c, '\u{E000}'..='\u{F8FF}' | '\u{F0000}'..='\u{FFFFD}' | '\u{100000}'..='\u{10FFFD}')
+    })
+}
+
+/// Skipped before a word.
+fn between(grapheme: &str) -> bool {
+    !in_word(grapheme) && !alone(grapheme)
 }
 
 #[cfg(test)]
@@ -313,6 +335,22 @@ mod tests {
             &[deletes(Motion::Word, false)],
             "res/|zel",
         );
+    }
+
+    #[test]
+    fn private_use_characters_are_words_of_their_own() {
+        let (left, right) = (moves(Motion::Word, false), moves(Motion::Word, true));
+        check(
+            "\u{F0000}\u{F0001} \u{F0002}ab|",
+            &[left, left],
+            "\u{F0000}\u{F0001} |\u{F0002}ab",
+        );
+        check(
+            "|\u{F0000}\u{F0001} ab",
+            &[right, right],
+            "\u{F0000}\u{F0001}| ab",
+        );
+        check("\u{F0000}ab|", &[left], "\u{F0000}|ab");
     }
 
     #[test]

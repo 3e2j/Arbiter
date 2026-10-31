@@ -14,7 +14,7 @@ mod layout;
 mod overlay;
 mod wrap;
 
-pub use chip::{Chip, chip, chip_on};
+pub use chip::{Chip, chip, chip_on, dot};
 pub use controls::*;
 pub use layout::*;
 pub use overlay::*;

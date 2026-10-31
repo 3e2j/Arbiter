@@ -2,6 +2,7 @@
 //! `jmessage_tRenderingProcessor`.
 
 use crate::games::Versions;
+use crate::games::entry::{Entry, entry};
 use crate::games::tp::{ALL, GCN_PAL, JPN, Version};
 
 /// The tag `version` reads for `group` and `code`, or `None` when nothing
@@ -17,6 +18,17 @@ pub fn tags(version: Version) -> impl Iterator<Item = &'static Tag> {
         .filter(move |tag| tag.versions.intersects(version.versions()))
 }
 
+/// The color text from a [`Args::Color`] of `index` draws in, `0xRRGGBB`,
+/// in a box whose kind doesn't change it. See `getFontCCColorTable`.
+#[must_use]
+pub fn text_color(index: u8) -> u32 {
+    const RGB: [u32; 9] = [
+        0xFF_FFFF, 0xF0_7878, 0xAA_DC8C, 0xA0_B4DC, 0xDC_DC82, 0xB4_C8E6, 0xC8_A0DC, 0xFF_FFFF,
+        0xDC_AA78,
+    ];
+    RGB.get(usize::from(index)).copied().unwrap_or(0xFF_FFFF)
+}
+
 /// One kind of text tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Tag {
@@ -29,6 +41,9 @@ pub struct Tag {
     pub name: &'static str,
     pub args: Args,
     pub notes: Option<&'static str>,
+    /// The table naming the argument's values, read through
+    /// [`super::values`].
+    pub values: Option<&'static [Entry]>,
     /// As [`crate::games::Entry::versions`].
     pub versions: Versions,
 }
@@ -41,6 +56,8 @@ pub enum Args {
     U8,
     U16,
     U32,
+    /// One byte, which [`text_color`] turns into a color.
+    Color,
     /// A u8, then the reading as 2-byte characters. The renderer keeps the
     /// u8, likely the base character count. The reading can end on half a
     /// character.
@@ -55,6 +72,7 @@ const fn tag(group: u8, code: u16, name: &'static str, args: Args) -> Tag {
         name,
         args,
         notes: None,
+        values: None,
         versions: Versions::ANY,
     }
 }
@@ -76,6 +94,13 @@ impl Tag {
 
     const fn only(self, versions: Versions) -> Self {
         Self { versions, ..self }
+    }
+
+    const fn values(self, values: &'static [Entry]) -> Self {
+        Self {
+            values: Some(values),
+            ..self
+        }
     }
 }
 
@@ -213,9 +238,23 @@ static TAGS: &[Tag] = &[
     tag(6,   9,  "Thin down arrow",        Args::None),
     tag(6,   10, "Bullet",                 Args::None),
     tag(6,   11, "Bullet space",           Args::None),
-    tag(255, 0,  "Color",                  Args::U8)  .notes("Text color from here on"),
+    tag(255, 0,  "Color",                  Args::Color).notes("Text color from here on").values(COLORS),
     tag(255, 1,  "Scale",                  Args::U16) .notes("Text scale percent from here on. 100 is normal"),
     tag(255, 2,  "Ruby",                   Args::Ruby).notes("Furigana. The argument is the reading"),
+];
+
+/// See `getFontCCColorTable`. Any other value draws white.
+#[rustfmt::skip]
+static COLORS: &[Entry] = &[
+    entry(0, "Default").notes("White, or the box kind's own: Midna cyan, Animal green"),
+    entry(1, "Red"),
+    entry(2, "Green"),
+    entry(3, "Blue"),
+    entry(4, "Yellow"),
+    entry(5, "Sky"),
+    entry(6, "Purple"),
+    entry(7, "White"),
+    entry(8, "Orange"),
 ];
 
 #[cfg(test)]

@@ -11,7 +11,7 @@ pub use flow::{
     Control, Event, Kind, Param, Query, Results, Select, events, find_event, find_query, queries,
 };
 pub use record::{Field, Layout, Section, layout};
-pub use tag::{Args, Tag, find_tag, tags};
+pub use tag::{Args, Tag, find_tag, tags, text_color};
 
 /// The rows of a [`Field`]'s or [`Param`]'s values table that `version`
 /// reads.

@@ -19,9 +19,10 @@ use std::fmt::Write;
 
 use diag::Diagnostics;
 use formats::games::tp::Version;
-use formats::games::tp::jsystem::jmessage::{Args, find_tag};
+use formats::games::tp::jsystem::jmessage::{Args, find_tag, text_color, values};
 use formats::jsystem::jmessage::bmg::{Bmg, TextSegment};
 use formats::{ByteWriter, Decode, Encode};
+use gui::canvas::Color;
 use gui::ui::{Direction, Element, Length, TextStyle, Ui};
 
 use crate::components::{
@@ -266,9 +267,12 @@ fn lines(bmg: &Bmg, version: Option<Version>) -> Lines {
 }
 
 /// A tag's chip label onto `out`: its name, then its code when the code is
-/// its value, then its argument when that's a number.
+/// its value, then its argument when that's a number, by name when the
+/// tables name it.
 fn push_tag(out: &mut String, version: Option<Version>, group: u8, code: u16, args: &[u8]) {
-    let Some(tag) = version.and_then(|version| find_tag(version, group, code)) else {
+    let Some((version, tag)) =
+        version.and_then(|version| Some((version, find_tag(version, group, code)?)))
+    else {
         let _ = write!(out, "{{{group}:{code}}}");
         return;
     };
@@ -277,13 +281,33 @@ fn push_tag(out: &mut String, version: Option<Version>, group: u8, code: u16, ar
         let _ = write!(out, " {code}");
     }
     let value = match (tag.args, args) {
-        (Args::U8, &[a]) => Some(u32::from(a)),
+        (Args::U8 | Args::Color, &[a]) => Some(u32::from(a)),
         (Args::U16, &[a, b]) => Some(u32::from(u16::from_be_bytes([a, b]))),
         (Args::U32, &[a, b, c, d]) => Some(u32::from_be_bytes([a, b, c, d])),
         _ => None,
     };
-    if let Some(value) = value {
-        let _ = write!(out, " {value}");
+    let Some(value) = value else {
+        return;
+    };
+    let named = tag
+        .values
+        .and_then(|table| values(version, table).find(|entry| u32::from(entry.value) == value));
+    match named {
+        Some(entry) => {
+            let _ = write!(out, " {}", entry.name);
+        }
+        None => {
+            let _ = write!(out, " {value}");
+        }
+    }
+}
+
+/// The dot a tag's chip shows: the color it sets text to.
+fn tag_swatch(version: Option<Version>, group: u8, code: u16, args: &[u8]) -> Option<Color> {
+    let tag = find_tag(version?, group, code)?;
+    match (tag.args, args) {
+        (Args::Color, &[index]) => Some(Color::hex(text_color(index))),
+        _ => None,
     }
 }
 
