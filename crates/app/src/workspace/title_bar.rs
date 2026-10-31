@@ -14,7 +14,7 @@ use gui::{
 };
 
 use crate::assets::Icon;
-use crate::panels::{PANELS, PanelDesc};
+use crate::panels::Kind;
 use crate::settings::Settings;
 use crate::theme;
 
@@ -105,12 +105,18 @@ fn menu_button(ui: &mut Ui, label: &str, menu: &mut ContextMenu) {
 
 /// The View menu while it's open, over everything declared before it.
 /// Returns the kind picked.
-pub fn view_menu(ui: &mut Ui, menu: &mut ContextMenu) -> Option<&'static PanelDesc> {
+pub fn view_menu(ui: &mut Ui, menu: &mut ContextMenu) -> Option<Kind> {
     if !menu.is_open() {
         return None;
     }
-    let kinds: Vec<_> = PANELS.iter().filter(|desc| desc.in_menu).collect();
-    let items: Vec<_> = kinds.iter().map(|desc| MenuItem::new(desc.title)).collect();
+    let kinds: Vec<_> = Kind::ALL
+        .into_iter()
+        .filter(|kind| kind.in_menu())
+        .collect();
+    let items: Vec<_> = kinds
+        .iter()
+        .map(|kind| MenuItem::new(kind.title()))
+        .collect();
     kinds.get(context_menu(ui, menu, &items)?).copied()
 }
 

@@ -20,9 +20,8 @@ use project::tree::{NodeKind, SortKey, SortOrder, Tree, TreeFilter, Trees};
 
 use crate::assets::Icon;
 use crate::commands::Command;
-use crate::workspace::{Place, Places};
 
-use super::{Context, Event, Panel, PanelDesc, Reply};
+use super::{Context, Event, Reply};
 use row::{Columns, row_ui};
 use tab_state::TabState;
 
@@ -111,19 +110,6 @@ pub struct FileTree {
 }
 
 impl FileTree {
-    pub const DESC: PanelDesc = PanelDesc {
-        id: "file-tree",
-        title: "Files",
-        opens_at: Place::LeftInnerTop,
-        places: Places::BANDS,
-        key_context: Some(FILES),
-        in_menu: true,
-        open: |state| {
-            let view = super::read("Files", state).unwrap_or_default();
-            Some(Box::new(Self::new(view)))
-        },
-    };
-
     /// Once for every file tree.
     pub const COMMANDS: [Command; 1] = [Command {
         id: SEARCH,
@@ -132,7 +118,7 @@ impl FileTree {
         chords: &[Chord::new(Key::Char('f'), Modifiers::COMMAND)],
     }];
 
-    fn new(view: FilesView) -> Self {
+    pub(super) fn new(view: FilesView) -> Self {
         Self {
             opened: None,
             tab: view.tab,
@@ -148,7 +134,7 @@ impl FileTree {
         }
     }
 
-    const fn view(&self) -> FilesView {
+    pub(super) const fn view(&self) -> FilesView {
         FilesView {
             tab: self.tab,
             modded: self.filter.modded,
@@ -372,17 +358,9 @@ impl FileTree {
     }
 }
 
-impl Panel for FileTree {
-    fn desc(&self) -> &'static PanelDesc {
-        &Self::DESC
-    }
-
-    fn saved(&self) -> Option<toml::Value> {
-        super::save(&self.view(), "the files panel")
-    }
-
+impl FileTree {
     /// Takes each tree read again, as its own copy to sort.
-    fn receive(&mut self, event: &mut Event) -> Reply {
+    pub(super) fn receive(&mut self, event: &mut Event) -> Reply {
         if let Event::Read(trees) = event {
             self.refresh(Trees::clone(trees));
         }
@@ -390,13 +368,13 @@ impl Panel for FileTree {
     }
 
     /// Does `commands`, the [`FILES`] ones pressed while it has focus.
-    fn act(&mut self, _ui: &mut Ui, commands: &[AppCommand]) {
+    pub(super) fn act(&mut self, commands: &[AppCommand]) {
         if self.opened.is_some() && commands.contains(&SEARCH) {
             self.search.focus = true;
         }
     }
 
-    fn ui(&mut self, ui: &mut Ui, cx: &mut Context) {
+    pub(super) fn ui(&mut self, ui: &mut Ui, cx: &mut Context) {
         self.tabs(ui);
         if self.opened.is_none() {
             return notice(ui, "No project open");
@@ -467,10 +445,6 @@ mod tests {
 
     use super::*;
 
-    fn view(panel: &dyn Panel) -> FilesView {
-        panel.saved().unwrap().try_into().unwrap()
-    }
-
     #[test]
     fn a_files_view_comes_back_from_its_state() {
         let text = r#"
@@ -479,17 +453,16 @@ mod tests {
             compact = false
             order = { key = "type", descending = true }
         "#;
-        let state = toml::from_str(text).unwrap();
-        let panel = (FileTree::DESC.open)(Some(&state)).unwrap();
-        let again = (FileTree::DESC.open)(panel.saved().as_ref()).unwrap();
-        assert_eq!(view(&*again), view(&*panel));
+        let view: FilesView = toml::from_str(text).unwrap();
+        let again = FileTree::new(view).view();
+        assert_eq!(again, view);
         let FilesView {
             tab,
             modded,
             compact,
             letters,
             order,
-        } = view(&*again);
+        } = again;
         assert_eq!(tab, Tab::Game);
         assert!(modded && !compact && letters);
         assert_eq!(
@@ -499,12 +472,5 @@ mod tests {
                 descending: true
             }
         );
-    }
-
-    #[test]
-    fn unreadable_state_opens_a_new_panel() {
-        let state = toml::from_str("tab = \"nowhere\"").unwrap();
-        let panel = (FileTree::DESC.open)(Some(&state)).unwrap();
-        assert_eq!(view(&*panel), FilesView::default());
     }
 }

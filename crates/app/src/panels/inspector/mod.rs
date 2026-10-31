@@ -12,14 +12,12 @@ mod page;
 use gui::ui::{Align, Direction, Element, Length, TextStyle, Ui};
 use serde::{Deserialize, Serialize};
 
+use super::{Context, Event, Kind, Reply};
 use crate::assets::Icon;
 use crate::components::{
     Chip, IconState, Run, Scroll, Tooltip, icon_button, notice, rule, scroll, tooltip, wrapped,
 };
 use crate::theme::{self, HOVER_THUMB};
-use crate::workspace::{Place, Places};
-
-use super::{Context, Event, Panel, PanelDesc, Reply};
 
 pub use page::Page;
 use page::{FieldKind, Row};
@@ -49,19 +47,6 @@ pub struct InspectorState {
 }
 
 impl Inspector {
-    pub const DESC: PanelDesc = PanelDesc {
-        id: "inspector",
-        title: "Inspector",
-        opens_at: Place::RightInnerTop,
-        places: Places::BANDS,
-        key_context: None,
-        in_menu: true,
-        open: |state| {
-            let state = super::read("Inspector", state).unwrap_or_default();
-            Some(Box::new(Self::from_state(&state)))
-        },
-    };
-
     pub fn new(shown: Option<Page>) -> Self {
         let mut scroll = Scroll::default();
         scroll.thumb = HOVER_THUMB;
@@ -93,26 +78,18 @@ impl Inspector {
     }
 }
 
-impl Panel for Inspector {
-    fn desc(&self) -> &'static PanelDesc {
-        &Self::DESC
-    }
-
+impl Inspector {
     /// The last step of the breadcrumb while locked.
-    fn title(&self) -> &str {
+    pub(super) fn title(&self) -> &str {
         let locked = self.shown.as_ref().filter(|_| self.locked);
         locked
             .and_then(Page::last_crumb)
-            .unwrap_or(Self::DESC.title)
-    }
-
-    fn saved(&self) -> Option<toml::Value> {
-        super::save(&self.state(), "an inspector")
+            .unwrap_or(Kind::Inspector.title())
     }
 
     /// While unlocked: shows each selection, stands in for another from the
     /// View menu, and closes once another is unlocked.
-    fn receive(&mut self, event: &mut Event) -> Reply {
+    pub(super) fn receive(&mut self, event: &mut Event) -> Reply {
         if self.locked {
             return Reply::Pass;
         }
@@ -121,13 +98,13 @@ impl Panel for Inspector {
                 self.show(std::mem::take(page));
                 Reply::Show
             }
-            Event::Add(desc) if desc.id == Self::DESC.id => Reply::Show,
+            Event::Add(Kind::Inspector) => Reply::Show,
             Event::Unlocked if !std::mem::take(&mut self.taking_over) => Reply::Close,
             _ => Reply::Pass,
         }
     }
 
-    fn ui(&mut self, ui: &mut Ui, cx: &mut Context) {
+    pub(super) fn ui(&mut self, ui: &mut Ui, cx: &mut Context) {
         let Self {
             locked,
             taking_over,

@@ -12,11 +12,10 @@ use gui::ui::{Element, Length, Ui};
 use project::Project;
 use serde::{Deserialize, Serialize};
 
-use super::{Context, Event, Panel, PanelDesc, Reply};
+use super::{Context, Event, Reply};
 use crate::components::{notice, segmented, toolbar};
 use crate::fs::Loaded;
 use crate::keymap::AppCommand;
-use crate::workspace::{Place, Places};
 use editor::Editor;
 use hex::HexState;
 
@@ -68,21 +67,6 @@ pub struct OpenFileState {
 }
 
 impl OpenFile {
-    pub const DESC: PanelDesc = PanelDesc {
-        id: "open-file",
-        title: "File",
-        opens_at: Place::Main,
-        places: Places::MAIN,
-        key_context: Some(HEX),
-        in_menu: false,
-        open: |state| {
-            if state.is_none() {
-                tracing::warn!("the session has a file tab without its file");
-            }
-            Some(Box::new(Self::from_state(super::read("File", state)?)))
-        },
-    };
-
     /// Shows `path`, relative to the project's root, once it's read.
     pub const fn new(path: String) -> Self {
         Self {
@@ -96,15 +80,15 @@ impl OpenFile {
     }
 
     /// Where `state` left it, once it's read.
-    fn from_state(state: OpenFileState) -> Self {
+    pub(super) fn from_state(state: &OpenFileState) -> Self {
         Self {
             view: state.view,
             hex: Hex::from_state(&state.hex),
-            ..Self::new(state.path)
+            ..Self::new(state.path.clone())
         }
     }
 
-    fn state(&self) -> OpenFileState {
+    pub(super) fn state(&self) -> OpenFileState {
         OpenFileState {
             path: self.path.clone(),
             view: self.view,
@@ -144,22 +128,14 @@ impl OpenFile {
     }
 }
 
-impl Panel for OpenFile {
-    fn desc(&self) -> &'static PanelDesc {
-        &Self::DESC
-    }
-
+impl OpenFile {
     /// The file's name.
-    fn title(&self) -> &str {
+    pub(super) fn title(&self) -> &str {
         file_name(&self.path)
     }
 
-    fn saved(&self) -> Option<toml::Value> {
-        super::save(&self.state(), &self.path)
-    }
-
     /// Shows itself for a pick of its own file.
-    fn receive(&mut self, event: &mut Event) -> Reply {
+    pub(super) fn receive(&mut self, event: &mut Event) -> Reply {
         match event {
             Event::Pick(path) if *path == self.path => Reply::Show,
             _ => Reply::Pass,
@@ -168,7 +144,7 @@ impl Panel for OpenFile {
 
     /// Does `commands`, the [`HEX`] ones pressed while it has
     /// focus, once there are bytes to and hex shows them.
-    fn act(&mut self, ui: &mut Ui, commands: &[AppCommand]) {
+    pub(super) fn act(&mut self, ui: &mut Ui, commands: &[AppCommand]) {
         if let Bytes::Read(bytes) = &self.bytes
             && !bytes.is_empty()
             && self.shows_hex()
@@ -177,7 +153,7 @@ impl Panel for OpenFile {
         }
     }
 
-    fn ui(&mut self, ui: &mut Ui, cx: &mut Context) {
+    pub(super) fn ui(&mut self, ui: &mut Ui, cx: &mut Context) {
         self.poll(cx);
         let bytes = match &self.bytes {
             Bytes::Unasked | Bytes::Loading(_) => return notice(ui, "Loading…"),
@@ -236,7 +212,7 @@ mod tests {
             view: View::Hex,
             hex: HexState::default(),
         };
-        let file = OpenFile::from_state(state());
+        let file = OpenFile::from_state(&state());
         assert_eq!(file.title(), "a.bin");
         assert_eq!(file.state(), state());
     }

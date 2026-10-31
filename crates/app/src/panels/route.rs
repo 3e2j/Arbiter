@@ -14,15 +14,15 @@ pub fn update(workspace: &mut Workspace, cx: Context) {
         if workspace.offer(&mut event) {
             continue;
         }
-        let panel: Box<dyn Panel> = match event {
-            Event::Pick(path) => Box::new(OpenFile::new(path)),
-            Event::Inspect(page) => Box::new(Inspector::new(Some(page))),
-            Event::Add(desc) => match (desc.open)(None) {
+        let panel = match event {
+            Event::Pick(path) => Panel::OpenFile(OpenFile::new(path)),
+            Event::Inspect(page) => Panel::Inspector(Inspector::new(Some(page))),
+            Event::Add(kind) => match Panel::new(kind) {
                 Some(panel) => panel,
                 None => continue,
             },
             Event::Unlocked | Event::Read(_) => continue,
         };
-        workspace.add(panel.desc().opens_at, panel);
+        workspace.add(panel.kind().opens_at(), panel);
     }
 }

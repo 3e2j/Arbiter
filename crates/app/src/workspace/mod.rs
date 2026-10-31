@@ -101,7 +101,7 @@ impl Workspace {
     }
 
     /// Adds `panel` as the last tab at `place`, and shows it and its band.
-    pub fn add(&mut self, place: Place, panel: Box<dyn Panel>) {
+    pub fn add(&mut self, place: Place, panel: Panel) {
         let dock = &mut self.docks[place.index()];
         dock.active = dock.tabs.len();
         dock.tabs.push(panel);
@@ -111,9 +111,9 @@ impl Workspace {
     }
 
     /// The panel shown in the dock with focus.
-    pub fn focused(&mut self) -> Option<&mut dyn Panel> {
+    pub fn focused(&mut self) -> Option<&mut Panel> {
         let dock = &mut self.docks[self.focus?.index()];
-        Some(dock.tabs.get_mut(dock.active)?.as_mut())
+        dock.tabs.get_mut(dock.active)
     }
 
     /// Escape closes the menu.
@@ -302,11 +302,11 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::panels::FileTree;
+    use crate::panels::Kind;
 
     #[test]
     fn a_side_hides_only_bands_with_tabs_and_shows_them_again() {
-        let session = Session::of(&[(FileTree::DESC.id, Place::LeftInnerTop)]);
+        let session = Session::of(&[(Kind::FileTree, Place::LeftInnerTop)]);
         let mut workspace = Workspace::new(&session);
         assert!(workspace.side_shown(Side::Left));
         assert!(!workspace.side_has_tabs(Side::Right));
@@ -322,11 +322,11 @@ mod tests {
 
     #[test]
     fn adding_to_a_hidden_band_shows_it() {
-        let session = Session::of(&[(FileTree::DESC.id, Place::LeftInnerTop)]);
+        let session = Session::of(&[(Kind::FileTree, Place::LeftInnerTop)]);
         let mut workspace = Workspace::new(&session);
         workspace.toggle_side(Side::Left);
         assert!(!workspace.in_use(Band::LeftInner));
-        workspace.add(Place::LeftInnerBottom, (FileTree::DESC.open)(None).unwrap());
+        workspace.add(Place::LeftInnerBottom, Panel::new(Kind::FileTree).unwrap());
         assert!(workspace.in_use(Band::LeftInner));
         let tabs: usize = workspace.docks.iter().map(|dock| dock.tabs.len()).sum();
         assert_eq!(tabs, 2);

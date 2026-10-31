@@ -12,9 +12,6 @@ use project::{Entry, LOG, Level};
 
 use crate::assets::Icon;
 use crate::theme::{self, ThemeColors};
-use crate::workspace::{Place, Places};
-
-use super::{Context, Panel, PanelDesc};
 
 pub struct Output {
     /// Where Clear left the log. Entries before it aren't shown or counted.
@@ -40,16 +37,6 @@ struct Row {
 }
 
 impl Output {
-    pub const DESC: PanelDesc = PanelDesc {
-        id: "output",
-        title: "Output",
-        opens_at: Place::BelowMain,
-        places: Places::BANDS,
-        key_context: None,
-        in_menu: true,
-        open: |_| Some(Box::new(Self::new())),
-    };
-
     pub const fn new() -> Self {
         Self {
             from: 0,
@@ -115,12 +102,8 @@ impl Output {
     }
 }
 
-impl Panel for Output {
-    fn desc(&self) -> &'static PanelDesc {
-        &Self::DESC
-    }
-
-    fn ui(&mut self, ui: &mut Ui, _cx: &mut Context) {
+impl Output {
+    pub(super) fn ui(&mut self, ui: &mut Ui) {
         self.toolbar(ui);
         self.read_new();
         let height = theme::current().size.row;

@@ -1,10 +1,10 @@
 //! The workspace as the project's session keeps it: each dock's tabs, one
-//! panel each by its kind's id, and each band's size, split and whether it's
-//! hidden.
+//! panel each as a [`SavedTab`], and each band's size, split and whether
+//! it's hidden.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::panels;
+use crate::panels::{Kind, Panel, SavedTab};
 
 use super::place::{Band, Place};
 use super::{MIN_DOCK, Workspace};
@@ -29,17 +29,8 @@ struct SavedDock {
     #[serde(default)]
     active: usize,
     /// Left to right.
+    #[serde(deserialize_with = "tabs")]
     tabs: Vec<SavedTab>,
-}
-
-/// One panel, and what it keeps of itself, read by the panel alone.
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-struct SavedTab {
-    /// Its [`PanelDesc::id`](panels::PanelDesc::id). One no panel has any
-    /// more, such as one from a newer Arbiter, leaves out only its tab.
-    kind: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    state: Option<toml::Value>,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -53,14 +44,13 @@ struct SavedBand {
 }
 
 impl Session {
-    /// A panel of each kind id in `layout` in its place, in order, every
-    /// band at its default size.
-    pub fn of(layout: &[(&str, Place)]) -> Self {
+    /// A new panel of each kind in `layout` in its place, in order, every
+    /// band at its default size. A kind that can't open new is left out.
+    pub fn of(layout: &[(Kind, Place)]) -> Self {
         let mut docks: Vec<SavedDock> = Vec::new();
         for &(kind, place) in layout {
-            let tab = SavedTab {
-                kind: kind.to_owned(),
-                state: None,
+            let Some(tab) = Panel::new(kind).as_ref().map(Panel::saved) else {
+                continue;
             };
             match docks.iter_mut().find(|dock| dock.place == place) {
                 Some(dock) => dock.tabs.push(tab),
@@ -110,19 +100,12 @@ impl Workspace {
         for saved in &session.docks {
             let dock = &mut workspace.docks[saved.place.index()];
             for (at, tab) in (0..).zip(&saved.tabs) {
-                let kind = &tab.kind;
-                let Some(desc) = panels::find(kind) else {
-                    tracing::warn!(
-                        "the session has a `{kind}` panel, but no such panel exists, so it's skipped"
-                    );
+                let Some(panel) = Panel::open(tab) else {
                     continue;
                 };
-                let Some(panel) = (desc.open)(tab.state.as_ref()) else {
-                    tracing::warn!("the session's `{kind}` panel can't open");
-                    continue;
-                };
-                if !desc.places.contains(saved.place) {
-                    tracing::warn!("a `{kind}` panel can't sit at {:?}", saved.place);
+                let kind = panel.kind();
+                if !kind.places().contains(saved.place) {
+                    tracing::warn!("a {kind:?} panel can't sit at {:?}", saved.place);
                     continue;
                 }
                 if at == saved.active {
@@ -153,14 +136,7 @@ impl Workspace {
                 .map(|(place, dock)| SavedDock {
                     place,
                     active: dock.active,
-                    tabs: dock
-                        .tabs
-                        .iter()
-                        .map(|panel| SavedTab {
-                            kind: panel.desc().id.to_owned(),
-                            state: panel.saved(),
-                        })
-                        .collect(),
+                    tabs: dock.tabs.iter().map(Panel::saved).collect(),
                 })
                 .collect(),
             bands: Band::ALL
@@ -176,21 +152,34 @@ impl Workspace {
     }
 }
 
+/// Each tab as a [`SavedTab`], or [`SavedTab::Unknown`] when it isn't
+/// readable, so a bad tab costs only itself and the active one still lines up.
+fn tabs<'de, D: Deserializer<'de>>(de: D) -> Result<Vec<SavedTab>, D::Error> {
+    let tabs = Vec::<toml::Value>::deserialize(de)?;
+    let tab = |value: toml::Value| {
+        value.try_into().unwrap_or_else(|err| {
+            tracing::warn!("a tab in the session isn't readable, so it's left out: {err}");
+            SavedTab::Unknown
+        })
+    };
+    Ok(tabs.into_iter().map(tab).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::panels::{FileTree, Output};
+    use crate::panels::Output;
     use crate::workspace::Side;
 
-    const LAYOUT: [(&str, Place); 3] = [
-        (FileTree::DESC.id, Place::LeftInnerTop),
-        (Output::DESC.id, Place::LeftInnerTop),
-        (Output::DESC.id, Place::RightInnerTop),
+    const LAYOUT: [(Kind, Place); 3] = [
+        (Kind::FileTree, Place::LeftInnerTop),
+        (Kind::Output, Place::LeftInnerTop),
+        (Kind::Output, Place::RightInnerTop),
     ];
 
     fn titles(workspace: &Workspace, place: Place) -> Vec<&str> {
         let dock = &workspace.docks[place.index()];
-        dock.tabs.iter().map(|panel| panel.title()).collect()
+        dock.tabs.iter().map(Panel::title).collect()
     }
 
     #[test]
@@ -198,7 +187,7 @@ mod tests {
         let text = r#"
             [[docks]]
             place = "left-inner-top"
-            tabs = [{ kind = "file-tree" }, { kind = "gone" }, { kind = "output" }]
+            tabs = [{ kind = "file-tree", state = {} }, { kind = "gone" }, { kind = "output" }]
         "#;
         let session = Session::parse(text).unwrap();
         let workspace = Workspace::new(&session);
@@ -220,8 +209,8 @@ mod tests {
         workspace.docks[Place::RightInnerTop.index()].remove(0);
         let below = &mut workspace.docks[Place::BelowMain.index()];
         below.tabs.extend([
-            (FileTree::DESC.open)(None).unwrap(),
-            Box::new(Output::new()),
+            Panel::new(Kind::FileTree).unwrap(),
+            Panel::Output(Output::new()),
         ]);
         below.active = 1;
         workspace.sizes[Band::BelowMain.index()] = 300.;
@@ -262,11 +251,11 @@ mod tests {
     }
 
     #[test]
-    fn a_file_tab_without_its_file_is_left_out() {
+    fn an_unreadable_tab_is_left_out() {
         let text = r#"
             [[docks]]
             place = "main"
-            tabs = [{ kind = "open-file" }, { kind = "open-file", state = { hex = { offset = 0 } } }, { kind = "open-file", state = { path = "a.bin", hex = { offset = 0 } } }]
+            tabs = [{ kind = "open-file" }, { kind = "open-file", state = { hex = { offset = 0 } } }, { kind = "file-tree", state = { tab = "nowhere" } }, { kind = "open-file", state = { path = "a.bin", hex = { offset = 0 } } }]
         "#;
         let workspace = Workspace::new(&Session::parse(text).unwrap());
         assert_eq!(titles(&workspace, Place::Main), ["a.bin"]);
@@ -290,7 +279,7 @@ mod tests {
         let text = r#"
             [[docks]]
             place = "main"
-            tabs = [{ kind = "file-tree" }, { kind = "gone" }, { kind = "open-file", state = { path = "a.bin", hex = { offset = 0 } } }]
+            tabs = [{ kind = "file-tree", state = {} }, { kind = "gone" }, { kind = "open-file", state = { path = "a.bin", hex = { offset = 0 } } }]
         "#;
         let workspace = Workspace::new(&Session::parse(text).unwrap());
         assert_eq!(titles(&workspace, Place::Main), ["a.bin"]);
@@ -302,7 +291,7 @@ mod tests {
             [[docks]]
             place = "left-inner-top"
             active = 2
-            tabs = [{ kind = "gone" }, { kind = "file-tree" }, { kind = "output" }]
+            tabs = [{ kind = "gone" }, { kind = "file-tree", state = {} }, { kind = "output" }]
         "#;
         let workspace = Workspace::new(&Session::parse(text).unwrap());
         let dock = &workspace.docks[Place::LeftInnerTop.index()];
