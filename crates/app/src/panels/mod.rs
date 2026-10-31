@@ -12,7 +12,7 @@ use project::Project;
 use project::tree::Trees;
 use serde::{Deserialize, Serialize};
 
-use crate::fs::FileLoader;
+use crate::documents::Documents;
 use crate::keymap::{AppCommand, KeyContext};
 use crate::workspace::{Place, Places, Workspace};
 
@@ -21,7 +21,7 @@ use file_tree::FilesView;
 pub use inspector::Inspector;
 use inspector::{InspectorState, Page};
 use open_file::OpenFileState;
-pub use open_file::{Hex, OpenFile};
+pub use open_file::{Format, Hex, OpenFile};
 pub use output::Output;
 
 /// Every kind of panel there is.
@@ -155,10 +155,10 @@ impl Panel {
     }
 
     /// Does `commands`, pressed while it has focus, before its `ui`.
-    pub fn act(&mut self, ui: &mut Ui, commands: &[AppCommand]) {
+    pub fn act(&mut self, ui: &mut Ui, commands: &[AppCommand], documents: &Documents) {
         match self {
             Self::FileTree(tree) => tree.act(commands),
-            Self::OpenFile(file) => file.act(ui, commands),
+            Self::OpenFile(file) => file.act(ui, commands, documents),
             Self::Inspector(_) | Self::Output(_) => {}
         }
     }
@@ -181,6 +181,14 @@ impl Panel {
         }
     }
 
+    /// The file it shows, relative to the project's root, if it's a file's tab.
+    pub fn path(&self) -> Option<&str> {
+        match self {
+            Self::OpenFile(file) => Some(file.path()),
+            _ => None,
+        }
+    }
+
     const fn unlocked_inspector(&mut self) -> Option<&mut Inspector> {
         match self {
             Self::Inspector(inspector) if !inspector.locked() => Some(inspector),
@@ -192,8 +200,7 @@ impl Panel {
 /// What a panel's `ui` is given.
 pub struct Context<'a> {
     pub project: Option<&'a Project>,
-    /// Unless its thread couldn't start.
-    pub loader: Option<&'a FileLoader>,
+    pub documents: &'a mut Documents,
     /// What the panels asked for this pass.
     pub requests: Vec<Request>,
 }

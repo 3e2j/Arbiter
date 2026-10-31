@@ -7,6 +7,7 @@
 mod assets;
 mod commands;
 pub mod components;
+mod documents;
 pub mod edit;
 mod fs;
 pub mod keymap;
@@ -18,6 +19,7 @@ mod workspace;
 use std::sync::Arc;
 
 use components::ContextMenu;
+use documents::Documents;
 use fs::{FileLoader, TreeReader, Watch};
 use gui::{
     host::{App, Startup, Wake, WindowStyle},
@@ -70,8 +72,7 @@ struct Editor {
     watch: Option<Watch>,
     /// The open project's, unless its thread couldn't start.
     reader: Option<TreeReader>,
-    /// Unless its thread couldn't start.
-    loader: Option<FileLoader>,
+    documents: Documents,
     /// The open project's, once read.
     trees: Option<Trees>,
     wake: Wake,
@@ -156,9 +157,11 @@ impl App for Editor {
             project: None,
             watch: None,
             reader: None,
-            loader: FileLoader::new(start.wake.clone())
-                .inspect_err(|err| tracing::warn!("can't start reading files to open: {err}"))
-                .ok(),
+            documents: Documents::new(
+                FileLoader::new(start.wake.clone())
+                    .inspect_err(|err| tracing::warn!("can't start reading files to open: {err}"))
+                    .ok(),
+            ),
             trees: None,
             wake: start.wake.clone(),
         };
@@ -186,6 +189,9 @@ impl App for Editor {
             Some(Err(err)) => tracing::warn!("can't read the project's files: {err}"),
             None => {}
         }
+        let shown = self.workspace.panels().filter_map(|panel| panel.path());
+        self.documents.sweep(shown);
+        self.documents.poll();
         self.workspace.input(input);
         if let Some(palette) = self.settings.take_changed() {
             theme::set(theme::theme(palette, self.fonts));
@@ -224,11 +230,11 @@ impl App for Editor {
         let commands = self.commands(ui);
         self.settings.act(&commands);
         if let Some(panel) = self.workspace.focused() {
-            panel.act(ui, &commands);
+            panel.act(ui, &commands, &self.documents);
         }
         let mut cx = Context {
             project: self.project.as_deref(),
-            loader: self.loader.as_ref(),
+            documents: &mut self.documents,
             requests: Vec::new(),
         };
         ui.element(Element::column(), |ui| {

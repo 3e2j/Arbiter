@@ -17,10 +17,10 @@ mod lines;
 use std::fmt::Write;
 
 use diag::Diagnostics;
-use formats::Decode;
 use formats::games::tp::Version;
 use formats::games::tp::jsystem::jmessage::{Args, find_tag};
 use formats::jsystem::jmessage::bmg::{Bmg, TextSegment};
+use formats::{ByteWriter, Decode, Encode};
 use gui::ui::{Direction, Element, Length, TextStyle, Ui};
 
 use crate::components::{
@@ -111,6 +111,12 @@ impl MessagesDoc {
             digits: widest.to_string().len().max(POSITION.len()),
             lines,
         }
+    }
+
+    pub fn encode(&self) -> formats::Result<Vec<u8>> {
+        let mut out = ByteWriter::new();
+        self.bmg.encode(&mut out)?;
+        Ok(out.finish())
     }
 }
 

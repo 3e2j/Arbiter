@@ -137,11 +137,6 @@ impl Hex {
         }
     }
 
-    /// Lets go of the selection, for bytes read again.
-    pub const fn reload(&mut self) {
-        self.picking.selection = None;
-    }
-
     /// Does `commands`, the [`HEX`] ones pressed while it has focus, on
     /// `bytes`, which aren't empty.
     pub fn act(&mut self, ui: &mut Ui, commands: &[AppCommand], bytes: &[u8]) {

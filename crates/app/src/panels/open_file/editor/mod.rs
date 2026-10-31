@@ -26,4 +26,12 @@ impl Format {
             Self::Messages(_) => "Messages",
         }
     }
+
+    /// Back to bytes, as the file would be saved, or why it can't be.
+    pub fn encode(&self) -> Result<Vec<u8>, String> {
+        let encoded = match self {
+            Self::Messages(doc) => doc.encode(),
+        };
+        encoded.map_err(|err| format!("Can't show it as hex: {err}"))
+    }
 }
