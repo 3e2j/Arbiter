@@ -377,7 +377,9 @@ fn dropdown_typing(kept: &mut Kept, state: &mut Dropdown) -> (Chosen, bool) {
         Choice::new("Geist"),
     ];
     kept.pass(|ui| {
-        let chosen = ui.element(fixed(100., 10.), |ui| dropdown(ui, state, &choices, 1));
+        let chosen = ui.element(fixed(100., 10.), |ui| {
+            dropdown(ui, state, &choices, 1, None)
+        });
         (chosen, ui.typing())
     })
 }
@@ -553,4 +555,15 @@ fn a_segmented_picker_says_which_segment_was_clicked() {
     pass(&mut kept);
     kept.input.push(Event::Released(PointerButton::Left));
     assert_eq!(pass(&mut kept), None);
+}
+
+#[test]
+fn a_dropdown_list_is_wider_than_a_narrow_button() {
+    let mut kept = Kept::default();
+    let mut state = Dropdown::CLOSED;
+    open_dropdown(&mut kept, &mut state);
+    // The button is 100 across, so this is past it, in the list's last row.
+    kept.input.push(Event::Pointer(Some([150., 39.])));
+    dropdown_pass(&mut kept, &mut state);
+    assert_eq!(dropdown_pass(&mut kept, &mut state).marked, Some(2));
 }

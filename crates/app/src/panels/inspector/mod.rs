@@ -22,8 +22,8 @@ use serde::{Deserialize, Serialize};
 use super::{Context, Kind, Request, Selection, file_name};
 use crate::assets::Icon;
 use crate::components::{
-    Choice, Dropdown, IconState, Scroll, TextField, Tooltip, dropdown, icon_button, notice, rule,
-    scroll, segmented, text_field, tooltip,
+    Choice, Dropdown, IconState, Scroll, Search, TextField, Tooltip, dropdown, icon_button, notice,
+    rule, scroll, segmented, text_field, tooltip,
 };
 use crate::documents::Document;
 use crate::edit;
@@ -362,15 +362,17 @@ pub fn named(
                 fields.choices.push(Choice::new("Custom"));
                 fields.values.len()
             });
-            let mut menu = match fields.menu {
-                Some((open, menu)) if open == key => menu,
-                _ => Dropdown::CLOSED,
+            let mut menu = fields
+                .menu
+                .take_if(|(open, _)| *open == key)
+                .map_or(Dropdown::CLOSED, |(_, menu)| menu);
+            let search = Search {
+                title: label,
+                placeholder: "Search",
             };
-            let chosen = dropdown(ui, &mut menu, &fields.choices, selected);
+            let chosen = dropdown(ui, &mut menu, &fields.choices, selected, Some(search));
             if menu.is_open() {
                 fields.menu = Some((key, menu));
-            } else if fields.menu.is_some_and(|(open, _)| open == key) {
-                fields.menu = None;
             }
             let picked = chosen.picked.and_then(|at| fields.values.get(at).copied());
             let (typed, refused) = ui.element(number, |ui| number_box(ui, fields, value, max, 10));
