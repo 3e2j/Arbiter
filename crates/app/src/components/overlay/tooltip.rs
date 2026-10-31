@@ -79,8 +79,9 @@ pub fn tooltip(ui: &mut Ui, at: [f32; 2], title: &str, text: &str) {
         ..theme.ui_text(color)
     };
     let padding = s.gap;
-    let line = s.row - s.gap;
-    let widest = ui.measure(style(c.text), title)[0].max(ui.measure(style(c.dim), text)[0]);
+    // As tall as the font's lines, so the clipped text keeps its descenders.
+    let [title_width, line] = ui.measure(style(c.text), title);
+    let widest = title_width.max(ui.measure(style(c.dim), text)[0]);
     let element = Element {
         size: [
             Length::Fixed(widest.min(MAX_WIDTH) + 2. * padding),
