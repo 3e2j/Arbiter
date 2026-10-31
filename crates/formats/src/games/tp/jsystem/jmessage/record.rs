@@ -59,13 +59,19 @@ impl Field {
     /// it.
     #[must_use]
     pub fn read(self, attributes: &[u8]) -> Option<u16> {
-        let start = self.offset.checked_sub(4)?;
+        let start = self.start()?;
         let bytes = attributes.get(start..start + self.len)?;
         Some(
             bytes
                 .iter()
                 .fold(0, |value, &byte| value << 8 | u16::from(byte)),
         )
+    }
+
+    /// Where it starts in a message's attributes, after the text offset.
+    #[must_use]
+    pub const fn start(self) -> Option<usize> {
+        self.offset.checked_sub(4)
     }
 
     const fn notes(self, notes: &'static str) -> Self {

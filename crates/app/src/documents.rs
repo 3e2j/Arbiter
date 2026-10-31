@@ -52,6 +52,10 @@ impl Documents {
         self.open.get(path)
     }
 
+    pub fn get_mut(&mut self, path: &str) -> Option<&mut Document> {
+        self.open.get_mut(path)
+    }
+
     /// Takes each file read since last asked, decoding it if a format claims
     /// it.
     pub fn poll(&mut self) {

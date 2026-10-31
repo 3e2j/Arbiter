@@ -27,8 +27,9 @@ pub struct OpenFile {
     view: View,
     hex: Hex,
     messages: MessagesView,
-    /// A decoded file encoded again for hex, once hex first shows it.
-    encoded: Option<Result<Vec<u8>, String>>,
+    /// A decoded file encoded again for hex, once hex first shows it, with
+    /// how many edits it had then.
+    encoded: Option<(u32, Result<Vec<u8>, String>)>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Default, Debug, PartialEq, Eq)]
@@ -95,7 +96,7 @@ impl OpenFile {
     pub(super) fn act(&mut self, ui: &mut Ui, commands: &[AppCommand], documents: &Documents) {
         let shown = (documents.get(&self.path), self.view, &self.encoded);
         let ((Some(Document::Raw(bytes)), ..)
-        | (Some(Document::Decoded(_)), View::Hex, Some(Ok(bytes)))) = shown
+        | (Some(Document::Decoded(_)), View::Hex, Some((_, Ok(bytes))))) = shown
         else {
             return;
         };
@@ -136,11 +137,16 @@ impl OpenFile {
                 }
             }
             (View::Hex, _) => {
-                let encoded = self.encoded.get_or_insert_with(|| {
-                    format
-                        .encode()
-                        .inspect_err(|err| tracing::warn!("{}: {err}", self.path))
-                });
+                let edits = format.edits();
+                let encoded = match &mut self.encoded {
+                    Some((at, encoded)) if *at == edits => encoded,
+                    slot => {
+                        let encoded = format
+                            .encode()
+                            .inspect_err(|err| tracing::warn!("{}: {err}", self.path));
+                        &mut slot.insert((edits, encoded)).1
+                    }
+                };
                 match encoded {
                     Ok(bytes) => hex_or_empty(ui, &mut self.hex, bytes),
                     Err(err) => notice(ui, err),

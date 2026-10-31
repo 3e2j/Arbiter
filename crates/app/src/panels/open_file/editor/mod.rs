@@ -7,6 +7,8 @@ mod messages;
 use formats::games::tp::Version;
 use gui::ui::Ui;
 
+use crate::panels::inspector::Fields;
+
 pub use messages::{MessagesDoc, MessagesView};
 
 pub enum Format {
@@ -39,12 +41,25 @@ impl Format {
         }
     }
 
-    /// Its `item`'s fields, in the inspector. Returns the label and help of
-    /// the field under the pointer, if it has help.
-    pub fn inspect(&self, ui: &mut Ui, item: u32) -> Option<(&'static str, String)> {
+    /// Its `item`'s fields, in the inspector, editing it as they're typed
+    /// in. Returns the label and help of the field under the pointer, if it
+    /// has help.
+    pub fn inspect(
+        &mut self,
+        ui: &mut Ui,
+        item: u32,
+        fields: &mut Fields,
+    ) -> Option<(&'static str, String)> {
         let item = usize::try_from(item).ok()?;
         match self {
-            Self::Messages(doc) => doc.inspect(ui, item),
+            Self::Messages(doc) => doc.inspect(ui, item, fields),
+        }
+    }
+
+    /// How many edits it's had, so what's made from it knows to remake.
+    pub const fn edits(&self) -> u32 {
+        match self {
+            Self::Messages(doc) => doc.edits,
         }
     }
 

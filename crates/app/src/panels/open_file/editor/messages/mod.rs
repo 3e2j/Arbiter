@@ -44,6 +44,8 @@ pub struct MessagesDoc {
     digits: usize,
     /// Each message's text, by position.
     lines: Lines,
+    /// How many edits it's had.
+    pub edits: u32,
 }
 
 /// How one tab looks at a [`MessagesDoc`].
@@ -107,6 +109,7 @@ impl MessagesDoc {
             ids,
             digits: widest.to_string().len().max(POSITION.len()),
             lines,
+            edits: 0,
         }
     }
 
