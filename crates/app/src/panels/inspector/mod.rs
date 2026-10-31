@@ -208,8 +208,8 @@ impl Inspector {
             .as_ref()
             .is_some_and(|(_, format)| format.tables())
             .then_some(fields.raw);
-        let (pinned, flipped, mut over) =
-            header(ui, crumbs.iter().flatten().copied(), *locked, raw);
+        let pin = (format.is_some() || *locked).then_some(*locked);
+        let (pinned, flipped, mut over) = header(ui, crumbs.iter().flatten().copied(), pin, raw);
         if pinned {
             *locked = !*locked;
             if !*locked {
@@ -242,14 +242,15 @@ impl Inspector {
 }
 
 /// The breadcrumb, each step of `crumbs`, the last brightest, then the Raw
-/// button if given, lit while `raw`, then the lock, lit while `locked`.
+/// button if given, lit while `raw`, then the lock if given, lit while
+/// `locked`.
 /// Returns whether the lock and the Raw button were clicked, and the hint of
 /// the one under the pointer.
 #[track_caller]
 fn header<'a>(
     ui: &mut Ui,
     crumbs: impl Iterator<Item = &'a str>,
-    locked: bool,
+    locked: Option<bool>,
     raw: Option<bool>,
 ) -> (bool, bool, Option<(&'static str, String)>) {
     let theme = theme::current();
@@ -308,22 +309,25 @@ fn header<'a>(
             }
             button.clicked
         });
-        let pin = icon_button(ui, Icon::Pin, lit(locked));
-        if pin.hovered {
-            hint = Some(if locked {
-                (
-                    "Unpin",
-                    "Follow the selection again, closing the other unpinned inspector.",
-                )
-            } else {
-                (
-                    "Pin",
-                    "Keep showing this. The next selection opens another inspector.",
-                )
-            });
-        }
+        let pinned = locked.is_some_and(|locked| {
+            let button = icon_button(ui, Icon::Pin, lit(locked));
+            if button.hovered {
+                hint = Some(if locked {
+                    (
+                        "Unpin",
+                        "Follow the selection again, closing the other unpinned inspector.",
+                    )
+                } else {
+                    (
+                        "Pin",
+                        "Keep showing this. The next selection opens another inspector.",
+                    )
+                });
+            }
+            button.clicked
+        });
         let hint = hint.map(|(title, help)| (title, help.to_owned()));
-        (pin.clicked, flipped, hint)
+        (pinned, flipped, hint)
     })
 }
 
