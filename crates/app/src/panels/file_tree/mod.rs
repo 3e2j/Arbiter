@@ -21,7 +21,7 @@ use project::tree::{NodeKind, SortKey, SortOrder, Tree, TreeFilter, Trees};
 use crate::assets::Icon;
 use crate::commands::Command;
 
-use super::{Context, Event, Reply};
+use super::{Context, Request};
 use row::{Columns, row_ui};
 use tab_state::TabState;
 
@@ -157,7 +157,7 @@ impl FileTree {
 
     /// Shows `trees`, read again, in place of what was shown. Each tab keeps
     /// what it had open and selected wherever the same path still is.
-    fn refresh(&mut self, mut trees: Trees) {
+    pub(super) fn refresh(&mut self, mut trees: Trees) {
         let Some(opened) = self.opened.as_deref_mut() else {
             return self.set(trees);
         };
@@ -359,14 +359,6 @@ impl FileTree {
 }
 
 impl FileTree {
-    /// Takes each tree read again, as its own copy to sort.
-    pub(super) fn receive(&mut self, event: &mut Event) -> Reply {
-        if let Event::Read(trees) = event {
-            self.refresh(Trees::clone(trees));
-        }
-        Reply::Pass
-    }
-
     /// Does `commands`, the [`FILES`] ones pressed while it has focus.
     pub(super) fn act(&mut self, commands: &[AppCommand]) {
         if self.opened.is_some() && commands.contains(&SEARCH) {
@@ -424,7 +416,7 @@ impl FileTree {
                     }
                 };
                 if found {
-                    cx.post(Event::Pick(path));
+                    cx.requests.push(Request::Open(path));
                 } else {
                     tracing::info!(
                         "{} is only a change, with nothing to show yet",

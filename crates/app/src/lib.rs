@@ -26,7 +26,8 @@ use gui::{
     ui::{Element, Ui, window::window_edges},
 };
 use keymap::{AppCommand, KeyContext};
-use panels::{Context, Event, Kind, route};
+use panels::{Context, Kind, Request};
+use project::tree::Trees;
 use project::{LOG, Project};
 use settings::Settings;
 use theme::ThemeFonts;
@@ -71,6 +72,8 @@ struct Editor {
     reader: Option<TreeReader>,
     /// Unless its thread couldn't start.
     loader: Option<FileLoader>,
+    /// The open project's, once read.
+    trees: Option<Trees>,
     wake: Wake,
 }
 
@@ -156,6 +159,7 @@ impl App for Editor {
             loader: FileLoader::new(start.wake.clone())
                 .inspect_err(|err| tracing::warn!("can't start reading files to open: {err}"))
                 .ok(),
+            trees: None,
             wake: start.wake.clone(),
         };
         if let Some(project) = project {
@@ -174,7 +178,10 @@ impl App for Editor {
         }
         match self.reader.as_ref().and_then(TreeReader::take) {
             Some(Ok(trees)) => {
-                self.workspace.offer(&mut Event::Read(&trees));
+                for panel in self.workspace.panels() {
+                    panel.read(&trees);
+                }
+                self.trees = Some(trees);
             }
             Some(Err(err)) => tracing::warn!("can't read the project's files: {err}"),
             None => {}
@@ -219,7 +226,11 @@ impl App for Editor {
         if let Some(panel) = self.workspace.focused() {
             panel.act(ui, &commands);
         }
-        let mut cx = Context::new(self.project.as_deref(), self.loader.as_ref());
+        let mut cx = Context {
+            project: self.project.as_deref(),
+            loader: self.loader.as_ref(),
+            requests: Vec::new(),
+        };
         ui.element(Element::column(), |ui| {
             title_bar::ui(ui, Self::TITLE, &mut self.settings, &mut self.view);
             // Settings covers everything under the title bar.
@@ -229,15 +240,13 @@ impl App for Editor {
                 self.settings.panel(ui);
             });
             if let Some(kind) = title_bar::view_menu(ui, &mut self.view) {
-                cx.post(Event::Add(kind));
-                // A new files panel has no tree until it's read.
-                if let Some(reader) = &self.reader {
-                    reader.ask();
-                }
+                cx.requests.push(Request::Add(kind));
             }
             window_edges(ui, RESIZE_EDGE);
         });
-        route::update(&mut self.workspace, cx);
+        for request in cx.requests {
+            request.apply(&mut self.workspace, self.trees.as_ref());
+        }
     }
 }
 

@@ -34,7 +34,7 @@ use gui::{
     ui::{Direction, Element, Length, Ui},
 };
 
-use crate::panels::{Context, Event, Panel, Reply};
+use crate::panels::{Context, Panel};
 
 use crate::theme;
 use dock::{Dock, dock_radius};
@@ -79,25 +79,21 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// Offers `event` to every panel in turn, closing each that asks, until
-    /// one shows it. Returns whether one did, brought to the front.
-    pub fn offer(&mut self, event: &mut Event) -> bool {
+    /// Brings the first panel `pick` takes to the front. Returns whether it
+    /// took one.
+    pub fn show(&mut self, mut pick: impl FnMut(&mut Panel) -> bool) -> bool {
         for dock in &mut self.docks {
-            let mut at = 0;
-            while let Some(panel) = dock.tabs.get_mut(at) {
-                match panel.receive(event) {
-                    Reply::Pass => at += 1,
-                    Reply::Close => {
-                        dock.remove(at);
-                    }
-                    Reply::Show => {
-                        dock.active = at;
-                        return true;
-                    }
-                }
+            if let Some(at) = dock.tabs.iter_mut().position(&mut pick) {
+                dock.active = at;
+                return true;
             }
         }
         false
+    }
+
+    /// Every panel, in every dock.
+    pub fn panels(&mut self) -> impl Iterator<Item = &mut Panel> {
+        self.docks.iter_mut().flat_map(|dock| &mut dock.tabs)
     }
 
     /// Adds `panel` as the last tab at `place`, and shows it and its band.

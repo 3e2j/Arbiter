@@ -12,7 +12,7 @@ use gui::ui::{Element, Length, Ui};
 use project::Project;
 use serde::{Deserialize, Serialize};
 
-use super::{Context, Event, Reply};
+use super::{Context, Request};
 use crate::components::{notice, segmented, toolbar};
 use crate::fs::Loaded;
 use crate::keymap::AppCommand;
@@ -129,17 +129,14 @@ impl OpenFile {
 }
 
 impl OpenFile {
+    /// Relative to the project's root.
+    pub(super) fn path(&self) -> &str {
+        &self.path
+    }
+
     /// The file's name.
     pub(super) fn title(&self) -> &str {
         file_name(&self.path)
-    }
-
-    /// Shows itself for a pick of its own file.
-    pub(super) fn receive(&mut self, event: &mut Event) -> Reply {
-        match event {
-            Event::Pick(path) if *path == self.path => Reply::Show,
-            _ => Reply::Pass,
-        }
     }
 
     /// Does `commands`, the [`HEX`] ones pressed while it has
@@ -182,7 +179,7 @@ impl OpenFile {
             (View::Editor, Some(editor)) => {
                 editor.ui(ui);
                 if let Some(page) = editor.take_inspected(file_name(&self.path)) {
-                    cx.post(Event::Inspect(page));
+                    cx.requests.push(Request::Inspect(page));
                 }
             }
             _ if bytes.is_empty() => notice(ui, "Empty file"),

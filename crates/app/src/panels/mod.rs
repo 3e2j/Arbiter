@@ -1,12 +1,11 @@
 //! What the user works in, one per tab. Each [`Panel`] is one [`Kind`]'s
-//! state, and knows no other panel. They reach each other by posting
-//! [`Event`]s, which [`route`] offers to every panel in turn.
+//! state, and knows no other panel. What a panel asks of the others is a
+//! [`Request`], done once every panel is drawn.
 
 mod file_tree;
 pub mod inspector;
 mod open_file;
 mod output;
-pub mod route;
 
 use gui::ui::Ui;
 use project::Project;
@@ -15,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::fs::FileLoader;
 use crate::keymap::{AppCommand, KeyContext};
-use crate::workspace::{Place, Places};
+use crate::workspace::{Place, Places, Workspace};
 
 pub use file_tree::FileTree;
 use file_tree::FilesView;
@@ -169,66 +168,122 @@ impl Panel {
         match self {
             Self::FileTree(tree) => tree.ui(ui, cx),
             Self::OpenFile(file) => file.ui(ui, cx),
-            Self::Inspector(inspector) => inspector.ui(ui, cx),
+            Self::Inspector(inspector) => inspector.ui(ui),
             Self::Output(output) => output.ui(ui),
         }
     }
 
-    /// Takes `event` as it's offered, in turn with every other panel.
-    pub fn receive(&mut self, event: &mut Event) -> Reply {
+    /// Takes the open project's trees, read again, as a file tree's own
+    /// copy to sort.
+    pub fn read(&mut self, trees: &Trees) {
+        if let Self::FileTree(tree) = self {
+            tree.refresh(trees.clone());
+        }
+    }
+
+    const fn unlocked_inspector(&mut self) -> Option<&mut Inspector> {
         match self {
-            Self::FileTree(tree) => tree.receive(event),
-            Self::OpenFile(file) => file.receive(event),
-            Self::Inspector(inspector) => inspector.receive(event),
-            Self::Output(_) => Reply::Pass,
+            Self::Inspector(inspector) if !inspector.locked() => Some(inspector),
+            _ => None,
         }
     }
 }
 
-/// What a panel's `ui` is given, and where it posts its events.
+/// What a panel's `ui` is given.
 pub struct Context<'a> {
     pub project: Option<&'a Project>,
     /// Unless its thread couldn't start.
     pub loader: Option<&'a FileLoader>,
-    posted: Vec<Event<'static>>,
+    /// What the panels asked for this pass.
+    pub requests: Vec<Request>,
 }
 
-/// Offered to every panel in turn until one shows it. [`route`] opens a
-/// panel for one no panel shows, when it's one a panel can open for.
-pub enum Event<'a> {
-    /// A file, relative to the project's root, to show.
-    Pick(String),
-    /// Something clicked in an editor, to inspect.
-    Inspect(Page),
-    /// An inspector was just unlocked, so the unlocked one before it closes.
-    Unlocked,
-    /// The View menu asked for another panel of this kind.
+/// What a panel asks of the workspace, done once every panel is drawn.
+pub enum Request {
+    /// Shows a file, relative to the project's root, in its tab or a new one.
+    Open(String),
+    /// Shows a panel of this kind from the View menu. A new one opens unless
+    /// it's an inspector and an unlocked one is open.
     Add(Kind),
-    /// The open project's trees, read again.
-    Read(&'a Trees),
+    /// Shows what was clicked in an editor in the unlocked inspector, or a
+    /// new one.
+    Inspect(Page),
 }
 
-/// What a panel does with an [`Event`] it's offered.
-pub enum Reply {
-    /// Leaves it for the next panel.
-    Pass,
-    /// Takes it, so it's brought to the front and no other panel is offered
-    /// it.
-    Show,
-    /// Leaves it, but closes.
-    Close,
+impl Request {
+    /// Does it in `workspace`, a new file tree given `trees` if they're read.
+    pub fn apply(self, workspace: &mut Workspace, trees: Option<&Trees>) {
+        let panel = match self {
+            Self::Open(path) => {
+                let open = |panel: &mut Panel| matches!(panel, Panel::OpenFile(file) if file.path() == path);
+                if workspace.show(open) {
+                    return;
+                }
+                Panel::OpenFile(OpenFile::new(path))
+            }
+            Self::Add(Kind::Inspector)
+                if workspace.show(|panel| panel.unlocked_inspector().is_some()) =>
+            {
+                return;
+            }
+            Self::Add(kind) => {
+                let Some(mut panel) = Panel::new(kind) else {
+                    return;
+                };
+                if let Some(trees) = trees {
+                    panel.read(trees);
+                }
+                panel
+            }
+            Self::Inspect(page) => {
+                let mut page = Some(page);
+                let shown = workspace.show(|panel| {
+                    let Some(inspector) = panel.unlocked_inspector() else {
+                        return false;
+                    };
+                    inspector.show(page.take().unwrap_or_default());
+                    true
+                });
+                if shown {
+                    return;
+                }
+                Panel::Inspector(Inspector::new(page))
+            }
+        };
+        workspace.add(panel.kind().opens_at(), panel);
+    }
 }
 
-impl<'a> Context<'a> {
-    pub const fn new(project: Option<&'a Project>, loader: Option<&'a FileLoader>) -> Self {
-        Self {
-            project,
-            loader,
-            posted: Vec::new(),
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::workspace::Session;
+
+    fn count(workspace: &mut Workspace, kind: Kind) -> usize {
+        workspace
+            .panels()
+            .filter(|panel| panel.kind() == kind)
+            .count()
     }
 
-    pub fn post(&mut self, event: Event<'static>) {
-        self.posted.push(event);
+    #[test]
+    fn requests_show_what_is_open_before_adding() {
+        let mut workspace = Workspace::new(&Session::default());
+        let open = || Request::Open("files/a.bin".to_owned());
+        open().apply(&mut workspace, None);
+        open().apply(&mut workspace, None);
+        assert_eq!(count(&mut workspace, Kind::OpenFile), 1);
+
+        Request::Add(Kind::Inspector).apply(&mut workspace, None);
+        Request::Add(Kind::Inspector).apply(&mut workspace, None);
+        assert_eq!(count(&mut workspace, Kind::Inspector), 1);
+
+        for panel in workspace.panels() {
+            if let Panel::Inspector(inspector) = panel {
+                *inspector = Inspector::from_state(&toml::from_str("locked = true").unwrap());
+            }
+        }
+        Request::Inspect(Page::default()).apply(&mut workspace, None);
+        assert_eq!(count(&mut workspace, Kind::Inspector), 2);
     }
 }

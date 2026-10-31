@@ -1,9 +1,8 @@
 //! What's selected in an editor, as a breadcrumb over sections of labelled
 //! fields. The editor builds the [`Page`], so this knows no format.
 //!
-//! At most one inspector is unlocked, and it shows each new selection.
-//! Locking one keeps what it shows, and the next selection opens a new one.
-//! Unlocking one takes over from the unlocked one, which closes.
+//! An unlocked inspector shows each new selection. Locking one keeps what it
+//! shows, and the next selection opens a new one.
 //!
 //! Hovering a field shows its notes.
 
@@ -12,7 +11,7 @@ mod page;
 use gui::ui::{Align, Direction, Element, Length, TextStyle, Ui};
 use serde::{Deserialize, Serialize};
 
-use super::{Context, Event, Kind, Reply};
+use super::Kind;
 use crate::assets::Icon;
 use crate::components::{
     Chip, IconState, Run, Scroll, Tooltip, icon_button, notice, rule, scroll, tooltip, wrapped,
@@ -29,9 +28,6 @@ const LABEL_MIN: f32 = 64.;
 
 pub struct Inspector {
     locked: bool,
-    /// Set as it's unlocked, until it's offered the [`Event::Unlocked`] it
-    /// posts, which closes the one it takes over from.
-    taking_over: bool,
     /// `None` until something is selected.
     shown: Option<Page>,
     scroll: Scroll,
@@ -52,7 +48,6 @@ impl Inspector {
         scroll.thumb = HOVER_THUMB;
         Self {
             locked: false,
-            taking_over: false,
             shown,
             scroll,
             tooltip: Tooltip::default(),
@@ -72,7 +67,11 @@ impl Inspector {
         }
     }
 
-    fn show(&mut self, page: Page) {
+    pub(super) const fn locked(&self) -> bool {
+        self.locked
+    }
+
+    pub(super) fn show(&mut self, page: Page) {
         self.shown = Some(page);
         self.scroll.offset = 0.;
     }
@@ -87,27 +86,9 @@ impl Inspector {
             .unwrap_or(Kind::Inspector.title())
     }
 
-    /// While unlocked: shows each selection, stands in for another from the
-    /// View menu, and closes once another is unlocked.
-    pub(super) fn receive(&mut self, event: &mut Event) -> Reply {
-        if self.locked {
-            return Reply::Pass;
-        }
-        match event {
-            Event::Inspect(page) => {
-                self.show(std::mem::take(page));
-                Reply::Show
-            }
-            Event::Add(Kind::Inspector) => Reply::Show,
-            Event::Unlocked if !std::mem::take(&mut self.taking_over) => Reply::Close,
-            _ => Reply::Pass,
-        }
-    }
-
-    pub(super) fn ui(&mut self, ui: &mut Ui, cx: &mut Context) {
+    pub(super) fn ui(&mut self, ui: &mut Ui) {
         let Self {
             locked,
-            taking_over,
             shown,
             scroll: body_scroll,
             tooltip: tip,
@@ -122,10 +103,6 @@ impl Inspector {
             });
         if header(ui, crumbs, *locked) {
             *locked = !*locked;
-            *taking_over = !*locked;
-            if *taking_over {
-                cx.post(Event::Unlocked);
-            }
         }
         let Some(shown) = shown else {
             return notice(ui, "Nothing selected");
@@ -287,24 +264,4 @@ fn field(ui: &mut Ui, label: &str, value: &str, kind: FieldKind) -> bool {
         ui.element(well, |ui| ui.text(code, value));
         hovered
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_takeover_replaces_only_the_other_unlocked_one() {
-        let mut taking_over = Inspector::new(None);
-        taking_over.taking_over = true;
-        let mut unlocked = Inspector::new(None);
-        let mut locked = Inspector::from_state(&InspectorState { locked: true });
-        let closes = |inspector: &mut Inspector| {
-            matches!(inspector.receive(&mut Event::Unlocked), Reply::Close)
-        };
-        assert!(!closes(&mut taking_over));
-        assert!(closes(&mut unlocked));
-        assert!(!closes(&mut locked));
-        assert!(!taking_over.taking_over);
-    }
 }
