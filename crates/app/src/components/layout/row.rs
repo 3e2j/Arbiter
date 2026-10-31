@@ -24,7 +24,7 @@ pub fn row<R>(
         ui.style().background = if selected {
             Some(c.selected)
         } else {
-            ui.hovered().then_some(c.hover)
+            ui.hovered().then_some(c.raised)
         };
         let out = body(ui);
         (ui.clicked(PointerButton::Left), out)

@@ -95,7 +95,7 @@ impl Swatch {
             line: Color::hex(self.line),
             text,
             dim: Color::hex(self.dim),
-            hover: Color::hex(self.raised),
+            raised: Color::hex(self.raised),
             selected: Color::hex(self.sel),
             selection: accent.alpha(0x3d),
             thumb: text.alpha(0x30),

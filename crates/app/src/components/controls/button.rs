@@ -20,7 +20,7 @@ pub fn button(ui: &mut Ui, label: &str) -> bool {
         ..Element::DEFAULT
     };
     ui.element(element, |ui| {
-        ui.style().background = Some(if ui.hovered() { c.selected } else { c.hover });
+        ui.style().background = Some(if ui.hovered() { c.selected } else { c.raised });
         ui.text(theme.ui_text(c.text), label);
         ui.clicked(PointerButton::Left)
     })
@@ -43,7 +43,7 @@ pub fn toggle(ui: &mut Ui, label: &str, on: bool) -> bool {
     };
     ui.element(element, |ui| {
         let hovered = ui.hovered();
-        ui.style().background = hovered.then_some(c.hover);
+        ui.style().background = hovered.then_some(c.raised);
         let color = if on {
             c.accent
         } else if hovered {
@@ -91,7 +91,7 @@ pub fn icon_button(ui: &mut Ui, icon: impl Into<IconId>, state: IconState) -> Cl
     };
     ui.element(element, |ui| {
         let hovered = enabled && ui.hovered();
-        ui.style().background = hovered.then_some(c.hover);
+        ui.style().background = hovered.then_some(c.raised);
         let color = match state {
             IconState::Lit => c.accent,
             IconState::Normal if hovered => c.text,

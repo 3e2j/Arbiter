@@ -233,7 +233,11 @@ impl Dock {
                 });
                 ui.element(strip(color.surface), |_| {});
             } else {
-                label.background = Some(if hovered { color.selected } else { color.hover });
+                label.background = Some(if hovered {
+                    color.selected
+                } else {
+                    color.raised
+                });
                 ui.element(label, |ui| {
                     ui.text(theme.ui_text(color.dim), title);
                 });

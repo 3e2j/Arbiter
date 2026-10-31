@@ -29,7 +29,7 @@ pub fn key_cap(ui: &mut Ui, name: &str, color: Color) {
         min: [CAP, CAP],
         padding: [CAP_PAD, 0., CAP_PAD, 0.],
         align: [Align::Center; 2],
-        background: Some(c.hover),
+        background: Some(c.raised),
         border: Some(theme.border()),
         radius: [5.; 4],
         ..Element::DEFAULT

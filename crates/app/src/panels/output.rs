@@ -186,7 +186,7 @@ fn entry_ui(ui: &mut Ui, entry: &Entry, repeats: u32, text: &str, time: &mut Str
         ..theme.ui_text(color)
     };
     ui.element(element, |ui| {
-        ui.style().background = ui.hovered().then_some(c.hover);
+        ui.style().background = ui.hovered().then_some(c.raised);
         let color = color(entry.level, &c);
         ui.icon(icon(entry.level), s.icon, color);
         time.clear();

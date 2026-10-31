@@ -57,8 +57,8 @@ pub struct ThemeColors {
     pub text: Color,
     /// Icons and secondary text.
     pub dim: Color,
-    /// Under the pointer, and buttons at rest.
-    pub hover: Color,
+    /// Raised off a surface: under the pointer, and buttons at rest.
+    pub raised: Color,
     /// The selected row and buttons under the pointer.
     pub selected: Color,
     /// Behind selected text. Translucent, so highlights under it show

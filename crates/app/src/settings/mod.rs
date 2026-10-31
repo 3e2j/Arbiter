@@ -390,7 +390,7 @@ impl Settings {
                     let (background, color) = if on {
                         (Some(c.selected), c.accent)
                     } else if hovered {
-                        (Some(c.hover), c.text)
+                        (Some(c.raised), c.text)
                     } else {
                         (None, c.dim)
                     };

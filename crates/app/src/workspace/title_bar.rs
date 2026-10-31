@@ -67,7 +67,7 @@ fn bar<R>(ui: &mut Ui, body: impl FnOnce(&mut Ui) -> R) -> R {
             s.window_radius
         };
         let style = ui.style();
-        style.background = held.then_some(c.hover);
+        style.background = held.then_some(c.raised);
         style.radius = [radius, radius, 0., 0.];
         out
     })
@@ -91,7 +91,7 @@ fn menu_button(ui: &mut Ui, label: &str, menu: &mut ContextMenu) {
         // Holding the press keeps the bar from taking it as a window drag.
         let held = ui.held(PointerButton::Left);
         let lit = held || menu.is_open() || ui.hovered();
-        ui.style().background = lit.then_some(c.hover);
+        ui.style().background = lit.then_some(c.raised);
         let text = if lit { c.text } else { c.dim };
         ui.text(theme.ui_text(text), label);
         // The open menu's cover takes the press that closes it.

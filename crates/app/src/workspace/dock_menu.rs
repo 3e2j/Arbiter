@@ -315,7 +315,7 @@ fn map_cell(ui: &mut Ui, rect: Rect, state: CellState) -> bool {
             CellState::Own => (color.selected, border(color.accent)),
             CellState::Blocked => (color.page, None),
             _ if ui.hovered() => (color.accent.alpha(MAP_HOVER), border(color.accent)),
-            CellState::Occupied => (color.hover, border(color.line)),
+            CellState::Occupied => (color.raised, border(color.line)),
             CellState::Empty => (color.surface, border(color.line)),
         };
         let style = ui.style();

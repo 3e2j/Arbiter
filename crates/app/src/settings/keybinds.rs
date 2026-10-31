@@ -564,7 +564,7 @@ fn recorder(
             recorded.recording = true;
         }
         if !ui.focused() {
-            ui.style().background = ui.hovered().then_some(c.hover);
+            ui.style().background = ui.hovered().then_some(c.raised);
             let color = if warn { c.warn } else { c.text };
             if let Some(chord) = chord {
                 chord.caps().for_each(|cap| key_cap(ui, &cap, color));

@@ -527,7 +527,7 @@ fn choice_line(
     };
     ui.element(line, |ui| {
         let over = ui.hovered();
-        ui.style().background = (over || marked).then_some(c.hover);
+        ui.style().background = (over || marked).then_some(c.raised);
         ui.element(top, |ui| {
             if let Some(color) = choice.swatch {
                 dot(ui, color);

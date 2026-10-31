@@ -450,7 +450,7 @@ fn line(
     let ascii = selected.map(highlight);
     ui.element(element, |ui| {
         if hover {
-            ui.style().background = ui.hovered().then_some(c.hover);
+            ui.style().background = ui.hovered().then_some(c.raised);
         }
         ui.text(dim, &row_text.offset);
         let hex = ui.text_layered(text, &row_text.hex, hex.as_slice(), None)?;
