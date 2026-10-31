@@ -31,8 +31,8 @@ impl MessagesDoc {
         };
     }
 
-    /// The message at `index`'s fields, setting its attributes as they're
-    /// typed in. Typing is one undo step until it pauses or leaves the
+    /// The message at `index`'s fields, setting its id and attributes as
+    /// they're typed in. The id sets any copy its attributes hold with it. Typing is one undo step until it pauses or leaves the
     /// field, and a pick from a menu is one of its own.
     /// Returns the label and help of the field under the pointer, if it has
     /// help.
@@ -43,16 +43,29 @@ impl MessagesDoc {
         let message = self.bmg.messages.get(index)?;
         let (key, id) = (message.key, message.id);
         let mut over = None;
+        let tables = self
+            .version
+            .and_then(|version| Some((version, layout(version, self.bmg.attributes_len + 4)?)));
         section(ui, fields, "File", |ui, fields| {
             let mut value = String::new();
             let _ = write!(value, "{index}");
             field(ui, fields, "Position", &value);
-            if self.bmg.mid1.is_some() {
-                value.clear();
-                let _ = write!(value, "{id}");
-                if field(ui, fields, "ID", &value) {
-                    over = Some(("ID", "From MID1, what the game looks it up by".to_owned()));
-                }
+            if self.bmg.mid1.is_none() {
+                return;
+            }
+            let (hovered, typed) = number(ui, fields, "ID", id, u16::MAX);
+            if hovered {
+                over = Some(("ID", "From MID1, what the game looks it up by".to_owned()));
+            }
+            if let Some(typed) = typed {
+                let copy_at = tables.and_then(|(_, layout)| layout.id_copy());
+                let edit = BmgEdit::Id {
+                    message: key,
+                    id: typed,
+                    copy: copy_at.map(|at| (at, typed.to_be_bytes())),
+                };
+                let [_, selection] = fields.message.selections();
+                self.edit(edit, [selection; 2]);
             }
         });
         section(ui, fields, "Text", |ui, fields| {
@@ -83,9 +96,6 @@ impl MessagesDoc {
             let Some(message) = self.bmg.messages.get(index) else {
                 return;
             };
-            let tables = self
-                .version
-                .and_then(|version| Some((version, layout(version, self.bmg.attributes_len + 4)?)));
             let attributes = &message.attributes;
             let set = if let Some((version, layout)) = tables.filter(|_| !fields.raw) {
                 attribute_fields(ui, fields, version, layout, attributes, &mut over)
@@ -133,6 +143,7 @@ fn attribute_fields(
                 };
                 let name = record_field.name;
                 let (hovered, typed) = match record_field.values {
+                    _ if record_field.id_copy => (field(ui, fields, name, &read.to_string()), None),
                     Some(table) => {
                         let names = values(version, table).map(|entry| (entry.value, entry.name));
                         named(ui, fields, name, read, max, names)

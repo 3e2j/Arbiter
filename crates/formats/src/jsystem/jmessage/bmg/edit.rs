@@ -16,6 +16,13 @@ pub enum BmgEdit {
         at: usize,
         bytes: Box<[u8]>,
     },
+    /// `id` in place of `message`'s, and `copy`'s bytes over its attributes
+    /// where the game keeps a second copy of the id.
+    Id {
+        message: MessageKey,
+        id: u16,
+        copy: Option<(usize, [u8; 2])>,
+    },
     /// `text` in place of `message`'s.
     Text {
         message: MessageKey,
@@ -33,11 +40,13 @@ impl Editable for Bmg {
     type Edit = BmgEdit;
     type Item = MessageKey;
 
-    /// A range past the message's attributes, or a message the file doesn't
-    /// hold, changes nothing.
+    /// A range past the message's attributes, a copy past them, or a message
+    /// the file doesn't hold, changes nothing.
     fn apply(&mut self, edit: BmgEdit) -> (BmgEdit, Vec<MessageKey>) {
         let key = match &edit {
-            BmgEdit::Attributes { message, .. } | BmgEdit::Text { message, .. } => *message,
+            BmgEdit::Attributes { message, .. }
+            | BmgEdit::Id { message, .. }
+            | BmgEdit::Text { message, .. } => *message,
         };
         let Some(held) = self.messages.iter_mut().find(|held| held.key == key) else {
             return (edit, Vec::new());
@@ -55,6 +64,21 @@ impl Editable for Bmg {
                 held.swap_with_slice(&mut bytes);
                 BmgEdit::Attributes { message, at, bytes }
             }
+            BmgEdit::Id {
+                message,
+                mut id,
+                mut copy,
+            } => {
+                if let Some((at, bytes)) = &mut copy {
+                    let held = held.attributes.get_mut(*at..at.saturating_add(2));
+                    let Some(held) = held else {
+                        return (BmgEdit::Id { message, id, copy }, Vec::new());
+                    };
+                    held.swap_with_slice(bytes);
+                }
+                std::mem::swap(&mut held.id, &mut id);
+                BmgEdit::Id { message, id, copy }
+            }
             BmgEdit::Text { message, mut text } => {
                 std::mem::swap(&mut held.text, &mut text);
                 BmgEdit::Text { message, text }
@@ -63,8 +87,8 @@ impl Editable for Bmg {
         (undo, vec![key])
     }
 
-    /// Typing over the same bytes, or in the same message's text, is one
-    /// step.
+    /// Typing over the same bytes, or in the same message's id or text, is
+    /// one step.
     fn merges(undo: &BmgEdit, next: &BmgEdit) -> bool {
         match (undo, next) {
             (
@@ -75,7 +99,10 @@ impl Editable for Bmg {
                     bytes: next_bytes,
                 },
             ) => message == next_message && at == next_at && bytes.len() == next_bytes.len(),
-            (BmgEdit::Text { message, .. }, BmgEdit::Text { message: next, .. }) => message == next,
+            (BmgEdit::Id { message, .. }, BmgEdit::Id { message: next, .. })
+            | (BmgEdit::Text { message, .. }, BmgEdit::Text { message: next, .. }) => {
+                message == next
+            }
             _ => false,
         }
     }
@@ -126,6 +153,34 @@ mod tests {
             assert_eq!((undo, touched), (edit, Vec::new()));
         }
         assert_eq!(*file.messages[0].attributes, [0; 16]);
+    }
+
+    fn id(id: u16, copy: Option<(usize, [u8; 2])>) -> BmgEdit {
+        BmgEdit::Id {
+            message: MessageKey(7),
+            id,
+            copy,
+        }
+    }
+
+    #[test]
+    fn an_id_edit_undoes_with_the_id_and_copy_it_replaced() {
+        let mut file = bmg(&[0, 9, 9, 0]);
+        let (undo, touched) = file.apply(id(0x0102, Some((1, [1, 2]))));
+        assert_eq!(file.messages[0].id, 0x0102);
+        assert_eq!(*file.messages[0].attributes, [0, 1, 2, 0]);
+        assert_eq!(
+            (undo, touched),
+            (id(0, Some((1, [9, 9]))), vec![MessageKey(7)])
+        );
+    }
+
+    #[test]
+    fn an_id_edit_with_a_copy_past_the_attributes_changes_nothing() {
+        let mut file = bmg(&[0; 2]);
+        let edit = id(5, Some((1, [0, 5])));
+        assert_eq!(file.apply(edit.clone()), (edit, Vec::new()));
+        assert_eq!(file.messages[0].id, 0);
     }
 
     #[test]

@@ -24,6 +24,19 @@ pub struct Layout {
     pub versions: Versions,
 }
 
+impl Layout {
+    /// Where in a message's attributes its copy of the id starts, if it
+    /// keeps one.
+    #[must_use]
+    pub fn id_copy(&self) -> Option<usize> {
+        self.sections
+            .iter()
+            .flat_map(|section| section.fields)
+            .find(|field| field.id_copy)
+            .and_then(|field| field.start())
+    }
+}
+
 /// Fields that show together in the inspector, under `title`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Section {
@@ -42,6 +55,9 @@ pub struct Field {
     pub notes: Option<&'static str>,
     /// The table naming the field's values, read through [`super::values`].
     pub values: Option<&'static [Entry]>,
+    /// Holds a copy of the message's MID1 id, set along with it rather than
+    /// on its own.
+    pub id_copy: bool,
 }
 
 const fn field(offset: usize, len: usize, name: &'static str) -> Field {
@@ -51,6 +67,7 @@ const fn field(offset: usize, len: usize, name: &'static str) -> Field {
         name,
         notes: None,
         values: None,
+        id_copy: false,
     }
 }
 
@@ -81,6 +98,13 @@ impl Field {
         }
     }
 
+    const fn id_copy(self) -> Self {
+        Self {
+            id_copy: true,
+            ..self
+        }
+    }
+
     const fn values(self, values: &'static [Entry]) -> Self {
         Self {
             values: Some(values),
@@ -94,7 +118,7 @@ static LAYOUTS: &[Layout] = &[LAYOUT];
 #[rustfmt::skip]
 const LAYOUT: Layout = Layout { len: 20, versions: Versions::ANY, sections: &[
     Section { title: "Message", fields: &[
-        field(0x04, 2, "Message id")    .notes("Id the game looks the message up by. Same as the MID1 id"),
+        field(0x04, 2, "Message id")    .notes("What flow nodes ask for the message by, set along with the MID1 id").id_copy(),
         field(0x06, 2, "Event label")   .notes("`saveBitLabels` index set when the message displays"),
     ]},
     Section { title: "Box", fields: &[
@@ -224,5 +248,11 @@ mod tests {
         assert_eq!(id.read(&[0x12, 0x34, 9]), Some(0x1234));
         assert_eq!(kind.read(&[0x12, 0x34, 9]), Some(9));
         assert_eq!(kind.read(&[0x12, 0x34]), None);
+    }
+
+    /// `dMsgFlow_c::setNormalMsg` reads a flow message's id from 0x04.
+    #[test]
+    fn the_id_copy_starts_the_attributes() {
+        assert_eq!(LAYOUT.id_copy(), Some(0));
     }
 }

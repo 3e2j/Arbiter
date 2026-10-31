@@ -45,8 +45,6 @@ pub struct MessagesDoc {
     bmg: Bmg,
     /// Whose tables name the tags and the records' fields.
     pub(super) version: Option<Version>,
-    /// By position. `None` for a file without MID1.
-    ids: Option<Vec<u16>>,
     /// The widest id's or position's, or its heading's, so the text lines
     /// up after it.
     digits: usize,
@@ -100,23 +98,11 @@ impl MessagesDoc {
 
     /// `bmg`'s messages, its tags named by `version`'s tables when given.
     pub fn new(bmg: Bmg, version: Option<Version>) -> Self {
-        let ids = bmg
-            .mid1
-            .map(|_| bmg.messages.iter().map(|m| m.id).collect::<Vec<_>>());
-        let widest = ids
-            .iter()
-            .flatten()
-            .copied()
-            .map(usize::from)
-            .chain(bmg.messages.len().checked_sub(1))
-            .max()
-            .unwrap_or(0);
         let lines = lines(&bmg, version);
         Self {
+            digits: digits(&bmg),
             bmg,
             version,
-            ids,
-            digits: widest.to_string().len().max(POSITION.len()),
             lines,
             history: History::default(),
             edits: 0,
@@ -127,7 +113,10 @@ impl MessagesDoc {
     /// that's open and was edited a moment ago, with the text's selection
     /// before and after.
     fn edit(&mut self, edit: BmgEdit, selections: [Selection; 2]) {
-        let text = matches!(edit, BmgEdit::Text { .. });
+        let (text, id) = (
+            matches!(edit, BmgEdit::Text { .. }),
+            matches!(edit, BmgEdit::Id { .. }),
+        );
         if self
             .history
             .apply(&mut self.bmg, edit, selections, Instant::now())
@@ -138,6 +127,9 @@ impl MessagesDoc {
         self.edits = self.edits.wrapping_add(1);
         if text {
             self.lines = lines(&self.bmg, self.version);
+        }
+        if id {
+            self.digits = digits(&self.bmg);
         }
     }
 
@@ -159,10 +151,11 @@ impl MessagesDoc {
         }
     }
 
-    /// After an undo or redo, which may have been to text.
+    /// After an undo or redo, which may have been to text or an id.
     fn moved(&mut self) {
         self.edits = self.edits.wrapping_add(1);
         self.lines = lines(&self.bmg, self.version);
+        self.digits = digits(&self.bmg);
     }
 
     pub fn encode(&self) -> formats::Result<Vec<u8>> {
@@ -189,8 +182,8 @@ impl MessagesView {
         let number = self.search.text.trim().parse::<usize>().ok();
         let mut hits = 0;
         for index in 0..len {
-            let found = find.count(&doc.lines, index)
-                + usize::from(number == Some(label(doc.ids.as_deref(), index)));
+            let found =
+                find.count(&doc.lines, index) + usize::from(number == Some(label(&doc.bmg, index)));
             if found > 0 {
                 self.shown.push(index);
                 hits += found;
@@ -243,7 +236,7 @@ impl MessagesView {
             return None;
         }
         let digits = doc.digits;
-        let ids = doc.ids.as_deref();
+        let ids = doc.bmg.mid1.map(|_| &doc.bmg.messages);
         let mut position = String::new();
         let mut id = String::new();
         let _ = write!(position, "{POSITION:>digits$}");
@@ -266,9 +259,9 @@ impl MessagesView {
             let selected = self.selected == Some(index);
             let (clicked, ()) = row(ui, element, selected, |ui| {
                 ui.element(line_box(height), |ui| ui.text(faint_style, &position));
-                if let Some(&number) = ids.and_then(|ids| ids.get(index)) {
+                if let Some(message) = ids.and_then(|ids| ids.get(index)) {
                     id.clear();
-                    let _ = write!(id, "{number:>digits$}");
+                    let _ = write!(id, "{:>digits$}", message.id);
                     ui.element(line_box(height), |ui| ui.text(text_style, &id));
                 }
                 line(ui, &doc.lines, index, height);
@@ -284,11 +277,26 @@ impl MessagesView {
 
 /// The number a digits query finds a row by: its id, or its position in a
 /// file without MID1.
-fn label(ids: Option<&[u16]>, index: usize) -> usize {
-    match ids {
-        Some(ids) => ids.get(index).copied().map_or(0, usize::from),
+fn label(bmg: &Bmg, index: usize) -> usize {
+    match bmg.mid1 {
+        Some(_) => bmg.messages.get(index).map_or(0, |m| usize::from(m.id)),
         None => index,
     }
+}
+
+/// The widest id's or position's digits, or its heading's, so the text
+/// lines up after it.
+fn digits(bmg: &Bmg) -> usize {
+    let ids = bmg
+        .mid1
+        .map(|_| bmg.messages.iter().map(|m| usize::from(m.id)));
+    let widest = ids
+        .into_iter()
+        .flatten()
+        .chain(bmg.messages.len().checked_sub(1))
+        .max()
+        .unwrap_or(0);
+    widest.to_string().len().max(POSITION.len())
 }
 
 const fn messages(count: usize) -> &'static str {
