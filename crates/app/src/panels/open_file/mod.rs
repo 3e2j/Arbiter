@@ -16,7 +16,7 @@ use super::{Context, Request};
 use crate::components::{notice, segmented, toolbar};
 use crate::fs::Loaded;
 use crate::keymap::AppCommand;
-use editor::Editor;
+use editor::{Format, MessagesView};
 use hex::HexState;
 
 /// The switch's width, enough for both views' names.
@@ -33,7 +33,8 @@ pub struct OpenFile {
     view: View,
     hex: Hex,
     /// `None` until read, or for a format without one.
-    editor: Option<Editor>,
+    format: Option<Format>,
+    messages: MessagesView,
 }
 
 enum Bytes {
@@ -68,14 +69,15 @@ pub struct OpenFileState {
 
 impl OpenFile {
     /// Shows `path`, relative to the project's root, once it's read.
-    pub const fn new(path: String) -> Self {
+    pub fn new(path: String) -> Self {
         Self {
             path,
             bytes: Bytes::Unasked,
             version: None,
             view: View::Editor,
             hex: Hex::NEW,
-            editor: None,
+            format: None,
+            messages: MessagesView::default(),
         }
     }
 
@@ -113,10 +115,11 @@ impl OpenFile {
             Err(TryRecvError::Disconnected) => Err(io::Error::other("the loader stopped")),
         };
         self.hex.reload();
-        self.editor = None;
+        self.format = None;
+        self.messages = MessagesView::default();
         self.bytes = match read {
             Ok(bytes) => {
-                self.editor = Editor::open(&self.path, &bytes, self.version);
+                self.format = Format::open(&self.path, &bytes, self.version);
                 Bytes::Read(bytes)
             }
             Err(err) => Bytes::Failed(format!("Can't read {}: {err}", self.path)),
@@ -124,7 +127,7 @@ impl OpenFile {
     }
 
     const fn shows_hex(&self) -> bool {
-        matches!(self.view, View::Hex) || self.editor.is_none()
+        matches!(self.view, View::Hex) || self.format.is_none()
     }
 }
 
@@ -157,7 +160,7 @@ impl OpenFile {
             Bytes::Failed(err) => return notice(ui, err),
             Bytes::Read(bytes) => bytes,
         };
-        if let Some(editor) = &self.editor {
+        if let Some(format) = &self.format {
             let at = match self.view {
                 View::Editor => 0,
                 View::Hex => 1,
@@ -167,7 +170,7 @@ impl OpenFile {
                 ..Element::DEFAULT
             };
             let picked = toolbar(ui, |ui| {
-                ui.element(switch, |ui| segmented(ui, &[editor.name(), "Hex"], at))
+                ui.element(switch, |ui| segmented(ui, &[format.name(), "Hex"], at))
             });
             match picked {
                 Some(0) => self.view = View::Editor,
@@ -175,10 +178,10 @@ impl OpenFile {
                 _ => {}
             }
         }
-        match (self.view, &mut self.editor) {
-            (View::Editor, Some(editor)) => {
-                editor.ui(ui);
-                if let Some(page) = editor.take_inspected(file_name(&self.path)) {
+        match (self.view, &self.format) {
+            (View::Editor, Some(Format::Messages(doc))) => {
+                self.messages.ui(ui, doc);
+                if let Some(page) = self.messages.take_inspected(doc, file_name(&self.path)) {
                     cx.requests.push(Request::Inspect(page));
                 }
             }

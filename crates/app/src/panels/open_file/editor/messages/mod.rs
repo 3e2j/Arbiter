@@ -33,7 +33,8 @@ use lines::{Find, Lines, line};
 const ID: &str = "ID";
 const POSITION: &str = "Pos";
 
-pub struct Messages {
+/// A message file, as every tab and the inspector see it.
+pub struct MessagesDoc {
     bmg: Bmg,
     /// Whose tables name the tags and the records' fields.
     version: Option<Version>,
@@ -44,12 +45,19 @@ pub struct Messages {
     digits: usize,
     /// Each message's text, by position.
     lines: Lines,
+}
+
+/// How one tab looks at a [`MessagesDoc`].
+#[derive(Default)]
+pub struct MessagesView {
     scroll: ListScroll,
     search: TextField,
     /// Find matches case.
     case: bool,
     /// Find matches whole words only.
     word: bool,
+    /// Whether `shown` and `count` are what find finds now.
+    found: bool,
     /// The positions find leaves in the list, in order.
     shown: Vec<usize>,
     /// What find found, or how many messages there are.
@@ -60,7 +68,7 @@ pub struct Messages {
     picked: Option<usize>,
 }
 
-impl Messages {
+impl MessagesDoc {
     /// `bytes` as messages, or `None` when they aren't a message file or
     /// don't decode. Logs what decoding noticed, with `path`.
     pub fn open(path: &str, bytes: &[u8], version: Option<Version>) -> Option<Self> {
@@ -96,29 +104,22 @@ impl Messages {
             .max()
             .unwrap_or(0);
         let lines = lines(&bmg, version);
-        let mut messages = Self {
+        Self {
             bmg,
             version,
             ids,
             digits: widest.to_string().len().max(POSITION.len()),
             lines,
-            scroll: ListScroll::TOP,
-            search: TextField::default(),
-            case: false,
-            word: false,
-            shown: Vec::new(),
-            count: String::new(),
-            selected: None,
-            picked: None,
-        };
-        messages.refind();
-        messages
+        }
     }
+}
 
-    /// Narrows the list to what find now finds, from the top.
-    fn refind(&mut self) {
-        let len = self.lines.len();
+impl MessagesView {
+    /// Narrows the list to what find now finds in `doc`, from the top.
+    fn refind(&mut self, doc: &MessagesDoc) {
+        let len = doc.lines.len();
         let mut find = Find::new(&self.search.text, self.case, self.word);
+        self.found = true;
         self.shown.clear();
         self.count.clear();
         self.scroll = ListScroll::TOP;
@@ -130,8 +131,8 @@ impl Messages {
         let number = self.search.text.trim().parse::<usize>().ok();
         let mut hits = 0;
         for index in 0..len {
-            let found = find.count(&self.lines, index)
-                + usize::from(number == Some(label(self.ids.as_deref(), index)));
+            let found = find.count(&doc.lines, index)
+                + usize::from(number == Some(label(doc.ids.as_deref(), index)));
             if found > 0 {
                 self.shown.push(index);
                 hits += found;
@@ -141,9 +142,12 @@ impl Messages {
         let _ = write!(self.count, "{hits} in {rows} {}", messages(rows));
     }
 
-    pub fn ui(&mut self, ui: &mut Ui) {
-        if self.lines.len() == 0 {
+    pub fn ui(&mut self, ui: &mut Ui, doc: &MessagesDoc) {
+        if doc.lines.len() == 0 {
             return notice(ui, "No messages");
+        }
+        if !self.found {
+            self.refind(doc);
         }
         let theme = theme::current();
         let (c, s) = (theme.color, theme.size);
@@ -171,13 +175,13 @@ impl Messages {
             typed || case || word
         });
         if refind {
-            self.refind();
+            self.refind(doc);
         }
         if self.shown.is_empty() {
             return notice(ui, "Nothing found");
         }
-        let digits = self.digits;
-        let ids = self.ids.as_deref();
+        let digits = doc.digits;
+        let ids = doc.ids.as_deref();
         let mut position = String::new();
         let mut id = String::new();
         let _ = write!(position, "{POSITION:>digits$}");
@@ -204,7 +208,7 @@ impl Messages {
                     let _ = write!(id, "{number:>digits$}");
                     ui.element(line_box(height), |ui| ui.text(text_style, &id));
                 }
-                line(ui, &self.lines, index, height);
+                line(ui, &doc.lines, index, height);
             });
             if clicked {
                 self.selected = Some(index);
@@ -214,8 +218,8 @@ impl Messages {
     }
 
     /// The message clicked since last asked, as a page under `file`'s name.
-    pub fn take_inspected(&mut self, file: &str) -> Option<Page> {
-        inspect::page(&self.bmg, self.version, self.picked.take()?, file)
+    pub fn take_inspected(&mut self, doc: &MessagesDoc, file: &str) -> Option<Page> {
+        inspect::page(&doc.bmg, doc.version, self.picked.take()?, file)
     }
 }
 
@@ -340,32 +344,36 @@ mod tests {
     #[test]
     fn find_narrows_the_list_and_counts() {
         let file = bmg(&[&[text(b"a cat")], &[text(b"dog")], &[text(b"cat, cat")]]);
-        let mut messages = Messages::new(file, None);
-        assert_eq!(messages.shown, [0, 1, 2]);
-        assert_eq!(messages.count, "3 messages");
-        messages.search.text = "cat".to_owned();
-        messages.refind();
-        assert_eq!(messages.shown, [0, 2]);
-        assert_eq!(messages.count, "3 in 2 messages");
+        let doc = MessagesDoc::new(file, None);
+        let mut view = MessagesView::default();
+        view.refind(&doc);
+        assert_eq!(view.shown, [0, 1, 2]);
+        assert_eq!(view.count, "3 messages");
+        view.search.text = "cat".to_owned();
+        view.refind(&doc);
+        assert_eq!(view.shown, [0, 2]);
+        assert_eq!(view.count, "3 in 2 messages");
     }
 
     #[test]
     fn find_by_digits_also_finds_that_id() {
         let file = bmg(&[&[text(b"101 cats")], &[text(b"dog")], &[text(b"cat")]]);
-        let mut messages = Messages::new(file, None);
-        messages.search.text = "101".to_owned();
-        messages.refind();
-        assert_eq!(messages.shown, [0, 1]);
-        assert_eq!(messages.count, "2 in 2 messages");
+        let doc = MessagesDoc::new(file, None);
+        let mut view = MessagesView::default();
+        view.search.text = "101".to_owned();
+        view.refind(&doc);
+        assert_eq!(view.shown, [0, 1]);
+        assert_eq!(view.count, "2 in 2 messages");
     }
 
     #[test]
     fn without_mid1_rows_go_by_position() {
         let mut file = bmg(&[&[text(b"a")], &[text(b"b")]]);
         file.mid1 = None;
-        let mut messages = Messages::new(file, None);
-        messages.search.text = "1".to_owned();
-        messages.refind();
-        assert_eq!(messages.shown, [1]);
+        let doc = MessagesDoc::new(file, None);
+        let mut view = MessagesView::default();
+        view.search.text = "1".to_owned();
+        view.refind(&doc);
+        assert_eq!(view.shown, [1]);
     }
 }
