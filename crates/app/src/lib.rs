@@ -245,6 +245,7 @@ impl App for Editor {
             documents: &mut self.documents,
             selection: &mut self.selection,
             requests: Vec::new(),
+            twilight_princess: self.settings.twilight_princess(),
         };
         ui.element(Element::column(), |ui| {
             title_bar::ui(ui, Self::TITLE, &mut self.settings, &mut self.view);

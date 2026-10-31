@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::documents::Documents;
 use crate::keymap::{AppCommand, KeyContext};
+use crate::settings::twilight_princess;
 use crate::workspace::{Place, Places, Workspace};
 
 pub use file_tree::FileTree;
@@ -215,6 +216,7 @@ pub struct Context<'a> {
     pub selection: &'a mut Option<Selection>,
     /// What the panels asked for this pass.
     pub requests: Vec<Request>,
+    pub twilight_princess: twilight_princess::Saved,
 }
 
 impl Context<'_> {

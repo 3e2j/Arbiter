@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use super::{appearance, editor, keybinds};
+use super::{appearance, editor, keybinds, twilight_princess};
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, Default)]
 #[serde(default)]
@@ -17,6 +17,8 @@ pub struct Saved {
     pub editor: editor::Saved,
     #[serde(deserialize_with = "lenient")]
     pub keybinds: keybinds::Saved,
+    #[serde(deserialize_with = "lenient")]
+    pub twilight_princess: twilight_princess::Saved,
 }
 
 /// A switch that's on until it's turned off, which a plain `bool` can't

@@ -55,8 +55,8 @@ pub struct Field {
     pub notes: Option<&'static str>,
     /// The table naming the field's values, read through [`super::values`].
     pub values: Option<&'static [Entry]>,
-    /// Holds a copy of the message's MID1 id, set along with it rather than
-    /// on its own.
+    /// Holds a copy of the message's MID1 id, which an editor may set along
+    /// with it.
     pub id_copy: bool,
 }
 
@@ -118,7 +118,7 @@ static LAYOUTS: &[Layout] = &[LAYOUT];
 #[rustfmt::skip]
 const LAYOUT: Layout = Layout { len: 20, versions: Versions::ANY, sections: &[
     Section { title: "Message", fields: &[
-        field(0x04, 2, "Message id")    .notes("What flow nodes ask for the message by, set along with the MID1 id").id_copy(),
+        field(0x04, 2, "Message id")    .notes("What flow nodes ask for the message by").id_copy(),
         field(0x06, 2, "Event label")   .notes("`saveBitLabels` index set when the message displays"),
     ]},
     Section { title: "Box", fields: &[

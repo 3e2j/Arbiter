@@ -8,6 +8,7 @@ use formats::games::tp::Version;
 use gui::ui::Ui;
 
 use crate::panels::inspector::Fields;
+use crate::settings::twilight_princess;
 
 pub use messages::{MessageText, MessagesDoc, MessagesView};
 
@@ -50,17 +51,21 @@ impl Format {
     }
 
     /// Its `item`'s fields, in the inspector, editing it as they're typed
-    /// in. Returns the label and help of the field under the pointer, if it
+    /// in, as `twilight_princess` says for a TP file. Returns the label and help of the field under the pointer, if it
     /// has help.
     pub fn inspect(
         &mut self,
         ui: &mut Ui,
         item: u32,
         fields: &mut Fields,
+        twilight_princess: twilight_princess::Saved,
     ) -> Option<(&'static str, String)> {
         let item = usize::try_from(item).ok()?;
         match self {
-            Self::Messages(doc) => doc.inspect(ui, item, fields),
+            Self::Messages(doc) => {
+                let link = twilight_princess.link_id_copies.0;
+                doc.inspect(ui, item, fields, link)
+            }
         }
     }
 

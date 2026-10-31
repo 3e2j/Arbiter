@@ -13,6 +13,7 @@ use gui::ui::Ui;
 
 use super::MessagesDoc;
 use crate::panels::inspector::{Fields, byte_grid, field, named, number, section};
+use crate::settings::twilight_princess::LINK_ID_COPIES;
 
 /// The field under the pointer's label and help.
 type Over = Option<(&'static str, String)>;
@@ -32,11 +33,13 @@ impl MessagesDoc {
     }
 
     /// The message at `index`'s fields, setting its id and attributes as
-    /// they're typed in. The id sets any copy its attributes hold with it. Typing is one undo step until it pauses or leaves the
-    /// field, and a pick from a menu is one of its own.
+    /// they're typed in. While `link`, the id sets any copy its attributes
+    /// hold with it, which is then only shown. Typing is one undo step until
+    /// it pauses or leaves the field, and a pick from a menu is one of its
+    /// own.
     /// Returns the label and help of the field under the pointer, if it has
     /// help.
-    pub fn inspect(&mut self, ui: &mut Ui, index: usize, fields: &mut Fields) -> Over {
+    pub fn inspect(&mut self, ui: &mut Ui, index: usize, fields: &mut Fields, link: bool) -> Over {
         if !ui.typing() {
             self.history.seal();
         }
@@ -54,11 +57,18 @@ impl MessagesDoc {
                 return;
             }
             let (hovered, typed) = number(ui, fields, "ID", id, u16::MAX);
+            let copy_at = tables.and_then(|(_, layout)| layout.id_copy());
             if hovered {
-                over = Some(("ID", "From MID1, what the game looks it up by".to_owned()));
+                let mut help = "From MID1, what the game looks it up by.".to_owned();
+                if copy_at.is_some() {
+                    help.push(' ');
+                    let does = ["Sets Message id with it", "Leaves Message id be"];
+                    link_hint(&mut help, link, does);
+                }
+                over = Some(("ID", help));
             }
             if let Some(typed) = typed {
-                let copy_at = tables.and_then(|(_, layout)| layout.id_copy());
+                let copy_at = copy_at.filter(|_| link);
                 let edit = BmgEdit::Id {
                     message: key,
                     id: typed,
@@ -98,7 +108,7 @@ impl MessagesDoc {
             };
             let attributes = &message.attributes;
             let set = if let Some((version, layout)) = tables.filter(|_| !fields.raw) {
-                attribute_fields(ui, fields, version, layout, attributes, &mut over)
+                attribute_fields(ui, fields, version, layout, attributes, link, &mut over)
             } else {
                 let layout = tables.map(|(_, layout)| layout);
                 attribute_bytes(ui, fields, layout, attributes, &mut over)
@@ -118,13 +128,15 @@ impl MessagesDoc {
 }
 
 /// `attributes` as `layout`'s fields, their values named by `version`'s
-/// tables. Returns the bytes typed and where they go.
+/// tables, and the id's copy only shown while `link`. Returns the bytes
+/// typed and where they go.
 fn attribute_fields(
     ui: &mut Ui,
     fields: &mut Fields,
     version: Version,
     layout: &Layout,
     attributes: &[u8],
+    link: bool,
     over: &mut Over,
 ) -> Option<(usize, Box<[u8]>)> {
     let mut set = None;
@@ -143,7 +155,9 @@ fn attribute_fields(
                 };
                 let name = record_field.name;
                 let (hovered, typed) = match record_field.values {
-                    _ if record_field.id_copy => (field(ui, fields, name, &read.to_string()), None),
+                    _ if record_field.id_copy && link => {
+                        (field(ui, fields, name, &read.to_string()), None)
+                    }
                     Some(table) => {
                         let names = values(version, table).map(|entry| (entry.value, entry.name));
                         named(ui, fields, name, read, max, names)
@@ -172,6 +186,9 @@ fn attribute_fields(
                     Some(None) => write!(help, "{read} has no TP name. "),
                     None => Ok(()),
                 };
+                if record_field.id_copy {
+                    link_hint(&mut help, link, ["Follows ID", "Set on its own"]);
+                }
                 help.truncate(help.trim_end().len());
                 if !help.is_empty() {
                     *over = Some((name, help));
@@ -208,4 +225,14 @@ fn attribute_bytes(
         *over = Some(("Attribute byte", help));
     }
     typed.map(|(at, byte)| (at, Box::from([byte])))
+}
+
+/// What `link` makes of the id's copy, from `does` for on and off, and where
+/// it's switched, onto `help`.
+fn link_hint(help: &mut String, link: bool, [on, off]: [&str; 2]) {
+    let (does, state) = if link { (on, "on") } else { (off, "off") };
+    let _ = write!(
+        help,
+        "{does} while {LINK_ID_COPIES} is {state} in Settings/Twilight Princess."
+    );
 }

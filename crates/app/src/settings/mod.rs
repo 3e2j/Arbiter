@@ -6,6 +6,7 @@ mod appearance;
 mod editor;
 mod keybinds;
 mod saved;
+pub mod twilight_princess;
 mod widgets;
 
 use std::path::PathBuf;
@@ -31,6 +32,7 @@ pub use appearance::Zoom;
 use editor::Editor;
 use keybinds::Keybinds;
 pub use saved::Saved;
+use twilight_princess::TwilightPrincess;
 use widgets::{key_cap, sized};
 
 const TOGGLE: AppCommand = AppCommand("settings.toggle");
@@ -62,6 +64,7 @@ enum Page {
     Editor,
     Tools,
     Keybinds,
+    TwilightPrincess,
 }
 
 #[derive(Default)]
@@ -78,6 +81,7 @@ pub struct Settings {
     appearance: Appearance,
     editor: Editor,
     keybinds: Keybinds,
+    twilight_princess: TwilightPrincess,
     /// The panel coming in.
     opening: Tween,
     /// The open page coming in.
@@ -90,7 +94,13 @@ pub struct Settings {
 }
 
 impl Page {
-    const ALL: [Self; 4] = [Self::Appearance, Self::Editor, Self::Tools, Self::Keybinds];
+    const ALL: [Self; 5] = [
+        Self::Appearance,
+        Self::Editor,
+        Self::Tools,
+        Self::Keybinds,
+        Self::TwilightPrincess,
+    ];
 
     const fn name(self) -> &'static str {
         match self {
@@ -98,6 +108,7 @@ impl Page {
             Self::Editor => "Editor",
             Self::Tools => "Tools",
             Self::Keybinds => "Keybinds",
+            Self::TwilightPrincess => "Twilight Princess",
         }
     }
 
@@ -107,6 +118,7 @@ impl Page {
             Self::Editor => Icon::File,
             Self::Tools => Icon::Hammer,
             Self::Keybinds => Icon::Keyboard,
+            Self::TwilightPrincess => Icon::Disc,
         }
     }
 }
@@ -151,6 +163,7 @@ impl Settings {
             appearance: Appearance::new(written.appearance),
             editor: Editor::new(written.editor),
             keybinds: Keybinds::new(&written.keybinds),
+            twilight_princess: TwilightPrincess::new(written.twilight_princess),
             written,
             ..Self::default()
         }
@@ -159,7 +172,10 @@ impl Settings {
     /// Writes the settings file, if anything changed since it was last.
     pub fn save(&mut self) {
         let (appearance, editor) = (self.appearance.saved(), self.editor.saved());
-        let same = appearance == self.written.appearance && editor == self.written.editor;
+        let twilight_princess = self.twilight_princess.saved();
+        let same = appearance == self.written.appearance
+            && editor == self.written.editor
+            && twilight_princess == self.written.twilight_princess;
         // Built only once they change, as it allocates.
         if !self.keybinds.take_unsaved() && same {
             return;
@@ -169,6 +185,7 @@ impl Settings {
             appearance,
             editor,
             keybinds: self.keybinds.saved(),
+            twilight_princess,
         };
         if let Some(path) = &self.path
             && let Err(err) = fs::settings::write(path, &self.written)
@@ -184,6 +201,10 @@ impl Settings {
     /// The palette to wear, if it changed since the last call.
     pub fn take_changed(&mut self) -> Option<Palette> {
         self.appearance.take_changed()
+    }
+
+    pub const fn twilight_princess(&self) -> twilight_princess::Saved {
+        self.twilight_princess.saved()
     }
 
     pub const fn zoom(&self) -> Zoom {
@@ -451,6 +472,7 @@ impl Settings {
                     Page::Appearance => self.appearance.ui(ui),
                     Page::Editor => self.editor.ui(ui),
                     Page::Keybinds => self.keybinds.ui(ui),
+                    Page::TwilightPrincess => self.twilight_princess.ui(ui),
                     Page::Tools => {
                         notice(ui, "Nothing to set here yet.");
                     }

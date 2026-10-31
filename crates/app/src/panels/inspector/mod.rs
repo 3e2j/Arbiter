@@ -264,7 +264,8 @@ impl Inspector {
             };
             scroll(ui, body_scroll, body, |ui| {
                 fields.drawn = 0;
-                if let Some(field) = format.inspect(ui, shown.item, fields) {
+                let settings = cx.twilight_princess;
+                if let Some(field) = format.inspect(ui, shown.item, fields, settings) {
                     over = Some(field);
                 }
             });
