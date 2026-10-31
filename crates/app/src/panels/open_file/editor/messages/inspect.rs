@@ -12,7 +12,9 @@ use formats::jsystem::jmessage::bmg::BmgEdit;
 use gui::ui::Ui;
 
 use super::MessagesDoc;
-use crate::panels::inspector::{Fields, byte_grid, field, named, number, section, view_switch};
+use crate::panels::inspector::{
+    Fields, byte_grid, field, named, number, section, subsection, view_switch,
+};
 
 /// The field under the pointer's label and help.
 type Over = Option<(&'static str, String)>;
@@ -106,54 +108,54 @@ fn attribute_fields(
 ) -> Option<(usize, Box<[u8]>)> {
     let mut set = None;
     for section_layout in layout.sections {
-        if !section(ui, fields, section_layout.title) {
-            continue;
-        }
-        for record_field in section_layout.fields {
-            let (Some(start), Some(read)) = (record_field.start(), record_field.read(attributes))
-            else {
-                continue;
-            };
-            let max = if record_field.len == 1 {
-                u16::from(u8::MAX)
-            } else {
-                u16::MAX
-            };
-            let name = record_field.name;
-            let (hovered, typed) = match record_field.values {
-                Some(table) => {
-                    let names = values(version, table).map(|entry| (entry.value, entry.name));
-                    named(ui, fields, name, read, max, names)
+        subsection(ui, fields, section_layout.title, |ui, fields| {
+            for record_field in section_layout.fields {
+                let (Some(start), Some(read)) =
+                    (record_field.start(), record_field.read(attributes))
+                else {
+                    continue;
+                };
+                let max = if record_field.len == 1 {
+                    u16::from(u8::MAX)
+                } else {
+                    u16::MAX
+                };
+                let name = record_field.name;
+                let (hovered, typed) = match record_field.values {
+                    Some(table) => {
+                        let names = values(version, table).map(|entry| (entry.value, entry.name));
+                        named(ui, fields, name, read, max, names)
+                    }
+                    None => number(ui, fields, name, read, max),
+                };
+                if let Some(typed) = typed {
+                    let bytes = typed.to_be_bytes();
+                    let width = bytes.len().saturating_sub(record_field.len);
+                    set = bytes.get(width..).map(|bytes| (start, bytes.into()));
                 }
-                None => number(ui, fields, name, read, max),
-            };
-            if let Some(typed) = typed {
-                let bytes = typed.to_be_bytes();
-                let width = bytes.len().saturating_sub(record_field.len);
-                set = bytes.get(width..).map(|bytes| (start, bytes.into()));
-            }
-            if !hovered {
-                continue;
-            }
-            let mut help = record_field
-                .notes
-                .map_or_else(String::new, |notes| format!("{notes}. "));
-            let entry = record_field
-                .values
-                .map(|table| values(version, table).find(|entry| entry.value == read));
-            let _ = match entry {
-                Some(Some(entry)) => match entry.notes {
-                    Some(notes) => write!(help, "{}: {notes}. ", entry.name),
+                if !hovered {
+                    continue;
+                }
+                let mut help = record_field
+                    .notes
+                    .map_or_else(String::new, |notes| format!("{notes}. "));
+                let entry = record_field
+                    .values
+                    .map(|table| values(version, table).find(|entry| entry.value == read));
+                let _ = match entry {
+                    Some(Some(entry)) => match entry.notes {
+                        Some(notes) => write!(help, "{}: {notes}. ", entry.name),
+                        None => Ok(()),
+                    },
+                    Some(None) => write!(help, "{read} has no TP name. "),
                     None => Ok(()),
-                },
-                Some(None) => write!(help, "{read} has no TP name. "),
-                None => Ok(()),
-            };
-            help.truncate(help.trim_end().len());
-            if !help.is_empty() {
-                *over = Some((name, help));
+                };
+                help.truncate(help.trim_end().len());
+                if !help.is_empty() {
+                    *over = Some((name, help));
+                }
             }
-        }
+        });
     }
     set
 }

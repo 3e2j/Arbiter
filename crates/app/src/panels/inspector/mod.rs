@@ -228,16 +228,44 @@ fn header<'a>(ui: &mut Ui, crumbs: impl Iterator<Item = &'a str>, locked: bool) 
     })
 }
 
-/// A section's heading in small capitals under a rule, after a chevron.
-/// Clicking it opens or closes the section, kept in `fields` by `title`.
+/// A section's heading, under a line across the inspector. Clicking it
+/// opens or closes the section, kept in `fields` by `title`.
 /// Returns whether it's open.
 #[track_caller]
 pub fn section(ui: &mut Ui, fields: &mut Fields, title: &'static str) -> bool {
+    rule(ui);
+    heading(ui, fields, title)
+}
+
+/// A section within another: its heading, then while it's open, what `body`
+/// draws, a step in. Opens and closes as [`section`] does.
+#[track_caller]
+pub fn subsection(
+    ui: &mut Ui,
+    fields: &mut Fields,
+    title: &'static str,
+    body: impl FnOnce(&mut Ui, &mut Fields),
+) {
+    if !heading(ui, fields, title) {
+        return;
+    }
+    let element = Element {
+        size: [Length::Grow, Length::Fit],
+        padding: [theme::current().size.gap * 1.5, 0., 0., 0.],
+        ..Element::DEFAULT
+    };
+    ui.element(element, |ui| body(ui, fields));
+}
+
+/// `title` in bold after a chevron, opening or closing when clicked.
+/// Returns whether it's open.
+#[track_caller]
+fn heading(ui: &mut Ui, fields: &mut Fields, title: &'static str) -> bool {
     let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let style = TextStyle {
-        size: s.text - 2.,
-        ..theme.ui_text(c.dim)
+        font: theme.font.strong,
+        ..theme.ui_text(c.text)
     };
     let element = Element {
         padding: [s.gap, 0., s.gap, 0.],
@@ -250,10 +278,9 @@ pub fn section(ui: &mut Ui, fields: &mut Fields, title: &'static str) -> bool {
     } else {
         Icon::ChevronRight
     };
-    rule(ui);
     let (clicked, ()) = row(ui, element, false, |ui| {
-        ui.icon(icon, style.size, c.dim);
-        ui.text(style, &title.to_uppercase());
+        ui.icon(icon, s.text - 2., c.dim);
+        ui.text(style, title);
     });
     if !clicked {
         return open;
