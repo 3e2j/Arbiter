@@ -26,7 +26,7 @@ use gui::canvas::Color;
 use gui::input::{CursorIcon, Key, Modifiers, PointerButton, TypedInput};
 use gui::ui::{Align, Anchor, Element, Length, TextCaret, TextHighlight, TextStyle, Ui};
 
-use super::{push_tag, tag_swatch};
+use super::{push_tag, tag_swatch, tag_tint};
 use crate::components::{
     Atom, Chip, Choice, Dropdown, Run, Search, chip_on, choice_list, segmented, wrap,
 };
@@ -826,11 +826,18 @@ impl MessageText {
         };
         let mut drawn = caret.is_none();
         let mut highlight = Vec::new();
+        // The last color chip's, until the next.
+        let mut tint = style.color;
         for (row, line) in self.lines.iter().enumerate() {
             ui.element(Element::line(s.row), |ui| {
                 for piece in self.line_pieces(row) {
                     let here = caret.filter(|_| !drawn);
                     if let Some(index) = piece.tag {
+                        if let Some(swatch) = self.swatch(index) {
+                            let args = self.tags.get(index).map(|tag| &*tag.args);
+                            tint =
+                                tag_tint(swatch, args.unwrap_or_default()).unwrap_or(style.color);
+                        }
                         if here == Some(piece.start) {
                             ui.text_layered(style, "", &[], Some(bar(0)));
                             drawn = true;
@@ -858,7 +865,11 @@ impl MessageText {
                         .filter(|caret| (piece.start..=piece.end).contains(caret))
                         .map(|caret| bar(caret - piece.start));
                     drawn |= at.is_some();
-                    ui.text_layered(style, text, &highlight, at);
+                    let tinted = TextStyle {
+                        color: tint,
+                        ..style
+                    };
+                    ui.text_layered(tinted, text, &highlight, at);
                 }
                 if caret.filter(|_| !drawn) == Some(line.end) {
                     ui.text_layered(style, "", &[], Some(bar(0)));

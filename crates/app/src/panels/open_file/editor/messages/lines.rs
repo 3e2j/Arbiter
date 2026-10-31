@@ -2,6 +2,7 @@
 //! as an icon. Built once, end to end, so a row slices rather than rebuilds
 //! each pass.
 
+use gui::canvas::Color;
 use gui::ui::Ui;
 
 use crate::assets::Icon;
@@ -30,6 +31,12 @@ struct Run {
 pub enum RunKind {
     Text,
     Chip,
+    /// A color tag's chip, and the color text after it draws in, plain when
+    /// `None`.
+    Color {
+        swatch: Color,
+        tint: Option<Color>,
+    },
     /// A line break, without text.
     Break,
 }
@@ -61,6 +68,12 @@ impl Lines {
     pub fn chip(&mut self, label: impl FnOnce(&mut String)) {
         label(&mut self.text);
         self.push(RunKind::Chip);
+    }
+
+    /// A color tag's chip, as [`RunKind::Color`].
+    pub fn color(&mut self, label: impl FnOnce(&mut String), swatch: Color, tint: Option<Color>) {
+        label(&mut self.text);
+        self.push(RunKind::Color { swatch, tint });
     }
 
     /// How many lines there are.
@@ -202,6 +215,7 @@ pub fn line(ui: &mut Ui, lines: &Lines, index: usize, height: f32) {
     let text = runs.map(|(kind, run)| match kind {
         RunKind::Text => components::Run::Text(run),
         RunKind::Chip => components::Run::Atom(Mark::Chip, run),
+        RunKind::Color { swatch, tint } => components::Run::Atom(Mark::Color(swatch, tint), run),
         RunKind::Break => components::Run::Atom(Mark::Break, run),
     });
     wrapped(ui, theme.ui_text(c.text), height, text);
@@ -211,6 +225,8 @@ pub fn line(ui: &mut Ui, lines: &Lines, index: usize, height: f32) {
 #[derive(Clone, Copy)]
 enum Mark {
     Chip,
+    /// Its swatch, and the color text after it draws in, plain when `None`.
+    Color(Color, Option<Color>),
     Break,
 }
 
@@ -218,6 +234,7 @@ impl Atom for Mark {
     fn width(self, ui: &mut Ui, label: &str) -> f32 {
         match self {
             Self::Chip => Chip(None).width(ui, label),
+            Self::Color(swatch, _) => Chip(Some(swatch)).width(ui, label),
             Self::Break => theme::current().size.icon,
         }
     }
@@ -225,10 +242,18 @@ impl Atom for Mark {
     fn draw(self, ui: &mut Ui, label: &str) {
         match self {
             Self::Chip => Chip(None).draw(ui, label),
+            Self::Color(swatch, _) => Chip(Some(swatch)).draw(ui, label),
             Self::Break => {
                 let theme = theme::current();
                 ui.icon(Icon::CornerDownLeft, theme.size.icon, theme.color.dim);
             }
+        }
+    }
+
+    fn text_color(self, style: Color) -> Option<Color> {
+        match self {
+            Self::Color(_, tint) => Some(tint.unwrap_or(style)),
+            Self::Chip | Self::Break => None,
         }
     }
 }

@@ -5,6 +5,7 @@
 //! It breaks to the width its box had last pass, so the layout runs again
 //! when that changes.
 
+use gui::canvas::Color;
 use gui::ui::{Element, Length, TextStyle, Ui};
 
 /// What [`wrapped`] breaks onto lines.
@@ -20,6 +21,12 @@ pub enum Run<'a, A> {
 pub trait Atom: Copy {
     fn width(self, ui: &mut Ui, label: &str) -> f32;
     fn draw(self, ui: &mut Ui, label: &str);
+
+    /// The color text after it draws in, given the style's, or `None` to
+    /// leave it as it is.
+    fn text_color(self, _style: Color) -> Option<Color> {
+        None
+    }
 }
 
 /// A box `height` tall and as wide as what it holds, centred down, to sit
@@ -32,8 +39,8 @@ pub const fn line_box(height: f32) -> Element {
     }
 }
 
-/// `runs` wrapped onto lines `height` tall, text in `style`, filling the
-/// open box across.
+/// `runs` wrapped onto lines `height` tall, text in `style` or the color an
+/// atom before it sets, filling the open box across.
 #[track_caller]
 pub fn wrapped<'a, A: Atom>(
     ui: &mut Ui,
@@ -52,14 +59,20 @@ pub fn wrapped<'a, A: Atom>(
             Run::Text(text) => ui.measure(style, text)[0],
             Run::Atom(atom, label) => atom.width(ui, label),
         });
+        let mut text_style = style;
         for line in pieces.chunk_by(|a, b| a.0 == b.0) {
             ui.element(Element::line(height), |ui| {
                 for &(_, run) in line {
                     match run {
                         Run::Text(text) => {
-                            ui.text(style, text);
+                            ui.text(text_style, text);
                         }
-                        Run::Atom(atom, label) => atom.draw(ui, label),
+                        Run::Atom(atom, label) => {
+                            atom.draw(ui, label);
+                            if let Some(color) = atom.text_color(style.color) {
+                                text_style.color = color;
+                            }
+                        }
                     }
                 }
             });

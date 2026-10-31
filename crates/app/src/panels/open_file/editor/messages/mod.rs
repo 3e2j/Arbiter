@@ -258,7 +258,13 @@ fn lines(bmg: &Bmg, version: Option<Version>) -> Lines {
                     group,
                     code,
                     ref args,
-                } => lines.chip(|out| push_tag(out, version, group, code, args)),
+                } => {
+                    let label = |out: &mut String| push_tag(out, version, group, code, args);
+                    match tag_swatch(version, group, code, args) {
+                        Some(swatch) => lines.color(label, swatch, tag_tint(swatch, args)),
+                        None => lines.chip(label),
+                    }
+                }
             }
         }
         lines.end();
@@ -309,6 +315,13 @@ fn tag_swatch(version: Option<Version>, group: u8, code: u16, args: &[u8]) -> Op
         (Args::Color, &[index]) => Some(Color::hex(text_color(index))),
         _ => None,
     }
+}
+
+/// The color text after a color tag with `swatch` and `args` draws in.
+/// `None` for Default, the box kind's own, which isn't known here, so it
+/// draws as plain text.
+fn tag_tint(swatch: Color, args: &[u8]) -> Option<Color> {
+    (args != [0]).then_some(swatch)
 }
 
 #[cfg(test)]
