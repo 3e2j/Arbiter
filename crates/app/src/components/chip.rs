@@ -9,8 +9,18 @@ use gui::ui::{Align, Direction, Element, Length, TextStyle, Ui};
 /// when given.
 #[track_caller]
 pub fn chip(ui: &mut Ui, label: &str, swatch: Option<Color>) {
+    chip_on(ui, label, swatch, theme::current().color.selected);
+}
+
+/// A [`chip`] filled with `background`, such as the selection's color.
+#[track_caller]
+pub fn chip_on(ui: &mut Ui, label: &str, swatch: Option<Color>, background: Color) {
     let theme = theme::current();
     let (element, dot) = pill(&theme);
+    let element = Element {
+        background: Some(background),
+        ..element
+    };
     ui.element(element, |ui| {
         if let Some(color) = swatch {
             let dot = Element {

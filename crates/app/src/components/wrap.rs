@@ -67,9 +67,9 @@ pub fn wrapped<'a, A: Atom>(
     });
 }
 
-/// `runs` broken onto lines `width` wide, as each piece's line and run.
-/// `measure` says how wide a run is.
-fn wrap<'a, A: Copy>(
+/// `runs` broken onto lines `width` wide, as each piece's line and run, in
+/// order and with nothing dropped. `measure` says how wide a run is.
+pub fn wrap<'a, A: Copy>(
     runs: impl IntoIterator<Item = Run<'a, A>>,
     width: f32,
     mut measure: impl FnMut(Run<'a, A>) -> f32,

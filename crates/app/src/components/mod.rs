@@ -14,11 +14,11 @@ mod layout;
 mod overlay;
 mod wrap;
 
-pub use chip::{Chip, chip};
+pub use chip::{Chip, chip, chip_on};
 pub use controls::*;
 pub use layout::*;
 pub use overlay::*;
-pub use wrap::{Atom, Run, line_box, wrapped};
+pub use wrap::{Atom, Run, line_box, wrap, wrapped};
 
 #[cfg(test)]
 mod tests;
