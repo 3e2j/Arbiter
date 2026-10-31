@@ -174,6 +174,7 @@ pub fn fit_list(
         // From the row above the top, so scrolling up knows its height.
         let first = state.top.saturating_sub(1);
         let mut heights = Vec::new();
+        let mut measured = true;
         let mut bottom = -state.offset;
         for index in first..len {
             let Ok(key) = u32::try_from(index) else { break };
@@ -181,10 +182,12 @@ pub fn fit_list(
                 break;
             }
             let height = ui.keyed(key, slot, |ui| {
-                let height = ui.rect().map_or(guess, |rect| rect.h);
+                let height = ui.rect().map(|rect| rect.h);
                 row(ui, index);
                 height
             });
+            measured &= height.is_some();
+            let height = height.unwrap_or(guess);
             heights.push(height);
             if index >= state.top {
                 bottom += height;
@@ -211,7 +214,9 @@ pub fn fit_list(
         }
         if first + heights.len() == len {
             let shown: f32 = (state.top..len).map(height).sum::<f32>() - state.offset;
-            state.pinned |= shown < view.h;
+            // Guessed rows can seem to fit when they don't, pinning a list
+            // that only just opened.
+            state.pinned |= measured && shown < view.h;
         }
         if state.pinned {
             (state.top, state.offset) = end(view.h, len, height);

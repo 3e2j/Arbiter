@@ -567,3 +567,19 @@ fn a_dropdown_list_is_wider_than_a_narrow_button() {
     dropdown_pass(&mut kept, &mut state);
     assert_eq!(dropdown_pass(&mut kept, &mut state).marked, Some(2));
 }
+
+#[test]
+fn a_fit_list_that_fits_stays_at_its_top_as_its_rows_are_measured() {
+    // Shorter than its rows, so before they're measured they seem to fit.
+    sizes(|size| size.row = 20.);
+    let mut kept = Kept::default();
+    let mut state = ListScroll::TOP;
+    for _ in 0..4 {
+        kept.pass(|ui| {
+            fit_list(ui, &mut state, 4, |ui, _| {
+                ui.element(fixed(10., 30.), |_| {});
+            });
+        });
+    }
+    assert_eq!((state.top, state.offset), (0, 0.));
+}

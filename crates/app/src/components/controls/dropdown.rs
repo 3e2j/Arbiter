@@ -8,7 +8,7 @@
 //! those whose label or note holds it, labels starting with it first.
 //! Backspace past its start closes it.
 
-use crate::components::{ListScroll, dot, indexed_list};
+use crate::components::{Chip, ListScroll, Run, dot, fit_list, wrap, wrapped};
 use crate::theme::{self, Theme};
 use gui::canvas::{Color, FontId};
 use gui::input::{CursorIcon, Key, PointerButton, TypedInput};
@@ -336,14 +336,32 @@ pub fn choice_list(
     let (c, s) = (theme.color, theme.size);
     let noted = choices.iter().any(|choice| choice.note.is_some());
     let row = if noted { s.row + s.text } else { s.row };
-    let height: f32 = found.iter().take(ROWS).map(|_| row).sum();
+    let scrolls = found.len() > ROWS;
     // Clear of the scroll thumb, which is drawn over the rows half its
     // width in from their edge.
-    let bar = if found.len() > ROWS {
-        1.5 * s.scroll_bar
-    } else {
-        0.
-    };
+    let bar = if scrolls { 1.5 * s.scroll_bar } else { 0. };
+    let line_width = width - 2. * DROP - bar;
+    // The first rows whole, taller where their notes wrap.
+    let note_width = line_width - s.gap;
+    let small = note_style(&theme);
+    let note_line = ui.measure(small, "")[1];
+    let height = found
+        .iter()
+        .take(ROWS)
+        .filter_map(|&index| choices.get(index))
+        .map(|choice| {
+            let Some(note) = choice.note else {
+                return row;
+            };
+            let runs = wrap([Run::<()>::Text(note)], note_width, |run| match run {
+                Run::Text(text) => ui.measure(small, text)[0],
+                Run::Atom(..) => 0.,
+            });
+            let lines = runs.last().map_or(0, |&(line, _)| line) + 1;
+            let note_height: f32 = (0..lines).map(|_| note_line).sum();
+            row.max(label_line(&theme) + note_height)
+        })
+        .sum();
     let element = Element {
         size: [Length::Fixed(width), Length::Fit],
         padding: [DROP; 4],
@@ -365,7 +383,7 @@ pub fn choice_list(
         }
         let (mut hovered, mut clicked) = (None, None);
         ui.element(rows, |ui| {
-            indexed_list(ui, &mut state.list, found.len(), row, |ui, place| {
+            fit_list(ui, &mut state.list, found.len(), |ui, place| {
                 let Some(index) = at(Some(place)) else {
                     return;
                 };
@@ -373,7 +391,7 @@ pub fn choice_list(
                     return;
                 };
                 let lit = marked == Some(place);
-                let size = [width - 2. * DROP - bar, row];
+                let size = [line_width, row];
                 let (over, click) = choice_line(ui, choice, size, lit, selected == Some(index));
                 if over {
                     hovered = Some(index);
@@ -481,8 +499,9 @@ fn choice_line(
     let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let line = Element {
-        // Its list's slots fit their rows, so it can't grow into one.
-        size: [Length::Fixed(width), Length::Fixed(height)],
+        // At least `height`, and taller by the lines its note wraps onto.
+        size: [Length::Fixed(width), Length::Fit],
+        min: [0., height],
         padding: [s.gap / 2., 0., s.gap / 2., 0.],
         align: [Align::Start, Align::Center],
         radius: [s.radius; 4],
@@ -491,7 +510,7 @@ fn choice_line(
     };
     let top = Element {
         gap: s.icon_gap,
-        ..Element::line(s.text + 4.)
+        ..Element::line(label_line(&theme))
     };
     let label = Element {
         size: [Length::Grow, Length::Fit],
@@ -502,10 +521,9 @@ fn choice_line(
         size: [Length::Fixed(s.icon); 2],
         ..Element::DEFAULT
     };
-    let small = |font| TextStyle {
-        font,
-        size: s.text - 2.,
-        ..theme.ui_text(c.dim)
+    let detail_style = TextStyle {
+        font: theme.font.buffer,
+        ..note_style(&theme)
     };
     ui.element(line, |ui| {
         let over = ui.hovered();
@@ -516,17 +534,32 @@ fn choice_line(
             }
             ui.element(label, |ui| ui.text(text(&theme, choice), choice.label));
             if let Some(detail) = choice.detail {
-                ui.text(small(theme.font.buffer), detail);
+                ui.text(detail_style, detail);
             }
             if selected {
                 ui.element(tick, |ui| ui.icon(theme.icon.check, s.icon, c.accent));
             }
         });
         if let Some(note) = choice.note {
-            ui.element(label, |ui| ui.text(small(theme.font.ui), note));
+            let style = note_style(&theme);
+            let height = ui.measure(style, "")[1];
+            wrapped::<Chip>(ui, style, height, [Run::Text(note)]);
         }
         (over, ui.clicked(PointerButton::Left))
     })
+}
+
+/// The line a choice's label is on, above its note.
+const fn label_line(theme: &Theme) -> f32 {
+    theme.size.text + 4.
+}
+
+/// A choice's note, and its detail in the code font.
+fn note_style(theme: &Theme) -> TextStyle {
+    TextStyle {
+        size: theme.size.text - 2.,
+        ..theme.ui_text(theme.color.dim)
+    }
 }
 
 /// `choice`'s label in its own font.
