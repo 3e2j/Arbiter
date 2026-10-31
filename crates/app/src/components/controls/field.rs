@@ -207,7 +207,7 @@ pub fn text_field(
             }
         });
         if let Some(suffix) = field.suffix {
-            ui.text(theme.ui_text(c.dim), suffix);
+            ui.text(theme.ui_text(c.faint), suffix);
         }
         // Offered as the primary selection whenever it changes.
         let selected = field.text.get(field.selection.range()).unwrap_or_default();
