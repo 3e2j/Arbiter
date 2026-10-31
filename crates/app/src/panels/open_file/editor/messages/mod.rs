@@ -41,7 +41,7 @@ const POSITION: &str = "Pos";
 pub struct MessagesDoc {
     bmg: Bmg,
     /// Whose tables name the tags and the records' fields.
-    version: Option<Version>,
+    pub(super) version: Option<Version>,
     /// By position. `None` for a file without MID1.
     ids: Option<Vec<u16>>,
     /// The widest id's or position's, or its heading's, so the text lines

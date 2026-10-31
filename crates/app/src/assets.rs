@@ -82,6 +82,7 @@ pub enum Icon {
     Palette,
     Pin,
     Plus,
+    Raw,
     Reset,
     Search,
     Settings,
@@ -92,7 +93,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Self; 33] = [
+    pub const ALL: [Self; 34] = [
         Self::Alert,
         Self::Check,
         Self::ChevronDown,
@@ -119,6 +120,7 @@ impl Icon {
         Self::Palette,
         Self::Pin,
         Self::Plus,
+        Self::Raw,
         Self::Reset,
         Self::Search,
         Self::Settings,
@@ -170,6 +172,7 @@ impl Icon {
             Self::Palette => tabler!("palette"),
             Self::Pin => tabler!("pin"),
             Self::Plus => tabler!("plus"),
+            Self::Raw => tabler!("eye-code"),
             Self::Reset => tabler!("arrow-back-up"),
             Self::Search => tabler!("search"),
             Self::Settings => tabler!("settings"),

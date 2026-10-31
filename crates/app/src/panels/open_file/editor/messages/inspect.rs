@@ -1,7 +1,8 @@
 //! A message as the inspector shows it: its position and id, its text as
-//! [`text`](super::text) edits it, then its attributes. The TP tables split them into named fields, with a switch to
-//! show them as bytes. Without tables for their width they're only bytes,
-//! as many as the file's attributes are wide. Both write the same bytes.
+//! [`text`](super::text) edits it, then its attributes. The TP tables split
+//! them into named fields, shown as bytes while the inspector is raw. Without
+//! tables for their width they're only bytes, as many as the file's
+//! attributes are wide. Both write the same bytes.
 
 use std::fmt::Write;
 
@@ -12,7 +13,7 @@ use formats::jsystem::jmessage::bmg::BmgEdit;
 use gui::ui::Ui;
 
 use super::MessagesDoc;
-use crate::panels::inspector::{Fields, byte_grid, field, named, number, section, view_switch};
+use crate::panels::inspector::{Fields, byte_grid, field, named, number, section};
 
 /// The field under the pointer's label and help.
 type Over = Option<(&'static str, String)>;
@@ -54,9 +55,11 @@ impl MessagesDoc {
             let Some(message) = self.bmg.messages.get(index) else {
                 return;
             };
-            let (help, typed) = fields
-                .message
-                .ui(ui, message, self.bmg.encoding, self.version);
+            let raw = fields.raw || self.version.is_none();
+            let (help, typed) =
+                fields
+                    .message
+                    .ui(ui, message, self.bmg.encoding, self.version, raw);
             if help.is_some() {
                 over = help;
             }
@@ -74,11 +77,8 @@ impl MessagesDoc {
             let tables = self
                 .version
                 .and_then(|version| Some((version, layout(version, self.bmg.attributes_len + 4)?)));
-            if tables.is_some() {
-                view_switch(ui, fields, &["Fields", "Bytes"]);
-            }
             let attributes = &message.attributes;
-            let set = if let Some((version, layout)) = tables.filter(|_| fields.view == 0) {
+            let set = if let Some((version, layout)) = tables.filter(|_| !fields.raw) {
                 attribute_fields(ui, fields, version, layout, attributes, &mut over)
             } else {
                 let layout = tables.map(|(_, layout)| layout);

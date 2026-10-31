@@ -8,6 +8,11 @@
 //!
 //! Hovering a field shows its notes.
 //!
+//! When a game's tables name the format's values, a Raw button beside the
+//! lock shows every section as the file holds it, such as text with its tags
+//! written out and attributes as bytes. Without tables that's all there is,
+//! so there's no button.
+//!
 //! Editable fields write as they're typed in: [`number`], [`named`] and
 //! [`byte_grid`]. Each box is tagged with its width, and a value outside it,
 //! negative or past the max, isn't written: the box turns red with a line
@@ -21,12 +26,14 @@ use serde::{Deserialize, Serialize};
 
 use super::{Context, Kind, MessageText, Request, Selection, file_name};
 use crate::assets::Icon;
+use crate::commands::Command;
 use crate::components::{
     Choice, Dropdown, IconState, Scroll, Search, TextField, Tooltip, dropdown, icon_button, notice,
-    row, rule, scroll, segmented, text_field, tooltip,
+    row, rule, scroll, text_field, tooltip,
 };
-use crate::documents::Document;
+use crate::documents::{Document, Documents};
 use crate::edit;
+use crate::keymap::{AppCommand, KeyContext};
 use crate::theme::{self, HOVER_THUMB};
 
 /// A label's share of its field's width.
@@ -35,6 +42,9 @@ const LABEL_SHARE: f32 = 0.38;
 const LABEL_MIN: f32 = 64.;
 /// A number box beside a dropdown of names.
 const NUMBER_WIDTH: f32 = 68.;
+
+pub const INSPECTOR: KeyContext = KeyContext("inspector");
+const RAW: AppCommand = AppCommand("inspector.raw");
 
 pub struct Inspector {
     locked: bool,
@@ -64,8 +74,8 @@ pub struct Fields {
     names: Vec<&'static str>,
     details: Vec<String>,
     scratch: String,
-    /// Which segment the format's view switch is on.
-    pub view: u16,
+    /// Showing each section as the file holds it, kept across selections.
+    pub raw: bool,
     /// The titles of the sections closed, kept across selections.
     closed: Vec<&'static str>,
     /// How far in the sections being drawn are, so fields line up their
@@ -82,14 +92,32 @@ struct NumberBox {
     value: Option<u16>,
 }
 
+impl Fields {
+    fn flip_raw(&mut self) {
+        self.raw = !self.raw;
+        self.numbers.clear();
+        self.menu = None;
+    }
+}
+
 /// An inspector as the session keeps it. What it showed isn't kept.
 #[derive(Serialize, Deserialize, Default, Debug, PartialEq, Eq)]
 pub struct InspectorState {
     #[serde(default)]
     locked: bool,
+    #[serde(default)]
+    raw: bool,
 }
 
 impl Inspector {
+    /// Once for every inspector, unbound until the user binds it.
+    pub const COMMANDS: [Command; 1] = [Command {
+        id: RAW,
+        name: "Show raw",
+        context: INSPECTOR,
+        chords: &[],
+    }];
+
     pub fn new() -> Self {
         let mut scroll = Scroll::default();
         scroll.thumb = HOVER_THUMB;
@@ -104,15 +132,29 @@ impl Inspector {
     }
 
     pub fn from_state(state: &InspectorState) -> Self {
-        Self {
+        let mut inspector = Self {
             locked: state.locked,
             ..Self::new()
-        }
+        };
+        inspector.fields.raw = state.raw;
+        inspector
     }
 
     pub const fn state(&self) -> InspectorState {
         InspectorState {
             locked: self.locked,
+            raw: self.fields.raw,
+        }
+    }
+
+    /// Does `commands`, the [`INSPECTOR`] ones pressed while it has focus,
+    /// when what it shows has a Raw button.
+    pub(super) fn act(&mut self, commands: &[AppCommand], documents: &Documents) {
+        let tables = self.shown.as_ref().is_some_and(|shown| {
+            matches!(documents.get(&shown.path), Some(Document::Decoded(format)) if format.tables())
+        });
+        if tables && commands.contains(&RAW) {
+            self.fields.flip_raw();
         }
     }
 
@@ -162,11 +204,19 @@ impl Inspector {
         let crumbs = format
             .as_ref()
             .map(|(shown, _)| [file_name(&shown.path), name.as_str()]);
-        if header(ui, crumbs.iter().flatten().copied(), *locked) {
+        let raw = format
+            .as_ref()
+            .is_some_and(|(_, format)| format.tables())
+            .then_some(fields.raw);
+        let (pinned, flipped) = header(ui, crumbs.iter().flatten().copied(), *locked, raw);
+        if pinned {
             *locked = !*locked;
             if !*locked {
                 cx.requests.push(Request::Unlocked);
             }
+        }
+        if flipped {
+            fields.flip_raw();
         }
         let Some((shown, format)) = format else {
             return notice(ui, "Nothing selected");
@@ -188,10 +238,16 @@ impl Inspector {
     }
 }
 
-/// The breadcrumb, each step of `crumbs`, the last brightest, then the lock,
-/// lit while `locked`. Returns whether the lock was clicked.
+/// The breadcrumb, each step of `crumbs`, the last brightest, then the Raw
+/// button if given, lit while `raw`, then the lock, lit while `locked`.
+/// Returns whether the lock and the Raw button were clicked.
 #[track_caller]
-fn header<'a>(ui: &mut Ui, crumbs: impl Iterator<Item = &'a str>, locked: bool) -> bool {
+fn header<'a>(
+    ui: &mut Ui,
+    crumbs: impl Iterator<Item = &'a str>,
+    locked: bool,
+    raw: Option<bool>,
+) -> (bool, bool) {
     let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let bar = Element {
@@ -223,12 +279,15 @@ fn header<'a>(ui: &mut Ui, crumbs: impl Iterator<Item = &'a str>, locked: bool) 
                 ui.text(theme.ui_text(if last { c.text } else { c.dim }), label);
             }
         });
-        let state = if locked {
-            IconState::Lit
-        } else {
-            IconState::Normal
+        let lit = |on| {
+            if on {
+                IconState::Lit
+            } else {
+                IconState::Normal
+            }
         };
-        icon_button(ui, Icon::Pin, state).clicked
+        let flipped = raw.is_some_and(|on| icon_button(ui, Icon::Raw, lit(on)).clicked);
+        (icon_button(ui, Icon::Pin, lit(locked)).clicked, flipped)
     })
 }
 
@@ -299,23 +358,6 @@ fn heading(ui: &mut Ui, fields: &mut Fields, title: &'static str) -> bool {
 /// A heading's chevron's width.
 fn chevron_size() -> f32 {
     theme::current().size.text - 2.
-}
-
-/// A switch between `labels`, views of the section above, setting
-/// [`Fields::view`].
-#[track_caller]
-pub fn view_switch(ui: &mut Ui, fields: &mut Fields, labels: &[&str]) {
-    let s = theme::current().size;
-    let element = Element {
-        size: [Length::Grow, Length::Fit],
-        padding: [s.gap, s.gap / 4., s.gap, s.gap / 2.],
-        ..Element::DEFAULT
-    };
-    if let Some(view) = ui.element(element, |ui| segmented(ui, labels, fields.view)) {
-        fields.view = view;
-        fields.numbers.clear();
-        fields.menu = None;
-    }
 }
 
 /// `label`, and `value` beside it in dim code text, without the box of a

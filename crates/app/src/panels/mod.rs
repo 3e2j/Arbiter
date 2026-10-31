@@ -76,7 +76,8 @@ impl Kind {
         match self {
             Self::FileTree => Some(file_tree::FILES),
             Self::OpenFile => Some(open_file::HEX),
-            Self::Inspector | Self::Output => None,
+            Self::Inspector => Some(inspector::INSPECTOR),
+            Self::Output => None,
         }
     }
 
@@ -160,7 +161,8 @@ impl Panel {
         match self {
             Self::FileTree(tree) => tree.act(commands),
             Self::OpenFile(file) => file.act(ui, commands, documents),
-            Self::Inspector(_) | Self::Output(_) => {}
+            Self::Inspector(inspector) => inspector.act(commands, documents),
+            Self::Output(_) => {}
         }
     }
 

@@ -28,7 +28,7 @@ use gui::ui::{Align, Anchor, Element, Length, TextCaret, TextHighlight, TextStyl
 
 use super::{push_tag, tag_swatch, tag_tint, tag_value};
 use crate::components::{
-    Atom, Chip, Choice, Dropdown, Run, Search, Swatch, chip_on, choice_list, segmented, wrap,
+    Atom, Chip, Choice, Dropdown, Run, Search, Swatch, chip_on, choice_list, wrap,
 };
 use crate::edit::{self, Edit, Lines, Motion, Selection};
 use crate::keymap::{self, ChordAction, KeyContext};
@@ -120,8 +120,8 @@ struct Line {
 }
 
 impl MessageText {
-    /// `message`'s text in an editor with a Text and Raw switch over it,
-    /// its tags named by `version`'s tables. Returns the title and help of
+    /// `message`'s text in an editor, in the Raw view while `raw`, its tags
+    /// named by `version`'s tables. Returns the title and help of
     /// the chip under the pointer, or of the box while it's under the
     /// pointer and not being typed in, and the text typed, once it reads and
     /// `encoding` holds it.
@@ -132,18 +132,12 @@ impl MessageText {
         message: &Message,
         encoding: Encoding,
         version: Option<Version>,
+        raw: bool,
     ) -> (Option<(&'static str, String)>, Option<Vec<TextSegment>>) {
         let theme = theme::current();
         let (c, s) = (theme.color, theme.size);
-        let switch = Element {
-            size: [Length::Grow, Length::Fit],
-            padding: [s.gap, s.gap / 4., s.gap, s.gap / 2.],
-            ..Element::DEFAULT
-        };
-        if let Some(view) = ui.element(switch, |ui| {
-            segmented(ui, &["Text", "Raw"], self.raw.into())
-        }) {
-            self.raw = view == 1;
+        if self.raw != raw {
+            self.raw = raw;
             self.key = None;
         }
         let padding = s.gap / 2.;
@@ -1269,7 +1263,7 @@ mod tests {
             };
             driver.pass();
             driver.pass();
-            driver.click([50., 70.]);
+            driver.click([50., 44.]);
             driver
         }
 
@@ -1280,8 +1274,15 @@ mod tests {
                 held,
                 written,
             } = self;
-            let (_, typed) =
-                kept.pass(|ui| text.ui(ui, held, Encoding::Windows1252, Some(Version::GcnUsa)));
+            let (_, typed) = kept.pass(|ui| {
+                text.ui(
+                    ui,
+                    held,
+                    Encoding::Windows1252,
+                    Some(Version::GcnUsa),
+                    false,
+                )
+            });
             *written = typed.or(written.take());
         }
 
@@ -1396,8 +1397,8 @@ mod tests {
         assert_eq!(driver.text.label(0), "Color Red");
         assert!(driver.text.swatch(0).is_some());
         assert!(driver.text.menu.is_none());
-        // The text's top left is at [0, 26], and the chip is 6 wide.
-        driver.click([3., 36.]);
+        // The text's top left is at [0, 0], and the chip is 6 wide.
+        driver.click([3., 10.]);
         assert!(
             driver
                 .text

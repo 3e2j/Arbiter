@@ -41,6 +41,14 @@ impl Format {
         }
     }
 
+    /// Whether a game's tables name its values, without which the
+    /// inspector only has its raw view.
+    pub const fn tables(&self) -> bool {
+        match self {
+            Self::Messages(doc) => doc.version.is_some(),
+        }
+    }
+
     /// Its `item`'s fields, in the inspector, editing it as they're typed
     /// in. Returns the label and help of the field under the pointer, if it
     /// has help.
