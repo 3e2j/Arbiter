@@ -261,7 +261,7 @@ mod tests {
         let text = r#"
             [[docks]]
             place = "main"
-            tabs = [{ kind = "open-file", state = { path = "files/a.bin", hex = { offset = 4096 } } }]
+            tabs = [{ kind = "open-file", state = { path = "files/a.bin", view = "hex", hex = { offset = 4096 } } }]
         "#;
         let session = Session::parse(text).unwrap();
         let workspace = Workspace::new(&session);

@@ -77,19 +77,23 @@ fn wrap<'a, A: Copy>(
     let mut out = Vec::new();
     let (mut line, mut x) = (0, 0.);
     for run in runs {
-        let (text, atom) = match run {
-            Run::Text(text) => (text, None),
-            Run::Atom(atom, label) => (label, Some(atom)),
+        let Run::Text(text) = run else {
+            let w = measure(run);
+            if x > 0. && x + w > width {
+                (line, x) = (line + 1, 0.);
+            }
+            x += w;
+            out.push((line, run));
+            continue;
         };
-        let run = |text| atom.map_or(Run::Text(text), |atom| Run::Atom(atom, text));
         let mut push = |line, text: Option<&'a str>| {
             let text = text.filter(|text| !text.is_empty());
-            out.extend(text.map(|text| (line, run(text))));
+            out.extend(text.map(|text| (line, Run::Text(text))));
         };
         let mut start = 0;
         let mut at = 0;
-        for word in text.split_inclusive(|ch| atom.is_none() && ch == ' ') {
-            let w = measure(run(word));
+        for word in text.split_inclusive(' ') {
+            let w = measure(Run::Text(word));
             if x > 0. && x + w > width {
                 push(line, text.get(start..at));
                 (line, x, start) = (line + 1, 0., at);
@@ -135,6 +139,16 @@ mod tests {
                 (0, TAG),
                 (0, Run::Text(" three four"))
             ]
+        );
+    }
+
+    #[test]
+    fn an_atom_without_a_label_still_takes_its_place() {
+        let mark = Run::Atom((), "");
+        let runs = [Run::Text("one "), mark, Run::Text(" two")];
+        assert_eq!(
+            broken(&runs, 100.),
+            [(0, Run::Text("one ")), (0, mark), (0, Run::Text(" two"))]
         );
     }
 }

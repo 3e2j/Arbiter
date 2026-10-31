@@ -18,6 +18,7 @@ mod workspace;
 use std::sync::Arc;
 
 use components::ContextMenu;
+use formats::games::tp::Version;
 use fs::{FileLoader, TreeReader, Watch};
 use gui::{
     host::{App, Startup, Wake, WindowStyle},
@@ -101,7 +102,8 @@ impl Editor {
         if let Some(loader) = &self.loader {
             for panel in self.workspace.panels_mut() {
                 if let Panel::OpenFile(file) = panel {
-                    file.load(loader.ask(root.join(file.path())));
+                    let version = version(&project, file.path());
+                    file.load(loader.ask(root.join(file.path())), version);
                 }
             }
         }
@@ -136,7 +138,7 @@ impl Editor {
             return;
         }
         let mut file = OpenFile::new(path.to_owned());
-        file.load(loader.ask(project.root.join(path)));
+        file.load(loader.ask(project.root.join(path)), version(project, path));
         self.workspace.add(Place::Main, Panel::OpenFile(file));
     }
 
@@ -309,4 +311,10 @@ fn session(project: &Project) -> Option<Session> {
             tracing::warn!("the session isn't readable, so the workspace starts fresh: {err}");
         })
         .ok()
+}
+
+/// The TP version whose base `path` is in, relative to `project`'s root.
+fn version(project: &Project, path: &str) -> Option<Version> {
+    let (id, edition) = project.edition_of(path)?;
+    Version::from_disc(id, edition.revision)
 }

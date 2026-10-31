@@ -64,6 +64,7 @@ pub enum Icon {
     Close,
     Container,
     ContainerOpen,
+    CornerDownLeft,
     Disc,
     File,
     Filter,
@@ -90,7 +91,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Self; 32] = [
+    pub const ALL: [Self; 33] = [
         Self::Alert,
         Self::Check,
         Self::ChevronDown,
@@ -100,6 +101,7 @@ impl Icon {
         Self::Close,
         Self::Container,
         Self::ContainerOpen,
+        Self::CornerDownLeft,
         Self::Disc,
         Self::File,
         Self::Filter,
@@ -150,6 +152,7 @@ impl Icon {
             Self::Close => tabler!("x"),
             Self::Container => tabler!("package"),
             Self::ContainerOpen => tabler_edited!("package-open"),
+            Self::CornerDownLeft => tabler!("corner-down-left"),
             Self::Disc => tabler!("disc"),
             Self::File => tabler!("file-text"),
             Self::Filter => tabler!("filter"),
