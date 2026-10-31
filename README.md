@@ -4,9 +4,9 @@
 
 </div>
 
-Arbiter is an editor for viewing, editing, and building mods for Nintendo's GameCube and Wii games.
+Arbiter is an editor for viewing, editing, and building mods for Twilight Princess.
 
-Support starts with Twilight Princess and extends to the first-party titles that share its systems (JSystem and friends).
+Other games built on the same libraries can be browsed too, or forked to support. Only Twilight Princess is maintained here.
 
 > [!IMPORTANT]
 > Arbiter is in early development. Don't expect anything to work properly yet.
@@ -27,10 +27,6 @@ Arbiter's goal is to unify these tools under one roof, and to understand how for
 - Inspect, edit, and create assets for the game
 - Build and package mods
 - Launch builds to test them (in emulators like [Dolphin](https://dolphin-emu.org/) or [Dusklight](https://twilitrealm.dev/))
-
-## Future aspirations
-The long-term goal is to **ship a runtime** alongside the editor, making Arbiter a full-fledged game engine.
-At that point it's no longer limited to modding, and the same systems can be used to develop entirely new games.
 
 ## History
 Arbiter is a ground-up rebuild of [TPMT (Twilight Princess Modding Toolkit)](https://github.com/3e2j/TPMT).
