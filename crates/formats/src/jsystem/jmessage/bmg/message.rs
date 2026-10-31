@@ -82,7 +82,8 @@ const TAG_HEADER_LEN: usize = 5;
 const ORDERED: u8 = 0x10;
 const FORM_MASK: u8 = 0x0F;
 
-/// The messages, the record width, and the MID1 header if there is one.
+/// The messages, their attributes width, and the MID1 header if there is
+/// one.
 pub(super) fn read(
     inf1: &[u8],
     dat1: &[u8],
@@ -91,12 +92,11 @@ pub(super) fn read(
     let mut r = ByteReader::new(inf1);
     let header: &Inf1Header = r.record()?;
     let count = usize::from(header.count.get());
-    let record_len = header.record_len.get();
-    let attributes_len = usize::from(
-        record_len
-            .checked_sub(TEXT_OFFSET_LEN)
-            .ok_or(malformed("an INF1 record is narrower than its text offset"))?,
-    );
+    let attributes_len = header
+        .record_len
+        .get()
+        .checked_sub(TEXT_OFFSET_LEN)
+        .ok_or(malformed("an INF1 record is narrower than its text offset"))?;
     let ids: Option<&[Be32]> = mid1
         .map(|mid1| ByteReader::new(mid1).records_at(RawMid1Header::LEN, count))
         .transpose()?;
@@ -104,7 +104,7 @@ pub(super) fn read(
     let mut messages = Vec::with_capacity(count);
     for key in (0u32..).take(count) {
         let text_at = r.u32()? as usize;
-        let attributes = r.bytes(attributes_len)?.into();
+        let attributes = r.bytes(usize::from(attributes_len))?.into();
         let id = match ids.and_then(|ids| ids.get(key as usize)) {
             Some(stored) => u16::try_from(stored.get())
                 .map_err(|_| malformed("a MID1 id doesn't fit in 16 bits"))?,
@@ -119,7 +119,7 @@ pub(super) fn read(
     }
 
     let mid1 = mid1.map(|mid1| read_mid1(mid1, &messages)).transpose()?;
-    Ok((messages, record_len, mid1))
+    Ok((messages, attributes_len, mid1))
 }
 
 /// Splits one message's text into runs and tags up to its terminator. An
@@ -186,12 +186,12 @@ pub(super) type Sections = (Vec<u8>, Vec<u8>, Option<Vec<u8>>);
 /// zero.
 pub(super) fn write(
     messages: &[Message],
-    record_len: u16,
+    attributes_len: u16,
     mid1: Option<Mid1Header>,
 ) -> Result<Sections> {
-    let attributes_len = record_len
-        .checked_sub(TEXT_OFFSET_LEN)
-        .ok_or(malformed("an INF1 record is narrower than its text offset"))?;
+    let record_len = attributes_len
+        .checked_add(TEXT_OFFSET_LEN)
+        .ok_or(too_large("an INF1 record"))?;
     let count = count(messages)?;
 
     let mut inf1 =
@@ -410,8 +410,8 @@ mod tests {
         inf1.extend(record(3, &[0xCC, 0xDD]));
         let dat1 = b"Hi\0Yo\0";
 
-        let (messages, record_len, mid1) = read(&inf1, dat1, None).unwrap();
-        assert_eq!(record_len, 6);
+        let (messages, attributes_len, mid1) = read(&inf1, dat1, None).unwrap();
+        assert_eq!(attributes_len, 2);
         assert_eq!(mid1, None);
         assert_eq!(
             messages,
@@ -446,7 +446,7 @@ mod tests {
     /// sets the `ordered` bit above `form`.
     #[test]
     fn messages_write_the_retail_layout() {
-        let (inf1, dat1, mid1) = write(&sample(), 6, Some(HEADER)).unwrap();
+        let (inf1, dat1, mid1) = write(&sample(), 2, Some(HEADER)).unwrap();
         let mut expected = inf1_header(2, 6);
         expected.extend(record(1, &[0x00, 0x05]));
         expected.extend(record(4, &[0x00, 0x0A]));
@@ -464,10 +464,10 @@ mod tests {
             form: 3,
             shift_bytes: 0,
         };
-        let (inf1, dat1, mid1) = write(&sample(), 6, Some(header)).unwrap();
-        let (messages, record_len, read_header) = read(&inf1, &dat1, mid1.as_deref()).unwrap();
+        let (inf1, dat1, mid1) = write(&sample(), 2, Some(header)).unwrap();
+        let (messages, attributes_len, read_header) = read(&inf1, &dat1, mid1.as_deref()).unwrap();
         assert_eq!(messages, sample());
-        assert_eq!(record_len, 6);
+        assert_eq!(attributes_len, 2);
         assert_eq!(read_header, Some(header));
     }
 
@@ -475,21 +475,21 @@ mod tests {
     fn the_ordered_bit_follows_the_ids() {
         let mut shuffled = sample();
         shuffled.swap(0, 1);
-        let (_, _, mid1) = write(&shuffled, 6, Some(HEADER)).unwrap();
+        let (_, _, mid1) = write(&shuffled, 2, Some(HEADER)).unwrap();
         assert_eq!(mid1.unwrap()[2], 0x00);
     }
 
     #[test]
     fn unwritable_messages_are_refused() {
-        assert!(is_malformed(&write(&sample(), 8, None)));
+        assert!(is_malformed(&write(&sample(), 4, None)));
         let terminator = [message(0, 0, &[], &[text(b"a\0b")])];
-        assert!(is_malformed(&write(&terminator, 4, None)));
+        assert!(is_malformed(&write(&terminator, 0, None)));
 
         let long = |len| [message(0, 0, &[], &[tag(0, &vec![0; len])])];
-        let (_, dat1, _) = write(&long(250), 4, None).unwrap();
+        let (_, dat1, _) = write(&long(250), 0, None).unwrap();
         assert_eq!(dat1[2], 255);
         assert!(matches!(
-            write(&long(251), 4, None),
+            write(&long(251), 0, None),
             Err(FormatError::TooLarge { .. })
         ));
     }

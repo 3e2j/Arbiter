@@ -47,7 +47,7 @@ impl MessagesDoc {
         }
         let record = self
             .version
-            .and_then(|version| Some((version, layout(version, self.bmg.record_len)?)));
+            .and_then(|version| Some((version, layout(version, self.bmg.attributes_len + 4)?)));
         let Some((version, layout)) = record else {
             section(ui, "Record");
             value.clear();

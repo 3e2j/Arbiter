@@ -16,10 +16,11 @@ pub(super) struct Sections<'a> {
 
 pub(super) fn decode(bytes: &[u8]) -> Result<Bmg> {
     let (encoding, sections) = split(bytes)?;
-    let (messages, record_len, mid1) = message::read(sections.inf1, sections.dat1, sections.mid1)?;
+    let (messages, attributes_len, mid1) =
+        message::read(sections.inf1, sections.dat1, sections.mid1)?;
     Ok(Bmg {
         encoding,
-        record_len,
+        attributes_len,
         mid1,
         messages,
         flow: sections

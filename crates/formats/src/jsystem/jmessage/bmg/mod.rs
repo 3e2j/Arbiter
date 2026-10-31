@@ -47,9 +47,9 @@ pub use message::{Message, MessageKey, Mid1Header, TextSegment};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bmg {
     pub encoding: Encoding,
-    /// One INF1 record's width: the 4 byte text offset, then the attributes.
-    /// Carried because a file with no messages still states one.
-    pub record_len: u16,
+    /// Every message's attributes width, INF1's record width less its text
+    /// offset. Carried because a file with no messages still states one.
+    pub attributes_len: u16,
     /// `None` for a file with no MID1, which is addressed by position.
     pub mid1: Option<Mid1Header>,
     pub messages: Vec<Message>,
@@ -122,8 +122,8 @@ impl Decode for Bmg {
 
 impl Encode for Bmg {
     /// Message and node ids must be unique, every edge must name a node the
-    /// flow holds, and every attribute run must be `record_len` less the text
-    /// offset wide. A retail file comes back byte for byte.
+    /// flow holds, and every message's attributes must be `attributes_len`
+    /// wide. A retail file comes back byte for byte.
     fn encode(&self, out: &mut ByteWriter) -> Result<()> {
         encode::encode(self, out)
     }

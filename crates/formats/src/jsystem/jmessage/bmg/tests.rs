@@ -3,7 +3,7 @@ use super::*;
 fn sample() -> Bmg {
     Bmg {
         encoding: Encoding::ShiftJis,
-        record_len: 6,
+        attributes_len: 2,
         mid1: Some(Mid1Header::default()),
         messages: vec![Message {
             id: 5,

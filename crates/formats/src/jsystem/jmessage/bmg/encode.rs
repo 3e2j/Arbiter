@@ -11,7 +11,7 @@ use crate::{Be32, ByteWriter, Record, Result};
     reason = "named after the FLW1 and FLI1 sections"
 )]
 pub(super) fn encode(bmg: &Bmg, out: &mut ByteWriter) -> Result<()> {
-    let (inf1, dat1, mid1) = message::write(&bmg.messages, bmg.record_len, bmg.mid1)?;
+    let (inf1, dat1, mid1) = message::write(&bmg.messages, bmg.attributes_len, bmg.mid1)?;
     let mut sections = vec![(INF1, inf1), (DAT1, dat1)];
     if let Some(mid1) = mid1 {
         sections.push((MID1, mid1));

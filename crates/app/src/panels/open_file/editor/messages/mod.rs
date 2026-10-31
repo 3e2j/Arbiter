@@ -290,7 +290,7 @@ mod tests {
     fn bmg(texts: &[&[TextSegment]]) -> Bmg {
         Bmg {
             encoding: Encoding::Windows1252,
-            record_len: 4,
+            attributes_len: 0,
             mid1: Some(Mid1Header::default()),
             messages: (0..)
                 .zip(texts)
