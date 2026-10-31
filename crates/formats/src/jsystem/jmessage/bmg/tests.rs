@@ -184,3 +184,20 @@ fn text_decodes_in_its_encoding() {
     assert_eq!(Encoding::Utf16Be.decode(b"\x00H\x00i"), "Hi");
     assert_eq!(Encoding::Utf8.decode(b"\xff"), "\u{fffd}");
 }
+
+#[test]
+fn text_encodes_back_or_refuses() {
+    assert_eq!(
+        Encoding::Windows1252.encode("café …").as_deref(),
+        Some(&b"caf\xe9 \x85"[..])
+    );
+    assert_eq!(
+        Encoding::ShiftJis.encode("リンク").as_deref(),
+        Some(&b"\x83\x8a\x83\x93\x83N"[..])
+    );
+    assert_eq!(
+        Encoding::Utf16Be.encode("Hi").as_deref(),
+        Some(&b"\x00H\x00i"[..])
+    );
+    assert_eq!(Encoding::Windows1252.encode("リ"), None);
+}

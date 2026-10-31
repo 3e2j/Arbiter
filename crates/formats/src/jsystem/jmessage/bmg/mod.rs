@@ -104,6 +104,21 @@ impl Encoding {
         };
         encoding.decode_without_bom_handling(bytes).0
     }
+
+    /// `text` as bytes, as [`Self::decode`] reads them. `None` when it holds
+    /// a character the encoding can't.
+    #[must_use]
+    pub fn encode(self, text: &str) -> Option<Vec<u8>> {
+        let encoding = match self {
+            Self::Legacy | Self::ShiftJis => SHIFT_JIS,
+            Self::Windows1252 => WINDOWS_1252,
+            // encoding_rs only encodes to ASCII supersets.
+            Self::Utf16Be => return Some(text.encode_utf16().flat_map(u16::to_be_bytes).collect()),
+            Self::Utf8 => UTF_8,
+        };
+        let (bytes, _, unmappable) = encoding.encode(text);
+        (!unmappable).then(|| bytes.into_owned())
+    }
 }
 
 impl Bmg {

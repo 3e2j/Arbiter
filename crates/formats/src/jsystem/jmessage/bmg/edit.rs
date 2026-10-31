@@ -1,10 +1,10 @@
 //! Changing a [`Bmg`] in place. Attributes change as byte ranges, so an edit
 //! knows nothing of which byte is which, and the file's attributes width
-//! stays as it is.
+//! stays as it is. Text changes whole, as its segments.
 
 use diag::{Address, AddressStep};
 
-use super::{Bmg, MessageKey};
+use super::{Bmg, MessageKey, TextSegment};
 use crate::Editable;
 
 /// One change to a message file.
@@ -15,6 +15,11 @@ pub enum BmgEdit {
         message: MessageKey,
         at: usize,
         bytes: Box<[u8]>,
+    },
+    /// `text` in place of `message`'s.
+    Text {
+        message: MessageKey,
+        text: Vec<TextSegment>,
     },
 }
 
@@ -31,35 +36,48 @@ impl Editable for Bmg {
     /// A range past the message's attributes, or a message the file doesn't
     /// hold, changes nothing.
     fn apply(&mut self, edit: BmgEdit) -> (BmgEdit, Vec<MessageKey>) {
-        let BmgEdit::Attributes {
-            message,
-            at,
-            mut bytes,
-        } = edit;
-        let range = at..at.saturating_add(bytes.len());
-        let held = self
-            .messages
-            .iter_mut()
-            .find(|held| held.key == message)
-            .and_then(|held| held.attributes.get_mut(range));
-        let Some(held) = held else {
-            return (BmgEdit::Attributes { message, at, bytes }, Vec::new());
+        let key = match &edit {
+            BmgEdit::Attributes { message, .. } | BmgEdit::Text { message, .. } => *message,
         };
-        held.swap_with_slice(&mut bytes);
-        (BmgEdit::Attributes { message, at, bytes }, vec![message])
+        let Some(held) = self.messages.iter_mut().find(|held| held.key == key) else {
+            return (edit, Vec::new());
+        };
+        let undo = match edit {
+            BmgEdit::Attributes {
+                message,
+                at,
+                mut bytes,
+            } => {
+                let range = at..at.saturating_add(bytes.len());
+                let Some(held) = held.attributes.get_mut(range) else {
+                    return (BmgEdit::Attributes { message, at, bytes }, Vec::new());
+                };
+                held.swap_with_slice(&mut bytes);
+                BmgEdit::Attributes { message, at, bytes }
+            }
+            BmgEdit::Text { message, mut text } => {
+                std::mem::swap(&mut held.text, &mut text);
+                BmgEdit::Text { message, text }
+            }
+        };
+        (undo, vec![key])
     }
 
-    /// Typing over the same bytes is one step.
+    /// Typing over the same bytes, or in the same message's text, is one
+    /// step.
     fn merges(edit: &BmgEdit, next: &BmgEdit) -> bool {
-        let (
-            BmgEdit::Attributes { message, at, bytes },
-            BmgEdit::Attributes {
-                message: next_message,
-                at: next_at,
-                bytes: next_bytes,
-            },
-        ) = (edit, next);
-        message == next_message && at == next_at && bytes.len() == next_bytes.len()
+        match (edit, next) {
+            (
+                BmgEdit::Attributes { message, at, bytes },
+                BmgEdit::Attributes {
+                    message: next_message,
+                    at: next_at,
+                    bytes: next_bytes,
+                },
+            ) => message == next_message && at == next_at && bytes.len() == next_bytes.len(),
+            (BmgEdit::Text { message, .. }, BmgEdit::Text { message: next, .. }) => message == next,
+            _ => false,
+        }
     }
 }
 
@@ -108,5 +126,23 @@ mod tests {
             assert_eq!((undo, touched), (edit, Vec::new()));
         }
         assert_eq!(*file.messages[0].attributes, [0; 16]);
+    }
+
+    #[test]
+    fn a_text_edit_undoes_with_the_text_it_replaced() {
+        let mut file = bmg(&[]);
+        let text = vec![TextSegment::Text(b"Hi".to_vec())];
+        let edit = BmgEdit::Text {
+            message: MessageKey(7),
+            text: text.clone(),
+        };
+        let (undo, touched) = file.apply(edit.clone());
+        assert_eq!(file.messages[0].text, text);
+        let empty = BmgEdit::Text {
+            message: MessageKey(7),
+            text: Vec::new(),
+        };
+        assert_eq!((undo, touched), (empty, vec![MessageKey(7)]));
+        assert!(Bmg::merges(&edit, &edit));
     }
 }
