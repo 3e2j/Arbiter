@@ -57,6 +57,8 @@ pub struct ThemeColors {
     pub text: Color,
     /// Icons and secondary text.
     pub dim: Color,
+    /// Dimmer than `dim`, for what only marks a place, such as a line break.
+    pub faint: Color,
     /// Raised off a surface: under the pointer, buttons at rest, the chosen
     /// segment, tag chips.
     pub raised: Color,

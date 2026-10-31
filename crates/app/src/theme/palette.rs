@@ -88,13 +88,15 @@ impl Swatch {
     const fn colors(&self) -> ThemeColors {
         let text = Color::hex(self.text);
         let accent = Color::hex(self.accent);
+        let dim = Color::hex(self.dim);
         ThemeColors {
             page: Color::hex(self.base),
             surface: Color::hex(self.panel),
             sunken: Color::hex(self.sunken),
             line: Color::hex(self.line),
             text,
-            dim: Color::hex(self.dim),
+            dim,
+            faint: dim.alpha(0x80),
             raised: Color::hex(self.raised),
             selected: Color::hex(self.sel),
             selection: accent.alpha(0x3d),

@@ -197,7 +197,7 @@ fn fold(out: &mut String, text: &str, case: bool) {
 }
 
 /// The line at `index` into the open row, wrapped onto lines `height` tall.
-/// A dim "empty" for a line without runs.
+/// A faint "empty" for a line without runs.
 #[track_caller]
 pub fn line(ui: &mut Ui, lines: &Lines, index: usize, height: f32) {
     let theme = theme::current();
@@ -205,7 +205,7 @@ pub fn line(ui: &mut Ui, lines: &Lines, index: usize, height: f32) {
     let mut runs = lines.get(index).peekable();
     if runs.peek().is_none() {
         ui.element(line_box(height), |ui| {
-            ui.text(theme.ui_text(c.dim), "empty")
+            ui.text(theme.ui_text(c.faint), "empty")
         });
         return;
     }
@@ -241,7 +241,7 @@ impl Atom for Mark {
             Self::Color(swatch) => Chip(Some(swatch)).draw(ui, label),
             Self::Break => {
                 let theme = theme::current();
-                ui.icon(Icon::CornerDownLeft, theme.size.icon, theme.color.dim);
+                ui.icon(Icon::CornerDownLeft, theme.size.icon, theme.color.faint);
             }
         }
     }

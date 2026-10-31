@@ -169,6 +169,7 @@ impl MessagesView {
             ..theme.ui_text(color)
         };
         let (text_style, dim_style) = (number_style(c.text), number_style(c.dim));
+        let faint_style = number_style(c.faint);
         let height = s.row - s.gap / 2.;
         let element = Element {
             direction: Direction::LeftToRight,
@@ -217,7 +218,7 @@ impl MessagesView {
             let _ = write!(position, "{index:>digits$}");
             let selected = self.selected == Some(index);
             let (clicked, ()) = row(ui, element, selected, |ui| {
-                ui.element(line_box(height), |ui| ui.text(dim_style, &position));
+                ui.element(line_box(height), |ui| ui.text(faint_style, &position));
                 if let Some(&number) = ids.and_then(|ids| ids.get(index)) {
                     id.clear();
                     let _ = write!(id, "{number:>digits$}");
