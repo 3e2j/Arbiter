@@ -18,6 +18,10 @@ pub struct TextField {
     /// How far the text is moved left to keep the caret in view, in logical
     /// pixels.
     pub scroll: f32,
+    /// Dimmed at the end, such as a unit.
+    pub suffix: Option<&'static str>,
+    /// Drawn in the error color, for text that can't be taken.
+    pub invalid: bool,
 }
 
 const CARET_WIDTH: f32 = 2.;
@@ -100,9 +104,9 @@ impl TextField {
     }
 }
 
-/// Fills its parent across, sunken, with `icon` before the text,
-/// and `placeholder` dimmed while it's empty. Clicking it takes the
-/// keyboard and puts the caret there, dragging or Shift clicking selects,
+/// Fills its parent across, sunken, with `icon` before the text, then
+/// `placeholder` dimmed while it's empty, then its suffix. Clicking it takes
+/// the keyboard and puts the caret there, dragging or Shift clicking selects,
 /// and Enter or Escape let go. Returns whether the text changed this pass.
 #[track_caller]
 pub fn text_field(
@@ -152,9 +156,11 @@ pub fn text_field(
             if typing.done {
                 ui.unfocus();
             }
-            if let Some(border) = &mut ui.style().border {
-                border.color = c.accent;
-            }
+        }
+        let border = field.invalid.then_some(c.err);
+        let border = border.or(focused.then_some(c.accent));
+        if let (Some(color), Some(border)) = (border, &mut ui.style().border) {
+            border.color = color;
         }
         if let Some(icon) = icon {
             ui.icon(icon, s.icon, c.dim);
@@ -166,7 +172,7 @@ pub fn text_field(
             ..Element::DEFAULT
         };
         ui.element(text, |ui| {
-            let style = theme.ui_text(c.text);
+            let style = theme.ui_text(if field.invalid { c.err } else { c.text });
             typing.changed |= field.point(ui, style, pointing);
             let x = ui.x_for_index(style, &field.text, field.selection.caret);
             // Keeps the caret in view, and no more scrolled than the text
@@ -200,6 +206,9 @@ pub fn text_field(
                 ui.text_layered(style, &field.text, highlights, caret);
             }
         });
+        if let Some(suffix) = field.suffix {
+            ui.text(theme.ui_text(c.dim), suffix);
+        }
         // Offered as the primary selection whenever it changes.
         let selected = field.text.get(field.selection.range()).unwrap_or_default();
         if field.selection != before && !selected.is_empty() {

@@ -9,9 +9,10 @@
 //! Hovering a field shows its notes.
 //!
 //! Editable fields write as they're typed in: [`number`], [`named`] and
-//! [`byte_grid`]. A box shows the file's value again whenever nothing has the
-//! keyboard, so a value typed past its field's width shows clamped once
-//! typing stops.
+//! [`byte_grid`]. Each box is tagged with its width, and a value outside it,
+//! negative or past the max, isn't written: the box turns red with a line
+//! under it saying why, as it does for text that isn't a number. A box
+//! shows the file's value again whenever nothing has the keyboard.
 
 use std::fmt::Write;
 
@@ -319,7 +320,10 @@ pub fn number(
     value: u16,
     max: u16,
 ) -> (bool, Option<u16>) {
-    labelled(ui, label, |ui| number_box(ui, fields, value, max, 10))
+    let (hovered, (typed, refused)) =
+        labelled(ui, label, |ui| number_box(ui, fields, value, max, 10));
+    refused_note(ui, refused, max, 10);
+    (hovered, typed)
 }
 
 /// `label`, a dropdown of `names` and a box `value` is typed into, up to
@@ -344,7 +348,7 @@ pub fn named(
         size: [Length::Fixed(NUMBER_WIDTH), Length::Fit],
         ..Element::DEFAULT
     };
-    labelled(ui, label, |ui| {
+    let (hovered, (set, refused)) = labelled(ui, label, |ui| {
         ui.element(row, |ui| {
             let key = fields.drawn;
             fields.values.clear();
@@ -369,10 +373,12 @@ pub fn named(
                 fields.menu = None;
             }
             let picked = chosen.picked.and_then(|at| fields.values.get(at).copied());
-            let typed = ui.element(number, |ui| number_box(ui, fields, value, max, 10));
-            picked.filter(|&picked| picked != value).or(typed)
+            let (typed, refused) = ui.element(number, |ui| number_box(ui, fields, value, max, 10));
+            (picked.filter(|&picked| picked != value).or(typed), refused)
         })
-    })
+    });
+    refused_note(ui, refused, max, 10);
+    (hovered, set)
 }
 
 /// A box per byte of `bytes`, in hex, eight to a row under their offsets.
@@ -407,8 +413,8 @@ pub fn byte_grid(
         size: s.text - 3.,
         ..theme.ui_text(c.dim)
     };
-    ui.element(grid, |ui| {
-        let (mut over, mut typed) = (None, None);
+    let (over, typed, refused) = ui.element(grid, |ui| {
+        let (mut over, mut typed, mut refused) = (None, None, None);
         let mut offset = String::new();
         for (row_at, chunk) in (0..).step_by(GRID_COLUMNS).zip(bytes.chunks(GRID_COLUMNS)) {
             ui.element(row, |ui| {
@@ -422,10 +428,11 @@ pub fn byte_grid(
                         let _ = write!(offset, "{at:02X}");
                         ui.text(offset_style, &offset);
                         let value = u16::from(byte);
-                        let set = number_box(ui, fields, value, 0xFF, 16);
+                        let (set, held) = number_box(ui, fields, value, 0xFF, 16);
                         if let Some(byte) = set.and_then(|set| u8::try_from(set).ok()) {
                             typed = Some((at, byte));
                         }
+                        refused = refused.or(held);
                         if ui.hovered() {
                             over = Some(at);
                         }
@@ -433,14 +440,75 @@ pub fn byte_grid(
                 }
             });
         }
-        (over, typed)
-    })
+        (over, typed, refused)
+    });
+    refused_note(ui, refused, 0xFF, 16);
+    (over, typed)
+}
+
+/// Why a number box's text isn't written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Refused {
+    Past(i64),
+    Below(i64),
+    NotNumber,
+}
+
+/// `text` as a value up to `max` in `radix`. `None` for text on its way to
+/// being one, empty or a lone minus.
+fn read_number(text: &str, max: u16, radix: u32) -> Result<Option<u16>, Refused> {
+    let text = text.trim();
+    if text.is_empty() || text == "-" {
+        return Ok(None);
+    }
+    let typed = i64::from_str_radix(text, radix).map_err(|_| Refused::NotNumber)?;
+    if typed < 0 {
+        return Err(Refused::Below(typed));
+    }
+    u16::try_from(typed)
+        .ok()
+        .filter(|&typed| typed <= max)
+        .map(Some)
+        .ok_or(Refused::Past(typed))
+}
+
+/// Under a field whose box holds what it `refused`, in `radix` up to `max`,
+/// why it wasn't written.
+#[track_caller]
+fn refused_note(ui: &mut Ui, refused: Option<Refused>, max: u16, radix: u32) {
+    let Some(refused) = refused else {
+        return;
+    };
+    let theme = theme::current();
+    let style = TextStyle {
+        size: theme.size.text - 1.,
+        ..theme.ui_text(theme.color.err)
+    };
+    let hex = radix == 16;
+    let mut note = String::new();
+    let _ = match refused {
+        Refused::Past(typed) if hex => write!(note, "{typed:02X} is past the max of {max:02X}."),
+        Refused::Past(typed) => write!(note, "{typed} is past the max of {max}."),
+        Refused::Below(typed) if hex => write!(note, "-{:02X} is below 0.", typed.unsigned_abs()),
+        Refused::Below(typed) => write!(note, "{typed} is below 0."),
+        Refused::NotNumber if hex => write!(note, "Not a hex number."),
+        Refused::NotNumber => write!(note, "Not a number."),
+    };
+    note.push_str(" Not written.");
+    labelled(ui, "", |ui| ui.text(style, &note));
 }
 
 /// A box `value` is typed into in `radix`, up to `max`, filling its parent
-/// across. Returns the value typed when it's a new one.
+/// across and tagged with `max`'s width in decimal. Returns the value typed
+/// when it's a new one, and why what it holds isn't written when it isn't.
 #[track_caller]
-fn number_box(ui: &mut Ui, fields: &mut Fields, value: u16, max: u16, radix: u32) -> Option<u16> {
+fn number_box(
+    ui: &mut Ui,
+    fields: &mut Fields,
+    value: u16,
+    max: u16,
+    radix: u32,
+) -> (Option<u16>, Option<Refused>) {
     let Fields {
         numbers,
         drawn,
@@ -450,7 +518,9 @@ fn number_box(ui: &mut Ui, fields: &mut Fields, value: u16, max: u16, radix: u32
     if numbers.len() <= *drawn {
         numbers.resize_with(*drawn + 1, NumberBox::default);
     }
-    let shown = numbers.get_mut(*drawn)?;
+    let Some(shown) = numbers.get_mut(*drawn) else {
+        return (None, None);
+    };
     *drawn += 1;
     scratch.clear();
     let _ = if radix == 16 {
@@ -463,11 +533,42 @@ fn number_box(ui: &mut Ui, fields: &mut Fields, value: u16, max: u16, radix: u32
         shown.text.selection = edit::Selection::at(scratch.len());
     }
     shown.value = Some(value);
-    if !text_field(ui, &mut shown.text, None, "") {
-        return None;
+    shown.text.suffix = match (radix, max) {
+        (16, _) => None,
+        (_, 0..=0xFF) => Some("u8"),
+        _ => Some("u16"),
+    };
+    let changed = text_field(ui, &mut shown.text, None, "");
+    let read = read_number(&shown.text.text, max, radix);
+    if shown.text.invalid != read.is_err() {
+        shown.text.invalid = read.is_err();
+        ui.redraw_in(0.);
     }
-    let typed = u32::from_str_radix(shown.text.text.trim(), radix).ok()?;
-    let typed = u16::try_from(typed.min(u32::from(max))).ok()?;
-    shown.value = Some(typed);
-    (typed != value).then_some(typed)
+    let set = read
+        .ok()
+        .flatten()
+        .filter(|&typed| changed && typed != value);
+    if set.is_some() {
+        shown.value = set;
+    }
+    (set, read.err())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_number_outside_its_width_is_refused() {
+        assert_eq!(read_number(" 255", 0xFF, 10), Ok(Some(255)));
+        assert_eq!(read_number("300", 0xFF, 10), Err(Refused::Past(300)));
+        assert_eq!(
+            read_number("70000", u16::MAX, 10),
+            Err(Refused::Past(70000))
+        );
+        assert_eq!(read_number("-1", 0xFF, 10), Err(Refused::Below(-1)));
+        assert_eq!(read_number("1g", 0xFF, 16), Err(Refused::NotNumber));
+        assert_eq!(read_number("-", 0xFF, 10), Ok(None));
+        assert_eq!(read_number("", 0xFF, 10), Ok(None));
+    }
 }

@@ -129,8 +129,10 @@ fn attribute_fields(
                 Some(None) => write!(help, "{read} has no TP name. "),
                 None => Ok(()),
             };
-            let _ = write!(help, "Any value from 0 to {max}.");
-            *over = Some((name, help));
+            help.truncate(help.trim_end().len());
+            if !help.is_empty() {
+                *over = Some((name, help));
+            }
         }
     }
     set
@@ -147,7 +149,7 @@ fn attribute_bytes(
 ) -> Option<(usize, Box<[u8]>)> {
     let (hovered, typed) = byte_grid(ui, fields, attributes);
     if let Some(at) = hovered {
-        let mut help = format!("At 0x{at:02X}, any value from 00 to FF.");
+        let mut help = format!("At 0x{at:02X}.");
         let owner = layout
             .into_iter()
             .flat_map(|layout| layout.sections)
