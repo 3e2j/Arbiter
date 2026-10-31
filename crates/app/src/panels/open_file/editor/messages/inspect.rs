@@ -12,9 +12,7 @@ use formats::jsystem::jmessage::bmg::BmgEdit;
 use gui::ui::Ui;
 
 use super::MessagesDoc;
-use crate::panels::inspector::{
-    Fields, byte_grid, field, named, number, section, subsection, view_switch,
-};
+use crate::panels::inspector::{Fields, byte_grid, field, named, number, section, view_switch};
 
 /// The field under the pointer's label and help.
 type Over = Option<(&'static str, String)>;
@@ -38,21 +36,24 @@ impl MessagesDoc {
     /// if it has help.
     pub fn inspect(&mut self, ui: &mut Ui, index: usize, fields: &mut Fields) -> Over {
         let message = self.bmg.messages.get(index)?;
-        let key = message.key;
+        let (key, id) = (message.key, message.id);
         let mut over = None;
-        let mut value = String::new();
-        if section(ui, fields, "File") {
+        section(ui, fields, "File", |ui, fields| {
+            let mut value = String::new();
             let _ = write!(value, "{index}");
             field(ui, fields, "Position", &value);
             if self.bmg.mid1.is_some() {
                 value.clear();
-                let _ = write!(value, "{}", message.id);
+                let _ = write!(value, "{id}");
                 if field(ui, fields, "ID", &value) {
                     over = Some(("ID", "From MID1, what the game looks it up by".to_owned()));
                 }
             }
-        }
-        if section(ui, fields, "Text") {
+        });
+        section(ui, fields, "Text", |ui, fields| {
+            let Some(message) = self.bmg.messages.get(index) else {
+                return;
+            };
             let (help, typed) = fields
                 .message
                 .ui(ui, message, self.bmg.encoding, self.version);
@@ -65,33 +66,34 @@ impl MessagesDoc {
                 self.edits = self.edits.wrapping_add(1);
                 self.lines = super::lines(&self.bmg, self.version);
             }
-        }
-        if !section(ui, fields, "Attributes") {
-            return over;
-        }
-        let message = self.bmg.messages.get(index)?;
-        let tables = self
-            .version
-            .and_then(|version| Some((version, layout(version, self.bmg.attributes_len + 4)?)));
-        if tables.is_some() {
-            view_switch(ui, fields, &["Fields", "Bytes"]);
-        }
-        let attributes = &message.attributes;
-        let set = if let Some((version, layout)) = tables.filter(|_| fields.view == 0) {
-            attribute_fields(ui, fields, version, layout, attributes, &mut over)
-        } else {
-            let layout = tables.map(|(_, layout)| layout);
-            attribute_bytes(ui, fields, layout, attributes, &mut over)
-        };
-        if let Some((at, bytes)) = set {
-            // The undo edit is dropped until there's history to keep it in.
-            self.bmg.apply(BmgEdit::Attributes {
-                message: key,
-                at,
-                bytes,
-            });
-            self.edits = self.edits.wrapping_add(1);
-        }
+        });
+        section(ui, fields, "Attributes", |ui, fields| {
+            let Some(message) = self.bmg.messages.get(index) else {
+                return;
+            };
+            let tables = self
+                .version
+                .and_then(|version| Some((version, layout(version, self.bmg.attributes_len + 4)?)));
+            if tables.is_some() {
+                view_switch(ui, fields, &["Fields", "Bytes"]);
+            }
+            let attributes = &message.attributes;
+            let set = if let Some((version, layout)) = tables.filter(|_| fields.view == 0) {
+                attribute_fields(ui, fields, version, layout, attributes, &mut over)
+            } else {
+                let layout = tables.map(|(_, layout)| layout);
+                attribute_bytes(ui, fields, layout, attributes, &mut over)
+            };
+            if let Some((at, bytes)) = set {
+                // The undo edit is dropped until there's history to keep it in.
+                self.bmg.apply(BmgEdit::Attributes {
+                    message: key,
+                    at,
+                    bytes,
+                });
+                self.edits = self.edits.wrapping_add(1);
+            }
+        });
         over
     }
 }
@@ -108,7 +110,7 @@ fn attribute_fields(
 ) -> Option<(usize, Box<[u8]>)> {
     let mut set = None;
     for section_layout in layout.sections {
-        subsection(ui, fields, section_layout.title, |ui, fields| {
+        section(ui, fields, section_layout.title, |ui, fields| {
             for record_field in section_layout.fields {
                 let (Some(start), Some(read)) =
                     (record_field.start(), record_field.read(attributes))

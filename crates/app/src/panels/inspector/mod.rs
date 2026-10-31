@@ -68,7 +68,8 @@ pub struct Fields {
     pub view: u16,
     /// The titles of the sections closed, kept across selections.
     closed: Vec<&'static str>,
-    /// How far in fields start, for the subsections they're in.
+    /// How far in the sections being drawn are, so fields line up their
+    /// values with those further out.
     indent: f32,
     /// Boxed, as it's most of an inspector's size.
     pub message: Box<MessageText>,
@@ -231,30 +232,31 @@ fn header<'a>(ui: &mut Ui, crumbs: impl Iterator<Item = &'a str>, locked: bool) 
     })
 }
 
-/// A section's heading, under a line across the inspector. Clicking it
-/// opens or closes the section, kept in `fields` by `title`.
-/// Returns whether it's open.
+/// A section's heading, under a line across the inspector unless it's in
+/// another section, then while it's open, what `body` draws, a step in, in
+/// line with its title. Clicking the heading opens or closes it, kept in
+/// `fields` by `title`.
 #[track_caller]
-pub fn section(ui: &mut Ui, fields: &mut Fields, title: &'static str) -> bool {
-    rule(ui);
-    heading(ui, fields, title)
-}
-
-/// A section within another: its heading, then while it's open, what `body`
-/// draws, its fields a step in. Opens and closes as [`section`] does.
-#[track_caller]
-pub fn subsection(
+pub fn section(
     ui: &mut Ui,
     fields: &mut Fields,
     title: &'static str,
     body: impl FnOnce(&mut Ui, &mut Fields),
 ) {
+    if fields.indent <= 0. {
+        rule(ui);
+    }
     if !heading(ui, fields, title) {
         return;
     }
-    let step = theme::current().size.gap * 1.5;
+    let step = chevron_size() + theme::current().size.icon_gap;
+    let element = Element {
+        size: [Length::Grow, Length::Fit],
+        padding: [step, 0., 0., 0.],
+        ..Element::DEFAULT
+    };
     fields.indent += step;
-    body(ui, fields);
+    ui.element(element, |ui| body(ui, fields));
     fields.indent -= step;
 }
 
@@ -280,7 +282,7 @@ fn heading(ui: &mut Ui, fields: &mut Fields, title: &'static str) -> bool {
         Icon::ChevronRight
     };
     let (clicked, ()) = row(ui, element, false, |ui| {
-        ui.icon(icon, s.text - 2., c.dim);
+        ui.icon(icon, chevron_size(), c.dim);
         ui.text(style, title);
     });
     if !clicked {
@@ -292,6 +294,11 @@ fn heading(ui: &mut Ui, fields: &mut Fields, title: &'static str) -> bool {
         fields.closed.retain(|&closed| closed != title);
     }
     !open
+}
+
+/// A heading's chevron's width.
+fn chevron_size() -> f32 {
+    theme::current().size.text - 2.
 }
 
 /// A switch between `labels`, views of the section above, setting
@@ -332,8 +339,8 @@ pub fn field(ui: &mut Ui, fields: &Fields, label: &str, value: &str) -> bool {
     labelled(ui, fields.indent, label, shown).0
 }
 
-/// `label` `indent` in, then what `body` draws beside it, where it would
-/// be without the indent. Returns whether it's under the pointer, for its
+/// `label`, then what `body` draws beside it, in line with fields
+/// `indent` further out. Returns whether it's under the pointer, for its
 /// tooltip, and what `body` returned.
 #[track_caller]
 fn labelled<R>(
@@ -345,13 +352,13 @@ fn labelled<R>(
     let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let element = Element {
-        padding: [s.gap + indent, 0., s.gap, 0.],
+        padding: [s.gap, 0., s.gap, 0.],
         gap: s.gap,
         clip: true,
         ..Element::line(s.row + 2.)
     };
     ui.element(element, |ui| {
-        let width = ui.rect().map_or(0., |rect| rect.w - 2. * s.gap);
+        let width = ui.rect().map_or(0., |rect| rect.w + indent - 2. * s.gap);
         let label_box = Element {
             size: [
                 Length::Fixed((width * LABEL_SHARE).max(LABEL_MIN) - indent),
