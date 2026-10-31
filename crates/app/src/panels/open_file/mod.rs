@@ -18,7 +18,7 @@ use hex::HexState;
 /// The switch's width, enough for both views' names.
 const SWITCH: f32 = 180.;
 
-pub use editor::Format;
+pub use editor::{Format, MessageText};
 pub use hex::{HEX, Hex};
 
 pub struct OpenFile {

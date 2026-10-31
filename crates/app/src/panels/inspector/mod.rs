@@ -19,7 +19,7 @@ use std::fmt::Write;
 use gui::ui::{Align, Direction, Element, Length, TextStyle, Ui};
 use serde::{Deserialize, Serialize};
 
-use super::{Context, Kind, Request, Selection, file_name};
+use super::{Context, Kind, MessageText, Request, Selection, file_name};
 use crate::assets::Icon;
 use crate::components::{
     Choice, Dropdown, IconState, Scroll, Search, TextField, Tooltip, dropdown, icon_button, notice,
@@ -63,6 +63,8 @@ pub struct Fields {
     scratch: String,
     /// Which segment the format's view switch is on.
     pub view: u16,
+    /// Boxed, as it's most of an inspector's size.
+    pub message: Box<MessageText>,
 }
 
 #[derive(Default)]

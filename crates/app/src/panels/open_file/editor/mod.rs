@@ -9,7 +9,7 @@ use gui::ui::Ui;
 
 use crate::panels::inspector::Fields;
 
-pub use messages::{MessagesDoc, MessagesView};
+pub use messages::{MessageText, MessagesDoc, MessagesView};
 
 pub enum Format {
     Messages(Box<MessagesDoc>),

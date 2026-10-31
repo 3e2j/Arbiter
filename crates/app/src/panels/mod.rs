@@ -22,7 +22,7 @@ pub use inspector::Inspector;
 use inspector::InspectorState;
 use open_file::OpenFileState;
 use open_file::file_name;
-pub use open_file::{Format, Hex, OpenFile};
+pub use open_file::{Format, Hex, MessageText, OpenFile};
 pub use output::Output;
 
 /// Every kind of panel there is.

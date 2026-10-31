@@ -1,5 +1,5 @@
-//! A message as the inspector shows it: its position and id, then its
-//! attributes. The TP tables split them into named fields, with a switch to
+//! A message as the inspector shows it: its position and id, its text as
+//! [`text`](super::text) edits it, then its attributes. The TP tables split them into named fields, with a switch to
 //! show them as bytes. Without tables for their width they're only bytes,
 //! as many as the file's attributes are wide. Both write the same bytes.
 
@@ -49,6 +49,20 @@ impl MessagesDoc {
                 over = Some(("ID", "From MID1, what the game looks it up by".to_owned()));
             }
         }
+        section(ui, "Text");
+        let (help, typed) = fields
+            .message
+            .ui(ui, message, self.bmg.encoding, self.version);
+        if let Some(help) = help {
+            over = Some(("Text", help.to_owned()));
+        }
+        if let Some(text) = typed {
+            // As with attributes, the undo edit waits for history.
+            self.bmg.apply(BmgEdit::Text { message: key, text });
+            self.edits = self.edits.wrapping_add(1);
+            self.lines = super::lines(&self.bmg, self.version);
+        }
+        let message = self.bmg.messages.get(index)?;
         section(ui, "Attributes");
         let tables = self
             .version

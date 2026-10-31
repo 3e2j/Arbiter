@@ -13,6 +13,7 @@
 
 mod inspect;
 mod lines;
+mod text;
 
 use std::fmt::Write;
 
@@ -28,6 +29,8 @@ use crate::components::{
 };
 use crate::theme;
 use lines::{Find, Lines, line};
+
+pub use text::MessageText;
 
 const ID: &str = "ID";
 const POSITION: &str = "Pos";
