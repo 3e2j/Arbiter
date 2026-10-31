@@ -90,10 +90,11 @@ fn menu_button(ui: &mut Ui, label: &str, menu: &mut ContextMenu) {
         ..Element::DEFAULT
     };
     ui.element(element, |ui| {
-        let open = menu.is_open();
-        let hovered = ui.hovered();
-        ui.style().background = (open || hovered).then_some(c.hover);
-        let text = if open || hovered { c.text } else { c.dim };
+        // Holding the press keeps the bar from taking it as a window drag.
+        let held = ui.held(PointerButton::Left);
+        let lit = held || menu.is_open() || ui.hovered();
+        ui.style().background = lit.then_some(c.hover);
+        let text = if lit { c.text } else { c.dim };
         ui.text(theme.ui_text(text), label);
         // The open menu's cover takes the press that closes it.
         if ui.pressed(PointerButton::Left)
