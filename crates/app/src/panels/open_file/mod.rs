@@ -9,12 +9,13 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 
 use formats::games::tp::Version;
 use gui::ui::{Element, Length, Ui};
+use project::Project;
 use serde::{Deserialize, Serialize};
 
+use super::{Context, Event, Reply};
 use crate::components::{notice, segmented, toolbar};
 use crate::fs::Loaded;
 use crate::keymap::AppCommand;
-use crate::panels::inspector::Page;
 use crate::workspace::Places;
 use editor::Editor;
 use hex::HexState;
@@ -37,7 +38,7 @@ pub struct OpenFile {
 }
 
 enum Bytes {
-    /// Until [`OpenFile::load`] is given them to wait on.
+    /// Until its `ui` has a project and loader to ask.
     Unasked,
     /// Asked of the [`FileLoader`](crate::fs::FileLoader), not back yet.
     Loading(Receiver<Loaded>),
@@ -69,8 +70,7 @@ pub struct OpenFileState {
 impl OpenFile {
     pub const PLACES: Places = Places::MAIN;
 
-    /// Shows `path`, relative to the project's root, once it's
-    /// [`Self::load`]ed.
+    /// Shows `path`, relative to the project's root, once it's read.
     pub const fn new(path: String) -> Self {
         Self {
             path,
@@ -82,7 +82,7 @@ impl OpenFile {
         }
     }
 
-    /// Where `state` left it, once it's [`Self::load`]ed.
+    /// Where `state` left it, once it's read.
     pub fn from_state(state: OpenFileState) -> Self {
         Self {
             view: state.view,
@@ -108,20 +108,22 @@ impl OpenFile {
         file_name(&self.path)
     }
 
-    /// What was clicked in its editor since last asked, to inspect.
-    pub fn take_inspected(&mut self) -> Option<Page> {
-        self.editor.as_mut()?.take_inspected(file_name(&self.path))
+    /// Shows itself for a pick of its own file.
+    pub fn receive(&mut self, event: &mut Event) -> Reply {
+        match event {
+            Event::Pick(path) if *path == self.path => Reply::Show,
+            _ => Reply::Pass,
+        }
     }
 
-    /// Shows the bytes `loading` brings, once they come, their values named
-    /// by `version`'s tables when given.
-    pub fn load(&mut self, loading: Receiver<Loaded>, version: Option<Version>) {
-        self.bytes = Bytes::Loading(loading);
-        self.version = version;
-    }
-
-    /// Takes the bytes it's waiting on, if they came.
-    fn poll(&mut self) {
+    /// Asks for its bytes once there's a project to read them from, then
+    /// takes them once they come.
+    fn poll(&mut self, cx: &Context) {
+        if let (Bytes::Unasked, Some(project), Some(loader)) = (&self.bytes, cx.project, cx.loader)
+        {
+            self.bytes = Bytes::Loading(loader.ask(project.root.join(&self.path)));
+            self.version = version(project, &self.path);
+        }
         let Bytes::Loading(loading) = &self.bytes else {
             return;
         };
@@ -156,8 +158,8 @@ impl OpenFile {
         matches!(self.view, View::Hex) || self.editor.is_none()
     }
 
-    pub fn ui(&mut self, ui: &mut Ui) {
-        self.poll();
+    pub fn ui(&mut self, ui: &mut Ui, cx: &mut Context) {
+        self.poll(cx);
         let bytes = match &self.bytes {
             Bytes::Unasked | Bytes::Loading(_) => return notice(ui, "Loading…"),
             Bytes::Failed(err) => return notice(ui, err),
@@ -182,7 +184,12 @@ impl OpenFile {
             }
         }
         match (self.view, &mut self.editor) {
-            (View::Editor, Some(editor)) => editor.ui(ui),
+            (View::Editor, Some(editor)) => {
+                editor.ui(ui);
+                if let Some(page) = editor.take_inspected(file_name(&self.path)) {
+                    cx.post(Event::Inspect(page));
+                }
+            }
             _ if bytes.is_empty() => notice(ui, "Empty file"),
             _ => self.hex.ui(ui, bytes),
         }
@@ -191,6 +198,12 @@ impl OpenFile {
 
 fn file_name(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
+}
+
+/// The game version whose base `path` is in, relative to `project`'s root.
+fn version(project: &Project, path: &str) -> Option<Version> {
+    let (id, edition) = project.edition_of(path)?;
+    Version::from_disc(id, edition.revision)
 }
 
 #[cfg(test)]

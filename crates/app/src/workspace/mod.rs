@@ -34,7 +34,7 @@ use gui::{
     ui::{Direction, Element, Length, Ui},
 };
 
-use crate::panels::Panel;
+use crate::panels::{Context, Event, Panel, Reply};
 
 use crate::theme;
 use dock::{Dock, dock_radius};
@@ -79,35 +79,25 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// Every panel, in any dock.
-    pub fn panels_mut(&mut self) -> impl Iterator<Item = &mut Panel> {
-        self.docks.iter_mut().flat_map(|dock| &mut dock.tabs)
-    }
-
-    /// Shows the first panel `find` picks out, in whichever dock it's in.
-    /// Returns whether there was one.
-    pub fn show(&mut self, find: impl Fn(&Panel) -> bool) -> bool {
-        for dock in &mut self.docks {
-            if let Some(at) = dock.tabs.iter().position(&find) {
-                dock.active = at;
-                return true;
-            }
-        }
-        false
-    }
-
-    /// Closes every panel `close` picks out.
-    pub fn close(&mut self, mut close: impl FnMut(&mut Panel) -> bool) {
+    /// Offers `event` to every panel in turn, closing each that asks, until
+    /// one shows it. Returns whether one did, brought to the front.
+    pub fn offer(&mut self, event: &mut Event) -> bool {
         for dock in &mut self.docks {
             let mut at = 0;
             while let Some(panel) = dock.tabs.get_mut(at) {
-                if close(panel) {
-                    dock.remove(at);
-                } else {
-                    at += 1;
+                match panel.receive(event) {
+                    Reply::Pass => at += 1,
+                    Reply::Close => {
+                        dock.remove(at);
+                    }
+                    Reply::Show => {
+                        dock.active = at;
+                        return true;
+                    }
                 }
             }
         }
+        false
     }
 
     /// Adds `panel` as the last tab at `place`, and shows it and its band.
@@ -134,8 +124,8 @@ impl Workspace {
     }
 
     /// Declares the bands in the order they're cut, outside in, each wrapping
-    /// what's left.
-    pub fn ui(&mut self, ui: &mut Ui) {
+    /// what's left, each shown panel given `cx`.
+    pub fn ui(&mut self, ui: &mut Ui, cx: &mut Context) {
         self.drop_tab(ui);
         for dock in &mut self.docks {
             dock.rect = None;
@@ -155,16 +145,16 @@ impl Workspace {
             let window = ui.rect();
             let pass = self.pass(window.map(|rect| [rect.w, rect.h]));
             ui.element(Element::row(), |ui| {
-                self.band(ui, &pass, Band::LeftOuter);
-                self.band(ui, &pass, Band::LeftInner);
+                self.band(ui, cx, &pass, Band::LeftOuter);
+                self.band(ui, cx, &pass, Band::LeftInner);
                 ui.element(Element::column(), |ui| {
-                    self.dock(ui, Place::Main, [Length::Grow; 2]);
-                    self.band(ui, &pass, Band::BelowMain);
+                    self.dock(ui, cx, Place::Main, [Length::Grow; 2]);
+                    self.band(ui, cx, &pass, Band::BelowMain);
                 });
-                self.band(ui, &pass, Band::RightInner);
-                self.band(ui, &pass, Band::RightOuter);
+                self.band(ui, cx, &pass, Band::RightInner);
+                self.band(ui, cx, &pass, Band::RightOuter);
             });
-            self.band(ui, &pass, Band::BottomRow);
+            self.band(ui, cx, &pass, Band::BottomRow);
             self.drag_tab(ui, window);
             self.menu(ui, window);
         });
@@ -219,7 +209,7 @@ impl Workspace {
     }
 
     /// The band, with its divider on the side facing the main view.
-    fn band(&mut self, ui: &mut Ui, pass: &Pass, band: Band) {
+    fn band(&mut self, ui: &mut Ui, cx: &mut Context, pass: &Pass, band: Band) {
         if !self.in_use(band) {
             return;
         }
@@ -240,14 +230,14 @@ impl Workspace {
         if !after {
             self.divider(ui, pass, divider);
         }
-        ui.element(element, |ui| self.docks_in(ui, pass, band));
+        ui.element(element, |ui| self.docks_in(ui, cx, pass, band));
         if after {
             self.divider(ui, pass, divider);
         }
     }
 
     /// The docks of `band` that have tabs, split by a divider when both do.
-    fn docks_in(&mut self, ui: &mut Ui, pass: &Pass, band: Band) {
+    fn docks_in(&mut self, ui: &mut Ui, cx: &mut Context, pass: &Pass, band: Band) {
         match *band.docks() {
             [first, second] if self.has_tabs(first) && self.has_tabs(second) => {
                 let across = 1 - band.axis();
@@ -258,21 +248,21 @@ impl Workspace {
                 if let Some(extent) = extent {
                     size[across] = Length::Fixed((divider.value * extent).round());
                 }
-                self.dock(ui, first, size);
+                self.dock(ui, cx, first, size);
                 self.divider(ui, pass, divider);
-                self.dock(ui, second, [Length::Grow; 2]);
+                self.dock(ui, cx, second, [Length::Grow; 2]);
             }
             _ => {
                 for &place in band.docks() {
                     if self.has_tabs(place) {
-                        self.dock(ui, place, [Length::Grow; 2]);
+                        self.dock(ui, cx, place, [Length::Grow; 2]);
                     }
                 }
             }
         }
     }
 
-    fn dock(&mut self, ui: &mut Ui, place: Place, size: [Length; 2]) {
+    fn dock(&mut self, ui: &mut Ui, cx: &mut Context, place: Place, size: [Length; 2]) {
         let theme = theme::current();
         // Its border is the padding, so the tab bar meets it.
         let element = Element {
@@ -289,7 +279,7 @@ impl Workspace {
                 self.focus = Some(place);
             }
             dock.rect = ui.rect();
-            dock.ui(ui)
+            dock.ui(ui, cx)
         });
         if let Some(index) = out.close {
             dock.remove(index);
@@ -341,6 +331,7 @@ mod tests {
             Panel::open(PanelKind::FileTree, None).unwrap(),
         );
         assert!(workspace.in_use(Band::LeftInner));
-        assert_eq!(workspace.panels_mut().count(), 2);
+        let tabs: usize = workspace.docks.iter().map(|dock| dock.tabs.len()).sum();
+        assert_eq!(tabs, 2);
     }
 }

@@ -18,6 +18,8 @@ use crate::components::{
 };
 use crate::theme::{self, HOVER_THUMB};
 
+use super::{Context, Event, PanelKind, Reply};
+
 pub use page::Page;
 use page::{FieldKind, Row};
 
@@ -28,8 +30,8 @@ const LABEL_MIN: f32 = 64.;
 
 pub struct Inspector {
     locked: bool,
-    /// Set as it's unlocked, until [`Self::replaced`] closes the one it
-    /// takes over from.
+    /// Set as it's unlocked, until it's offered the [`Event::Unlocked`] it
+    /// posts, which closes the one it takes over from.
     taking_over: bool,
     /// `None` until something is selected.
     shown: Option<Page>,
@@ -79,30 +81,29 @@ impl Inspector {
         locked.and_then(Page::last_crumb).unwrap_or(Self::TITLE)
     }
 
-    pub const fn is_locked(&self) -> bool {
-        self.locked
-    }
-
-    /// Whether it was just unlocked, so the unlocked one before it should
-    /// close.
-    pub const fn is_taking_over(&self) -> bool {
-        self.taking_over
-    }
-
-    /// Whether a takeover replaces it: it's unlocked, but isn't the one
-    /// taking over. Asking ends the takeover.
-    pub const fn replaced(&mut self) -> bool {
-        let replaced = !self.locked && !self.taking_over;
-        self.taking_over = false;
-        replaced
-    }
-
-    pub fn show(&mut self, page: Page) {
+    fn show(&mut self, page: Page) {
         self.shown = Some(page);
         self.scroll.offset = 0.;
     }
 
-    pub fn ui(&mut self, ui: &mut Ui) {
+    /// While unlocked: shows each selection, stands in for another from the
+    /// View menu, and closes once another is unlocked.
+    pub fn receive(&mut self, event: &mut Event) -> Reply {
+        if self.locked {
+            return Reply::Pass;
+        }
+        match event {
+            Event::Inspect(page) => {
+                self.show(std::mem::take(page));
+                Reply::Show
+            }
+            Event::Add(PanelKind::Inspector) => Reply::Show,
+            Event::Unlocked if !std::mem::take(&mut self.taking_over) => Reply::Close,
+            _ => Reply::Pass,
+        }
+    }
+
+    pub fn ui(&mut self, ui: &mut Ui, cx: &mut Context) {
         let Self {
             locked,
             taking_over,
@@ -121,6 +122,9 @@ impl Inspector {
         if header(ui, crumbs, *locked) {
             *locked = !*locked;
             *taking_over = !*locked;
+            if *taking_over {
+                cx.post(Event::Unlocked);
+            }
         }
         let Some(shown) = shown else {
             return notice(ui, "Nothing selected");
@@ -294,9 +298,12 @@ mod tests {
         taking_over.taking_over = true;
         let mut unlocked = Inspector::new(None);
         let mut locked = Inspector::from_state(&InspectorState { locked: true });
-        assert!(!taking_over.replaced());
-        assert!(unlocked.replaced());
-        assert!(!locked.replaced());
-        assert!(!taking_over.is_taking_over());
+        let closes = |inspector: &mut Inspector| {
+            matches!(inspector.receive(&mut Event::Unlocked), Reply::Close)
+        };
+        assert!(!closes(&mut taking_over));
+        assert!(closes(&mut unlocked));
+        assert!(!closes(&mut locked));
+        assert!(!taking_over.taking_over);
     }
 }

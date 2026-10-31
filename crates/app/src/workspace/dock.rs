@@ -10,7 +10,7 @@ use gui::{
 use std::ops::Range;
 
 use crate::assets::Icon;
-use crate::panels::Panel;
+use crate::panels::{Context, Panel};
 use crate::theme::{self, ThemeSizes};
 
 #[derive(Default)]
@@ -53,7 +53,7 @@ impl Dock {
     /// active one never, and arrows beside the menu step through them all.
     /// A tab under the pointer shows a close button over its right end.
     ///
-    pub(super) fn ui(&mut self, ui: &mut Ui) -> DockOut {
+    pub(super) fn ui(&mut self, ui: &mut Ui, cx: &mut Context) -> DockOut {
         let mut out = DockOut::default();
         if self.tabs.is_empty() {
             return out;
@@ -151,7 +151,7 @@ impl Dock {
         });
         self.active = active;
         if let Some(panel) = self.tabs.get_mut(self.active) {
-            ui.element(Element::column().padded(size.gap), |ui| panel.ui(ui));
+            ui.element(Element::column().padded(size.gap), |ui| panel.ui(ui, cx));
         }
         out
     }

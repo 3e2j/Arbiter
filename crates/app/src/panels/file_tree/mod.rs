@@ -21,6 +21,8 @@ use project::tree::{NodeKind, SortKey, SortOrder, Tree, TreeFilter, Trees};
 use crate::assets::Icon;
 use crate::commands::Command;
 use crate::workspace::Places;
+
+use super::{Context, Event, Reply};
 use row::{Columns, row_ui};
 use tab_state::TabState;
 
@@ -106,9 +108,6 @@ pub struct FileTree {
     /// Both trees'.
     order: SortOrder,
     popover: Option<Popover>,
-    /// The file last double clicked, relative to the project root, until
-    /// [`Self::take_picked`].
-    picked: Option<String>,
 }
 
 impl FileTree {
@@ -136,7 +135,6 @@ impl FileTree {
             letters: view.letters,
             order: view.order,
             popover: None,
-            picked: None,
         }
     }
 
@@ -161,14 +159,9 @@ impl FileTree {
         self.filter.editions = 0;
     }
 
-    /// Shows no project, until the next [`Self::refresh`].
-    pub fn close(&mut self) {
-        self.opened = None;
-    }
-
     /// Shows `trees`, read again, in place of what was shown. Each tab keeps
     /// what it had open and selected wherever the same path still is.
-    pub fn refresh(&mut self, mut trees: Trees) {
+    fn refresh(&mut self, mut trees: Trees) {
         let Some(opened) = self.opened.as_deref_mut() else {
             return self.set(trees);
         };
@@ -185,9 +178,12 @@ impl FileTree {
         opened.trees = trees;
     }
 
-    /// The file last double clicked, relative to the project root, once.
-    pub const fn take_picked(&mut self) -> Option<String> {
-        self.picked.take()
+    /// Takes each tree read again, as its own copy to sort.
+    pub fn receive(&mut self, event: &mut Event) -> Reply {
+        if let Event::Read(trees) = event {
+            self.refresh(Trees::clone(trees));
+        }
+        Reply::Pass
     }
 
     /// The filter as `tab`'s tree takes it.
@@ -231,7 +227,7 @@ impl FileTree {
         }
     }
 
-    pub fn ui(&mut self, ui: &mut Ui) {
+    pub fn ui(&mut self, ui: &mut Ui, cx: &mut Context) {
         self.tabs(ui);
         if self.opened.is_none() {
             return notice(ui, "No project open");
@@ -281,7 +277,7 @@ impl FileTree {
                     }
                 };
                 if found {
-                    self.picked = Some(path);
+                    cx.post(Event::Pick(path));
                 } else {
                     tracing::info!(
                         "{} is only a change, with nothing to show yet",

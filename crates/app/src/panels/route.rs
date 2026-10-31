@@ -1,65 +1,28 @@
 //! Where panels reach each other, as no panel knows another.
 //!
-//! What an open file last had clicked goes to the unlocked inspector, or a
-//! new one when every inspector is locked. At most one is unlocked, so
-//! unlocking one closes the unlocked one before it.
+//! Each event posted this pass is offered to every panel in turn. One no
+//! panel shows opens a panel for it: an open file for a pick, an inspector
+//! for a selection, and the kind asked for from the View menu.
 
 use crate::workspace::Workspace;
 
-use super::inspector::Page;
-use super::{Inspector, Panel, PanelKind};
+use super::{Context, Event, Inspector, OpenFile, Panel};
 
-/// Once a frame, after the panels draw: settles a takeover, then shows what
-/// was clicked.
-pub fn update(workspace: &mut Workspace) {
-    take_over(workspace);
-    let page = workspace.panels_mut().find_map(|panel| match panel {
-        Panel::OpenFile(file) => file.take_inspected(),
-        _ => None,
-    });
-    if let Some(page) = page {
-        inspect(workspace, page);
-    }
-}
-
-/// Brings the unlocked inspector to the front. Returns whether there is one.
-pub fn show_unlocked(workspace: &mut Workspace) -> bool {
-    workspace.show(is_unlocked)
-}
-
-/// Shows `page` in the unlocked inspector, or a new one when every
-/// inspector is locked.
-fn inspect(workspace: &mut Workspace, page: Page) {
-    let unlocked = workspace.panels_mut().find_map(|panel| match panel {
-        Panel::Inspector(inspector) if !inspector.is_locked() => Some(inspector),
-        _ => None,
-    });
-    match unlocked {
-        Some(inspector) => {
-            inspector.show(page);
-            show_unlocked(workspace);
+/// Once a frame, after the panels draw: offers what `cx` was posted.
+pub fn update(workspace: &mut Workspace, cx: Context) {
+    for mut event in cx.posted {
+        if workspace.offer(&mut event) {
+            continue;
         }
-        None => workspace.add(
-            PanelKind::Inspector.place(),
-            Panel::Inspector(Inspector::new(Some(page))),
-        ),
+        let panel = match event {
+            Event::Pick(path) => Panel::OpenFile(OpenFile::new(path)),
+            Event::Inspect(page) => Panel::Inspector(Inspector::new(Some(page))),
+            Event::Add(kind) => match Panel::open(kind, None) {
+                Some(panel) => panel,
+                None => continue,
+            },
+            Event::Unlocked | Event::Read(_) => continue,
+        };
+        workspace.add(panel.kind().place(), panel);
     }
-}
-
-/// Closes the unlocked inspector an inspector just unlocked takes over
-/// from.
-fn take_over(workspace: &mut Workspace) {
-    let taking_over = workspace
-        .panels_mut()
-        .any(|panel| matches!(panel, Panel::Inspector(inspector) if inspector.is_taking_over()));
-    if taking_over {
-        workspace.close(|panel| match panel {
-            Panel::Inspector(inspector) => inspector.replaced(),
-            _ => false,
-        });
-    }
-}
-
-fn is_unlocked(panel: &Panel) -> bool {
-    matches!(panel, Panel::Inspector(inspector) if !inspector.is_locked())
 }

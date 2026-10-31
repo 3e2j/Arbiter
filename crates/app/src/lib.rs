@@ -18,7 +18,6 @@ mod workspace;
 use std::sync::Arc;
 
 use components::ContextMenu;
-use formats::games::tp::Version;
 use fs::{FileLoader, TreeReader, Watch};
 use gui::{
     host::{App, Startup, Wake, WindowStyle},
@@ -27,7 +26,7 @@ use gui::{
     ui::{Element, Ui, window::window_edges},
 };
 use keymap::{AppCommand, KeyContext};
-use panels::{FileTree, OpenFile, Panel, PanelKind, route};
+use panels::{Context, Event, PanelKind, route};
 use project::{LOG, Project};
 use settings::Settings;
 use theme::ThemeFonts;
@@ -95,18 +94,6 @@ impl Editor {
                 None
             }
         };
-        for files in self.file_trees() {
-            files.close();
-        }
-        // The session's file tabs, which open before the project does.
-        if let Some(loader) = &self.loader {
-            for panel in self.workspace.panels_mut() {
-                if let Panel::OpenFile(file) = panel {
-                    let version = version(&project, file.path());
-                    file.load(loader.ask(root.join(file.path())), version);
-                }
-            }
-        }
         // Its first batch asks for the first read, once watching.
         let matters = move |path: &str| project.trees_read(path);
         self.watch = match Watch::new(root, matters, self.wake.clone()) {
@@ -125,24 +112,6 @@ impl Editor {
         }
     }
 
-    /// Shows the file at `path`, relative to the open project's root, in a
-    /// tab of the main view, the one it's already in if it's open.
-    fn open_file(&mut self, path: &str) {
-        let (Some(project), Some(loader)) = (&self.project, &self.loader) else {
-            return;
-        };
-        if self
-            .workspace
-            .show(|panel| matches!(panel, Panel::OpenFile(file) if file.path() == path))
-        {
-            return;
-        }
-        let mut file = OpenFile::new(path.to_owned());
-        file.load(loader.ask(project.root.join(path)), version(project, path));
-        self.workspace
-            .add(PanelKind::OpenFile.place(), Panel::OpenFile(file));
-    }
-
     /// What the keys pressed this pass do: as text while a box has the
     /// keyboard, else in the focused panel, then anywhere.
     fn commands(&mut self, ui: &Ui) -> Vec<AppCommand> {
@@ -159,28 +128,6 @@ impl Editor {
         // Asking GLOBAL twice finds nothing more.
         let contexts = [first.unwrap_or(KeyContext::GLOBAL), KeyContext::GLOBAL];
         keymap::commands(ui.input().keys(), &contexts).collect()
-    }
-
-    /// Adds a panel of `kind` at its place, or for an inspector, shows the
-    /// unlocked one if there is one.
-    fn add_panel(&mut self, kind: PanelKind) {
-        if kind == PanelKind::Inspector && route::show_unlocked(&mut self.workspace) {
-            return;
-        }
-        if let Some(panel) = Panel::open(kind, None) {
-            self.workspace.add(kind.place(), panel);
-        }
-        // A new files panel has no tree until it's read.
-        if kind == PanelKind::FileTree {
-            self.read_trees();
-        }
-    }
-
-    fn file_trees(&mut self) -> impl Iterator<Item = &mut FileTree> {
-        self.workspace.panels_mut().filter_map(|panel| match panel {
-            Panel::FileTree(files) => Some(files),
-            _ => None,
-        })
     }
 }
 
@@ -230,15 +177,7 @@ impl App for Editor {
         }
         match self.reader.as_ref().and_then(TreeReader::take) {
             Some(Ok(trees)) => {
-                // Each sorts its own, so each takes a copy but the last.
-                let mut files = self.file_trees().peekable();
-                while let Some(panel) = files.next() {
-                    if files.peek().is_none() {
-                        panel.refresh(trees);
-                        break;
-                    }
-                    panel.refresh(trees.clone());
-                }
+                self.workspace.offer(&mut Event::Read(&trees));
             }
             Some(Err(err)) => tracing::warn!("can't read the project's files: {err}"),
             None => {}
@@ -283,31 +222,25 @@ impl App for Editor {
         if let Some(panel) = self.workspace.focused() {
             panel.act(ui, &commands);
         }
+        let mut cx = Context::new(self.project.as_deref(), self.loader.as_ref());
         ui.element(Element::column(), |ui| {
             title_bar::ui(ui, Self::TITLE, &mut self.settings, &mut self.view);
             // Settings covers everything under the title bar.
             ui.element(Element::column(), |ui| {
-                self.workspace.ui(ui);
-                let picked: Vec<_> = self
-                    .workspace
-                    .panels_mut()
-                    .filter_map(|panel| match panel {
-                        Panel::FileTree(files) => files.take_picked(),
-                        _ => None,
-                    })
-                    .collect();
-                for path in &picked {
-                    self.open_file(path);
-                }
-                route::update(&mut self.workspace);
+                self.workspace.ui(ui, &mut cx);
                 status_bar::ui(ui, &mut self.workspace);
                 self.settings.panel(ui);
             });
             if let Some(kind) = title_bar::view_menu(ui, &mut self.view, &MENU_PANELS) {
-                self.add_panel(kind);
+                cx.post(Event::Add(kind));
+                // A new files panel has no tree until it's read.
+                if let Some(reader) = &self.reader {
+                    reader.ask();
+                }
             }
             window_edges(ui, RESIZE_EDGE);
         });
+        route::update(&mut self.workspace, cx);
     }
 }
 
@@ -324,10 +257,4 @@ fn session(project: &Project) -> Option<Session> {
             tracing::warn!("the session isn't readable, so the workspace starts fresh: {err}");
         })
         .ok()
-}
-
-/// The TP version whose base `path` is in, relative to `project`'s root.
-fn version(project: &Project, path: &str) -> Option<Version> {
-    let (id, edition) = project.edition_of(path)?;
-    Version::from_disc(id, edition.revision)
 }

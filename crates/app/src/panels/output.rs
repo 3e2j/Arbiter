@@ -13,6 +13,8 @@ use project::{Entry, LOG, Level};
 use crate::assets::Icon;
 use crate::theme::{self, ThemeColors};
 
+use super::Context;
+
 pub struct Output {
     /// Where Clear left the log. Entries before it aren't shown or counted.
     from: usize,
@@ -51,7 +53,7 @@ impl Output {
         }
     }
 
-    pub fn ui(&mut self, ui: &mut Ui) {
+    pub fn ui(&mut self, ui: &mut Ui, _cx: &mut Context) {
         self.toolbar(ui);
         self.read_new();
         let height = theme::current().size.row;
