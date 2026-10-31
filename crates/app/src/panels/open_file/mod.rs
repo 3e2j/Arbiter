@@ -8,7 +8,7 @@ mod hex;
 use gui::ui::{Element, Length, Ui};
 use serde::{Deserialize, Serialize};
 
-use super::{Context, Request};
+use super::{Context, Selection};
 use crate::components::{notice, segmented, toolbar};
 use crate::documents::{Document, Documents};
 use crate::keymap::AppCommand;
@@ -129,9 +129,10 @@ impl OpenFile {
         }
         match (self.view, &*format) {
             (View::Editor, Format::Messages(doc)) => {
-                self.messages.ui(ui, doc);
-                if let Some(page) = self.messages.take_inspected(doc, file_name(&self.path)) {
-                    cx.requests.push(Request::Inspect(page));
+                let picked = self.messages.ui(ui, doc);
+                if let Some(item) = picked.and_then(|index| u32::try_from(index).ok()) {
+                    let path = self.path.clone();
+                    cx.select(Selection { path, item });
                 }
             }
             (View::Hex, _) => {
@@ -157,7 +158,7 @@ fn hex_or_empty(ui: &mut Ui, hex: &mut Hex, bytes: &[u8]) {
     }
 }
 
-fn file_name(path: &str) -> &str {
+pub(super) fn file_name(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 

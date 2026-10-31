@@ -91,6 +91,22 @@ impl Workspace {
         false
     }
 
+    /// Closes every panel `keep` says no to, told whether it's the focused
+    /// dock's shown one.
+    pub fn retain(&mut self, mut keep: impl FnMut(&Panel, bool) -> bool) {
+        let focus = self.focus;
+        for (place, dock) in Place::ALL.into_iter().zip(&mut self.docks) {
+            let mut at = 0;
+            while let Some(panel) = dock.tabs.get(at) {
+                if keep(panel, focus == Some(place) && dock.active == at) {
+                    at += 1;
+                } else {
+                    dock.remove(at);
+                }
+            }
+        }
+    }
+
     /// Every panel, in every dock.
     pub fn panels(&mut self) -> impl Iterator<Item = &mut Panel> {
         self.docks.iter_mut().flat_map(|dock| &mut dock.tabs)
@@ -298,7 +314,7 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::panels::Kind;
+    use crate::panels::{Inspector, Kind, Request};
 
     #[test]
     fn a_side_hides_only_bands_with_tabs_and_shows_them_again() {
@@ -314,6 +330,28 @@ mod tests {
 
         workspace.toggle_side(Side::Left);
         assert!(workspace.in_use(Band::LeftInner));
+    }
+
+    #[test]
+    fn unlocking_closes_every_other_unlocked_inspector() {
+        let layout = [
+            (Kind::Inspector, Place::RightInnerTop),
+            (Kind::Inspector, Place::RightInnerBottom),
+            (Kind::Inspector, Place::BottomLeft),
+        ];
+        let mut workspace = Workspace::new(&Session::of(&layout));
+        if let [Panel::Inspector(inspector)] =
+            &mut workspace.docks[Place::BottomLeft.index()].tabs[..]
+        {
+            *inspector = Inspector::from_state(&toml::from_str("locked = true").unwrap());
+        }
+        workspace.focus = Some(Place::RightInnerBottom);
+        Request::Unlocked.apply(&mut workspace, None);
+        let left: Vec<_> = Place::ALL
+            .into_iter()
+            .filter(|&place| workspace.has_tabs(place))
+            .collect();
+        assert_eq!(left, [Place::RightInnerBottom, Place::BottomLeft]);
     }
 
     #[test]

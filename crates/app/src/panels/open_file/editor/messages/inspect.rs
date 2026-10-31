@@ -3,60 +3,84 @@
 
 use std::fmt::Write;
 
-use formats::games::tp::Version;
 use formats::games::tp::jsystem::jmessage::{layout, values};
-use formats::jsystem::jmessage::bmg::Bmg;
+use gui::ui::Ui;
 
-use crate::panels::inspector::Page;
+use super::MessagesDoc;
+use crate::panels::inspector::{FieldKind, field, section};
 
-/// The message at `index` in `bmg`, under `file`'s name, its record read
-/// with `version`'s tables when given.
-pub fn page(bmg: &Bmg, version: Option<Version>, index: usize, file: &str) -> Option<Page> {
-    let message = bmg.messages.get(index)?;
-    let mut page = Page::default();
-    let mid1 = bmg.mid1.is_some();
-    page.crumb(file);
-    if mid1 {
-        page.crumb(format_args!("Message {}", message.id));
-    } else {
-        page.crumb(format_args!("Message at {index}"));
+impl MessagesDoc {
+    /// The message at `index`'s name onto `out`, by its id when the file has
+    /// MID1.
+    pub fn item_name(&self, index: usize, out: &mut String) {
+        let Some(message) = self.bmg.messages.get(index) else {
+            return;
+        };
+        let _ = if self.bmg.mid1.is_some() {
+            write!(out, "Message {}", message.id)
+        } else {
+            write!(out, "Message at {index}")
+        };
     }
-    page.section("File");
-    page.field("Position", index, "");
-    if mid1 {
-        page.field("ID", message.id, "From MID1, what the game looks it up by");
-    }
-    let Some((version, layout)) =
-        version.and_then(|version| Some((version, layout(version, bmg.record_len)?)))
-    else {
-        page.section("Record");
-        page.bytes("Attributes", &message.attributes, "");
-        return Some(page);
-    };
-    let mut value_text = String::new();
-    let mut help = String::new();
-    for section in layout.sections {
-        page.section(section.title);
-        for field in section.fields {
-            let Some(value) = field.read(&message.attributes) else {
-                continue;
-            };
-            let entry = field
-                .values
-                .and_then(|table| values(version, table).find(|entry| entry.value == value));
-            value_text.clear();
-            help.clear();
-            help.push_str(field.notes.unwrap_or_default());
-            let _ = write!(value_text, "{value}");
-            if let Some(entry) = entry {
-                let _ = write!(value_text, " · {}", entry.name);
-                if let Some(notes) = entry.notes {
-                    let gap = if help.is_empty() { "" } else { ". " };
-                    let _ = write!(help, "{gap}{}: {notes}", entry.name);
-                }
+
+    /// The message at `index`'s fields, its record read with the TP tables
+    /// when the file has a version. Returns the label and help of the field
+    /// under the pointer, if it has help.
+    pub fn inspect(&self, ui: &mut Ui, index: usize) -> Option<(&'static str, String)> {
+        let message = self.bmg.messages.get(index)?;
+        let mut over = None;
+        let mut value = String::new();
+        let mut help = String::new();
+        let mut show = |ui: &mut Ui, label, value: &str, help: &str, kind| {
+            if field(ui, label, value, kind) && !help.is_empty() {
+                over = Some((label, help.to_owned()));
             }
-            page.field(field.name, &value_text, &help);
+        };
+        section(ui, "File");
+        let _ = write!(value, "{index}");
+        show(ui, "Position", &value, "", FieldKind::Value);
+        if self.bmg.mid1.is_some() {
+            value.clear();
+            let _ = write!(value, "{}", message.id);
+            let help = "From MID1, what the game looks it up by";
+            show(ui, "ID", &value, help, FieldKind::Value);
         }
+        let record = self
+            .version
+            .and_then(|version| Some((version, layout(version, self.bmg.record_len)?)));
+        let Some((version, layout)) = record else {
+            section(ui, "Record");
+            value.clear();
+            for (i, byte) in (0..).zip(&message.attributes) {
+                let gap = if i > 0 { " " } else { "" };
+                let _ = write!(value, "{gap}{byte:02X}");
+            }
+            show(ui, "Attributes", &value, "", FieldKind::Bytes);
+            return over;
+        };
+        for section_layout in layout.sections {
+            section(ui, section_layout.title);
+            for record_field in section_layout.fields {
+                let Some(read) = record_field.read(&message.attributes) else {
+                    continue;
+                };
+                let entry = record_field
+                    .values
+                    .and_then(|table| values(version, table).find(|entry| entry.value == read));
+                value.clear();
+                help.clear();
+                help.push_str(record_field.notes.unwrap_or_default());
+                let _ = write!(value, "{read}");
+                if let Some(entry) = entry {
+                    let _ = write!(value, " · {}", entry.name);
+                    if let Some(notes) = entry.notes {
+                        let gap = if help.is_empty() { "" } else { ". " };
+                        let _ = write!(help, "{gap}{}: {notes}", entry.name);
+                    }
+                }
+                show(ui, record_field.name, &value, &help, FieldKind::Value);
+            }
+        }
+        over
     }
-    Some(page)
 }

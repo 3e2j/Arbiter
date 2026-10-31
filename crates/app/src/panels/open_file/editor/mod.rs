@@ -5,6 +5,7 @@
 mod messages;
 
 use formats::games::tp::Version;
+use gui::ui::Ui;
 
 pub use messages::{MessagesDoc, MessagesView};
 
@@ -24,6 +25,26 @@ impl Format {
     pub const fn name(&self) -> &'static str {
         match self {
             Self::Messages(_) => "Messages",
+        }
+    }
+
+    /// The name of its `item`, as a [`Selection`](crate::panels::Selection)
+    /// holds it, onto `out`.
+    pub fn item_name(&self, item: u32, out: &mut String) {
+        let Ok(item) = usize::try_from(item) else {
+            return;
+        };
+        match self {
+            Self::Messages(doc) => doc.item_name(item, out),
+        }
+    }
+
+    /// Its `item`'s fields, in the inspector. Returns the label and help of
+    /// the field under the pointer, if it has help.
+    pub fn inspect(&self, ui: &mut Ui, item: u32) -> Option<(&'static str, String)> {
+        let item = usize::try_from(item).ok()?;
+        match self {
+            Self::Messages(doc) => doc.inspect(ui, item),
         }
     }
 

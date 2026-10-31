@@ -28,7 +28,7 @@ use gui::{
     ui::{Element, Ui, window::window_edges},
 };
 use keymap::{AppCommand, KeyContext};
-use panels::{Context, Kind, Request};
+use panels::{Context, Kind, Request, Selection};
 use project::tree::Trees;
 use project::{LOG, Project};
 use settings::Settings;
@@ -75,6 +75,7 @@ struct Editor {
     documents: Documents,
     /// The open project's, once read.
     trees: Option<Trees>,
+    selection: Option<Selection>,
     wake: Wake,
 }
 
@@ -163,6 +164,7 @@ impl App for Editor {
                     .ok(),
             ),
             trees: None,
+            selection: None,
             wake: start.wake.clone(),
         };
         if let Some(project) = project {
@@ -189,7 +191,12 @@ impl App for Editor {
             Some(Err(err)) => tracing::warn!("can't read the project's files: {err}"),
             None => {}
         }
+        let selected = self
+            .selection
+            .as_ref()
+            .map(|selection| selection.path.as_str());
         let shown = self.workspace.panels().filter_map(|panel| panel.path());
+        let shown = shown.chain(selected);
         self.documents.sweep(shown);
         self.documents.poll();
         self.workspace.input(input);
@@ -235,6 +242,7 @@ impl App for Editor {
         let mut cx = Context {
             project: self.project.as_deref(),
             documents: &mut self.documents,
+            selection: &mut self.selection,
             requests: Vec::new(),
         };
         ui.element(Element::column(), |ui| {

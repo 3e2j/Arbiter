@@ -19,8 +19,9 @@ use crate::workspace::{Place, Places, Workspace};
 pub use file_tree::FileTree;
 use file_tree::FilesView;
 pub use inspector::Inspector;
-use inspector::{InspectorState, Page};
+use inspector::InspectorState;
 use open_file::OpenFileState;
+use open_file::file_name;
 pub use open_file::{Format, Hex, OpenFile};
 pub use output::Output;
 
@@ -112,7 +113,7 @@ impl Panel {
         Some(match kind {
             Kind::FileTree => Self::FileTree(FileTree::new(FilesView::default())),
             Kind::OpenFile => return None,
-            Kind::Inspector => Self::Inspector(Inspector::new(None)),
+            Kind::Inspector => Self::Inspector(Inspector::new()),
             Kind::Output => Self::Output(Output::new()),
         })
     }
@@ -168,7 +169,7 @@ impl Panel {
         match self {
             Self::FileTree(tree) => tree.ui(ui, cx),
             Self::OpenFile(file) => file.ui(ui, cx),
-            Self::Inspector(inspector) => inspector.ui(ui),
+            Self::Inspector(inspector) => inspector.ui(ui, cx),
             Self::Output(output) => output.ui(ui),
         }
     }
@@ -181,40 +182,57 @@ impl Panel {
         }
     }
 
-    /// The file it shows, relative to the project's root, if it's a file's tab.
+    /// The file it shows, relative to the project's root, if any.
     pub fn path(&self) -> Option<&str> {
         match self {
             Self::OpenFile(file) => Some(file.path()),
-            _ => None,
+            Self::Inspector(inspector) => inspector.path(),
+            Self::FileTree(_) | Self::Output(_) => None,
         }
     }
 
-    const fn unlocked_inspector(&mut self) -> Option<&mut Inspector> {
-        match self {
-            Self::Inspector(inspector) if !inspector.locked() => Some(inspector),
-            _ => None,
-        }
+    const fn is_unlocked_inspector(&self) -> bool {
+        matches!(self, Self::Inspector(inspector) if !inspector.locked())
     }
+}
+
+/// Something in an open file, as an editor picked it for the inspector.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Selection {
+    /// Relative to the project's root.
+    pub path: String,
+    /// Which of the file's items, by its format: a message's position.
+    pub item: u32,
 }
 
 /// What a panel's `ui` is given.
 pub struct Context<'a> {
     pub project: Option<&'a Project>,
     pub documents: &'a mut Documents,
+    /// What was picked last, which every unlocked inspector shows.
+    pub selection: &'a mut Option<Selection>,
     /// What the panels asked for this pass.
     pub requests: Vec<Request>,
+}
+
+impl Context<'_> {
+    /// Picks `selection`, and shows the unlocked inspector, or a new one.
+    pub fn select(&mut self, selection: Selection) {
+        *self.selection = Some(selection);
+        self.requests.push(Request::Add(Kind::Inspector));
+    }
 }
 
 /// What a panel asks of the workspace, done once every panel is drawn.
 pub enum Request {
     /// Shows a file, relative to the project's root, in its tab or a new one.
     Open(String),
-    /// Shows a panel of this kind from the View menu. A new one opens unless
-    /// it's an inspector and an unlocked one is open.
+    /// Shows a panel of this kind. A new one opens unless it's an inspector
+    /// and an unlocked one is open.
     Add(Kind),
-    /// Shows what was clicked in an editor in the unlocked inspector, or a
-    /// new one.
-    Inspect(Page),
+    /// An inspector was unlocked from the focused tab, so every other
+    /// unlocked one closes.
+    Unlocked,
 }
 
 impl Request {
@@ -228,9 +246,7 @@ impl Request {
                 }
                 Panel::OpenFile(OpenFile::new(path))
             }
-            Self::Add(Kind::Inspector)
-                if workspace.show(|panel| panel.unlocked_inspector().is_some()) =>
-            {
+            Self::Add(Kind::Inspector) if workspace.show(|panel| panel.is_unlocked_inspector()) => {
                 return;
             }
             Self::Add(kind) => {
@@ -242,19 +258,9 @@ impl Request {
                 }
                 panel
             }
-            Self::Inspect(page) => {
-                let mut page = Some(page);
-                let shown = workspace.show(|panel| {
-                    let Some(inspector) = panel.unlocked_inspector() else {
-                        return false;
-                    };
-                    inspector.show(page.take().unwrap_or_default());
-                    true
-                });
-                if shown {
-                    return;
-                }
-                Panel::Inspector(Inspector::new(page))
+            Self::Unlocked => {
+                workspace.retain(|panel, focused| focused || !panel.is_unlocked_inspector());
+                return;
             }
         };
         workspace.add(panel.kind().opens_at(), panel);
@@ -290,7 +296,10 @@ mod tests {
                 *inspector = Inspector::from_state(&toml::from_str("locked = true").unwrap());
             }
         }
-        Request::Inspect(Page::default()).apply(&mut workspace, None);
+        Request::Add(Kind::Inspector).apply(&mut workspace, None);
         assert_eq!(count(&mut workspace, Kind::Inspector), 2);
+
+        Request::Unlocked.apply(&mut workspace, None);
+        assert_eq!(count(&mut workspace, Kind::Inspector), 1);
     }
 }

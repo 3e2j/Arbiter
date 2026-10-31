@@ -26,7 +26,6 @@ use gui::ui::{Direction, Element, Length, TextStyle, Ui};
 use crate::components::{
     ListScroll, TextField, fit_list, line_box, notice, row, rule, text_field, toggle, toolbar,
 };
-use crate::panels::inspector::Page;
 use crate::theme;
 use lines::{Find, Lines, line};
 
@@ -64,8 +63,6 @@ pub struct MessagesView {
     count: String,
     /// The position of the message last clicked.
     selected: Option<usize>,
-    /// Clicked since [`Self::take_inspected`] last asked.
-    picked: Option<usize>,
 }
 
 impl MessagesDoc {
@@ -148,9 +145,11 @@ impl MessagesView {
         let _ = write!(self.count, "{hits} in {rows} {}", messages(rows));
     }
 
-    pub fn ui(&mut self, ui: &mut Ui, doc: &MessagesDoc) {
+    /// Returns the position of the message clicked, if one was.
+    pub fn ui(&mut self, ui: &mut Ui, doc: &MessagesDoc) -> Option<usize> {
         if doc.lines.len() == 0 {
-            return notice(ui, "No messages");
+            notice(ui, "No messages");
+            return None;
         }
         if !self.found {
             self.refind(doc);
@@ -184,7 +183,8 @@ impl MessagesView {
             self.refind(doc);
         }
         if self.shown.is_empty() {
-            return notice(ui, "Nothing found");
+            notice(ui, "Nothing found");
+            return None;
         }
         let digits = doc.digits;
         let ids = doc.ids.as_deref();
@@ -200,6 +200,7 @@ impl MessagesView {
             ui.element(line_box(height), |ui| ui.text(dim_style, "Text"));
         });
         rule(ui);
+        let mut picked = None;
         fit_list(ui, &mut self.scroll, self.shown.len(), |ui, at| {
             let Some(&index) = self.shown.get(at) else {
                 return;
@@ -218,14 +219,10 @@ impl MessagesView {
             });
             if clicked {
                 self.selected = Some(index);
-                self.picked = Some(index);
+                picked = Some(index);
             }
         });
-    }
-
-    /// The message clicked since last asked, as a page under `file`'s name.
-    pub fn take_inspected(&mut self, doc: &MessagesDoc, file: &str) -> Option<Page> {
-        inspect::page(&doc.bmg, doc.version, self.picked.take()?, file)
+        picked
     }
 }
 
