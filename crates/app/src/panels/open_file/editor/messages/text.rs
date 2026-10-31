@@ -672,7 +672,7 @@ impl MessageText {
             && ui
                 .clipboard()
                 .primary()
-                .is_some_and(|pasted| self.paste(&pasted))
+                .is_some_and(|pasted| self.paste(&pasted, version))
     }
 
     /// Whether the pointer was over the menu last pass.
@@ -680,9 +680,9 @@ impl MessageText {
         self.menu.as_ref().is_some_and(|menu| menu.list.over())
     }
 
-    /// `pasted` at the caret: raw text with its tags as chips in the Text
-    /// view, or as it is if it doesn't read.
-    fn paste(&mut self, pasted: &str) -> bool {
+    /// `pasted` at the caret: raw text with its tags as chips named by
+    /// `version` in the Text view, or as it is if it doesn't read.
+    fn paste(&mut self, pasted: &str, version: Option<Version>) -> bool {
         let pasted: String = pasted
             .chars()
             .filter(|&ch| tag_index(ch).is_none())
@@ -698,8 +698,7 @@ impl MessageText {
             swatches: std::mem::take(&mut self.swatches),
             ..Self::default()
         };
-        // Tags keep the label the raw text gave them, named or not.
-        let read = chips.read_raw(&pasted, None).is_ok();
+        let read = chips.read_raw(&pasted, version).is_ok();
         self.tags = chips.tags;
         self.labels = chips.labels;
         self.label_ends = chips.label_ends;
@@ -793,7 +792,7 @@ impl MessageText {
                     else {
                         continue;
                     };
-                    changed |= self.edit(ui, edit);
+                    changed |= self.edit(ui, edit, version);
                 }
             }
         }
@@ -823,7 +822,7 @@ impl MessageText {
     }
 
     /// Carries out `edit`, copying and pasting raw text.
-    fn edit(&mut self, ui: &mut Ui, edit: Edit) -> bool {
+    fn edit(&mut self, ui: &mut Ui, edit: Edit, version: Option<Version>) -> bool {
         match edit {
             Edit::Copy | Edit::Cut => {
                 let mut raw = String::new();
@@ -840,11 +839,11 @@ impl MessageText {
             Edit::Paste => ui
                 .clipboard()
                 .text()
-                .is_some_and(|pasted| self.paste(&pasted)),
+                .is_some_and(|pasted| self.paste(&pasted, version)),
             Edit::PastePrimary => ui
                 .clipboard()
                 .primary()
-                .is_some_and(|pasted| self.paste(&pasted)),
+                .is_some_and(|pasted| self.paste(&pasted, version)),
             _ => self.apply(ui, edit),
         }
     }
@@ -1250,11 +1249,12 @@ mod tests {
     fn pasting_raw_text_makes_chips_and_other_text_stays_as_it_is() {
         let mut chips = loaded(false);
         chips.selection = Selection::at(0);
-        assert!(chips.paste("{0:0}!"));
-        assert!(chips.paste("{nope}"));
+        assert!(chips.paste("{0:7:001E}!", Some(Version::GcnUsa)));
+        assert_eq!(chips.label(1), "Pause 30");
+        assert!(chips.paste("{nope}", None));
         let mut raw = String::new();
         chips.write_raw(0..chips.text.len(), &mut raw);
-        assert_eq!(raw, "{0:0}!{{nope}a{{b{0:7:001E}\nc");
+        assert_eq!(raw, "{0:7:001E}!{{nope}a{{b{0:7:001E}\nc");
     }
 
     #[test]
