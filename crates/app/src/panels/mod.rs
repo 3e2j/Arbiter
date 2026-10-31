@@ -157,7 +157,7 @@ impl Panel {
     }
 
     /// Does `commands`, pressed while it has focus, before its `ui`.
-    pub fn act(&mut self, ui: &mut Ui, commands: &[AppCommand], documents: &Documents) {
+    pub fn act(&mut self, ui: &mut Ui, commands: &[AppCommand], documents: &mut Documents) {
         match self {
             Self::FileTree(tree) => tree.act(commands),
             Self::OpenFile(file) => file.act(ui, commands, documents),

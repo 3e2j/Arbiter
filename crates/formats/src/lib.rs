@@ -90,8 +90,9 @@ pub trait Editable {
     /// rechecking.
     fn apply(&mut self, edit: Self::Edit) -> (Self::Edit, Vec<Self::Item>);
 
-    /// Whether `next` joins `edit`'s undo step, such as typing in one field.
-    fn merges(_edit: &Self::Edit, _next: &Self::Edit) -> bool {
+    /// Whether `next` joins the step `undo` reverses, such as typing in one
+    /// field.
+    fn merges(_undo: &Self::Edit, _next: &Self::Edit) -> bool {
         false
     }
 }

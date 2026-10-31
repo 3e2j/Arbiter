@@ -8,6 +8,9 @@
 //!
 //! Hovering a field shows its notes.
 //!
+//! Undo and redo step through the shown file's edits, even while typing in
+//! one of its fields.
+//!
 //! When a game's tables name the format's values, a Raw button beside the
 //! lock shows every section as the file holds it, such as text with its tags
 //! written out and attributes as bytes. Without tables that's all there is,
@@ -21,6 +24,7 @@
 
 use std::fmt::Write;
 
+use gui::input::{Key, Modifiers};
 use gui::ui::{Align, Direction, Element, Length, TextStyle, Ui};
 use serde::{Deserialize, Serialize};
 
@@ -33,7 +37,7 @@ use crate::components::{
 };
 use crate::documents::{Document, Documents};
 use crate::edit;
-use crate::keymap::{AppCommand, KeyContext};
+use crate::keymap::{AppCommand, Chord, KeyContext};
 use crate::theme::{self, HOVER_THUMB};
 
 /// A label's share of its field's width.
@@ -45,6 +49,8 @@ const NUMBER_WIDTH: f32 = 68.;
 
 pub const INSPECTOR: KeyContext = KeyContext("inspector");
 const RAW: AppCommand = AppCommand("inspector.raw");
+const UNDO: AppCommand = AppCommand("inspector.undo");
+const REDO: AppCommand = AppCommand("inspector.redo");
 
 pub struct Inspector {
     locked: bool,
@@ -110,13 +116,35 @@ pub struct InspectorState {
 }
 
 impl Inspector {
-    /// Once for every inspector, unbound until the user binds it.
-    pub const COMMANDS: [Command; 1] = [Command {
-        id: RAW,
-        name: "Show raw",
-        context: INSPECTOR,
-        chords: &[],
-    }];
+    /// Once for every inspector. Undo and redo are global, as a field
+    /// typed in has the keys before the inspector does.
+    pub const COMMANDS: [Command; 3] = {
+        const Z: Key = Key::Char('z');
+        const COMMAND: Modifiers = Modifiers::COMMAND;
+        [
+            Command {
+                id: RAW,
+                name: "Show raw",
+                context: INSPECTOR,
+                chords: &[],
+            },
+            Command {
+                id: UNDO,
+                name: "Undo",
+                context: KeyContext::GLOBAL,
+                chords: &[Chord::new(Z, COMMAND)],
+            },
+            Command {
+                id: REDO,
+                name: "Redo",
+                context: KeyContext::GLOBAL,
+                chords: &[
+                    Chord::new(Z, COMMAND.with(Modifiers::SHIFT)),
+                    Chord::new(Key::Char('y'), COMMAND),
+                ],
+            },
+        ]
+    };
 
     pub fn new() -> Self {
         let mut scroll = Scroll::default();
@@ -147,14 +175,30 @@ impl Inspector {
         }
     }
 
-    /// Does `commands`, the [`INSPECTOR`] ones pressed while it has focus,
-    /// when what it shows has a Raw button.
-    pub(super) fn act(&mut self, commands: &[AppCommand], documents: &Documents) {
-        let tables = self.shown.as_ref().is_some_and(|shown| {
-            matches!(documents.get(&shown.path), Some(Document::Decoded(format)) if format.tables())
-        });
-        if tables && commands.contains(&RAW) {
-            self.fields.flip_raw();
+    /// Does `commands`, pressed while it has focus, to what it shows: Raw
+    /// when that has a Raw button, and undo and redo.
+    pub(super) fn act(&mut self, commands: &[AppCommand], documents: &mut Documents) {
+        let format = self
+            .shown
+            .as_ref()
+            .and_then(|shown| documents.get_mut(&shown.path));
+        let Some(Document::Decoded(format)) = format else {
+            return;
+        };
+        for &command in commands {
+            let moved = if command == RAW && format.tables() {
+                self.fields.flip_raw();
+                false
+            } else if command == UNDO {
+                format.undo()
+            } else if command == REDO {
+                format.redo()
+            } else {
+                false
+            };
+            if moved {
+                self.fields.message.reload();
+            }
         }
     }
 

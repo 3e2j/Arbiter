@@ -68,6 +68,9 @@ pub struct MessageText {
     goal: Option<f32>,
     /// Why the text isn't written.
     refused: Option<String>,
+    /// Whether this pass's change was a pick from the menu, an undo step of
+    /// its own.
+    picked: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -190,6 +193,17 @@ impl MessageText {
         (help, segments.ok())
     }
 
+    /// Whether the text typed this pass was a pick from the menu.
+    pub const fn picked(&self) -> bool {
+        self.picked
+    }
+
+    /// Shows the file's text again on the next pass, even while it has the
+    /// keyboard, for when the text changed under it.
+    pub const fn reload(&mut self) {
+        self.key = None;
+    }
+
     /// The open box's text, as typed and pointed at. Returns whether it
     /// changed.
     fn edit_box(
@@ -246,9 +260,9 @@ impl MessageText {
             .filter(|_| ui.hovered() && self.menu.is_none())
             .and_then(|([left, top], [x, y])| self.tag_at([x - left, y - top]));
         // Not on the pass it opens, which would search for its `{`.
-        if focused && opened && self.menu.is_some() {
-            changed |= self.menu(ui, version, [padding; 2]);
-        }
+        self.picked =
+            focused && opened && self.menu.is_some() && self.menu(ui, version, [padding; 2]);
+        changed |= self.picked;
         if self.selection != before && !self.selection.is_empty() {
             let mut raw = String::new();
             self.write_raw(self.selection.range(), &mut raw);

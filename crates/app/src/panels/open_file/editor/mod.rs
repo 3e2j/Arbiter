@@ -64,6 +64,20 @@ impl Format {
         }
     }
 
+    /// Reverses its last edit. Returns whether there was one.
+    pub fn undo(&mut self) -> bool {
+        match self {
+            Self::Messages(doc) => doc.undo(),
+        }
+    }
+
+    /// Does its last edit undone again. Returns whether there was one.
+    pub fn redo(&mut self) -> bool {
+        match self {
+            Self::Messages(doc) => doc.redo(),
+        }
+    }
+
     /// How many edits it's had, so what's made from it knows to remake.
     pub const fn edits(&self) -> u32 {
         match self {

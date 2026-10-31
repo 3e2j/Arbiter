@@ -10,6 +10,7 @@ pub mod components;
 mod documents;
 pub mod edit;
 mod fs;
+mod history;
 pub mod keymap;
 mod panels;
 mod settings;
@@ -237,7 +238,7 @@ impl App for Editor {
         let commands = self.commands(ui);
         self.settings.act(&commands);
         if let Some(panel) = self.workspace.focused() {
-            panel.act(ui, &commands, &self.documents);
+            panel.act(ui, &commands, &mut self.documents);
         }
         let mut cx = Context {
             project: self.project.as_deref(),

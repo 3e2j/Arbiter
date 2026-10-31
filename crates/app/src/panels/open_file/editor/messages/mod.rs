@@ -16,11 +16,12 @@ mod lines;
 mod text;
 
 use std::fmt::Write;
+use std::time::Instant;
 
 use diag::Diagnostics;
 use formats::games::tp::Version;
 use formats::games::tp::jsystem::jmessage::{Args, Tag, find_tag, text_color, values};
-use formats::jsystem::jmessage::bmg::{Bmg, TextSegment};
+use formats::jsystem::jmessage::bmg::{Bmg, BmgEdit, TextSegment};
 use formats::{ByteWriter, Decode, Encode};
 use gui::canvas::Color;
 use gui::ui::{Direction, Element, Length, TextStyle, Ui};
@@ -29,6 +30,7 @@ use crate::components::{
     ListScroll, Swatch, TextField, fit_list, line_box, notice, row, rule, text_field, toggle,
     toolbar,
 };
+use crate::history::History;
 use crate::theme;
 use lines::{Find, Lines, line};
 
@@ -49,7 +51,8 @@ pub struct MessagesDoc {
     digits: usize,
     /// Each message's text, by position.
     lines: Lines,
-    /// How many edits it's had.
+    history: History<BmgEdit>,
+    /// How many edits it's had, counting undo and redo.
     pub edits: u32,
 }
 
@@ -114,8 +117,47 @@ impl MessagesDoc {
             ids,
             digits: widest.to_string().len().max(POSITION.len()),
             lines,
+            history: History::default(),
             edits: 0,
         }
+    }
+
+    /// `edit` as a step of its history, or part of the last step while
+    /// that's open and was edited a moment ago.
+    fn edit(&mut self, edit: BmgEdit) {
+        let text = matches!(edit, BmgEdit::Text { .. });
+        if self
+            .history
+            .apply(&mut self.bmg, edit, Instant::now())
+            .is_empty()
+        {
+            return;
+        }
+        self.edits = self.edits.wrapping_add(1);
+        if text {
+            self.lines = lines(&self.bmg, self.version);
+        }
+    }
+
+    /// Reverses the last step. Returns whether there was one.
+    pub fn undo(&mut self) -> bool {
+        let undone = self.history.undo(&mut self.bmg).is_some();
+        self.moved(undone)
+    }
+
+    /// Does the last step undone again. Returns whether there was one.
+    pub fn redo(&mut self) -> bool {
+        let redone = self.history.redo(&mut self.bmg).is_some();
+        self.moved(redone)
+    }
+
+    /// After an undo or redo, which may have been to text.
+    fn moved(&mut self, moved: bool) -> bool {
+        if moved {
+            self.edits = self.edits.wrapping_add(1);
+            self.lines = lines(&self.bmg, self.version);
+        }
+        moved
     }
 
     pub fn encode(&self) -> formats::Result<Vec<u8>> {

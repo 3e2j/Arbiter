@@ -65,8 +65,8 @@ impl Editable for Bmg {
 
     /// Typing over the same bytes, or in the same message's text, is one
     /// step.
-    fn merges(edit: &BmgEdit, next: &BmgEdit) -> bool {
-        match (edit, next) {
+    fn merges(undo: &BmgEdit, next: &BmgEdit) -> bool {
+        match (undo, next) {
             (
                 BmgEdit::Attributes { message, at, bytes },
                 BmgEdit::Attributes {

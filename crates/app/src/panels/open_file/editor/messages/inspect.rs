@@ -6,7 +6,6 @@
 
 use std::fmt::Write;
 
-use formats::Editable;
 use formats::games::tp::Version;
 use formats::games::tp::jsystem::jmessage::{Layout, layout, values};
 use formats::jsystem::jmessage::bmg::BmgEdit;
@@ -33,9 +32,14 @@ impl MessagesDoc {
     }
 
     /// The message at `index`'s fields, setting its attributes as they're
-    /// typed in. Returns the label and help of the field under the pointer,
-    /// if it has help.
+    /// typed in. Typing is one undo step until it pauses or leaves the
+    /// field, and a pick from a menu is one of its own.
+    /// Returns the label and help of the field under the pointer, if it has
+    /// help.
     pub fn inspect(&mut self, ui: &mut Ui, index: usize, fields: &mut Fields) -> Over {
+        if !ui.typing() {
+            self.history.seal();
+        }
         let message = self.bmg.messages.get(index)?;
         let (key, id) = (message.key, message.id);
         let mut over = None;
@@ -64,10 +68,14 @@ impl MessagesDoc {
                 over = help;
             }
             if let Some(text) = typed {
-                // As with attributes, the undo edit waits for history.
-                self.bmg.apply(BmgEdit::Text { message: key, text });
-                self.edits = self.edits.wrapping_add(1);
-                self.lines = super::lines(&self.bmg, self.version);
+                let picked = fields.message.picked();
+                if picked {
+                    self.history.seal();
+                }
+                self.edit(BmgEdit::Text { message: key, text });
+                if picked {
+                    self.history.seal();
+                }
             }
         });
         section(ui, fields, "Attributes", |ui, fields| {
@@ -85,13 +93,11 @@ impl MessagesDoc {
                 attribute_bytes(ui, fields, layout, attributes, &mut over)
             };
             if let Some((at, bytes)) = set {
-                // The undo edit is dropped until there's history to keep it in.
-                self.bmg.apply(BmgEdit::Attributes {
+                self.edit(BmgEdit::Attributes {
                     message: key,
                     at,
                     bytes,
                 });
-                self.edits = self.edits.wrapping_add(1);
             }
         });
         over
