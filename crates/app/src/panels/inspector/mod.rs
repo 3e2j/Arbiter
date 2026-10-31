@@ -57,9 +57,11 @@ pub struct Fields {
     drawn: usize,
     /// The open dropdown, by the draw order of the number box beside it.
     menu: Option<(usize, Dropdown)>,
-    /// A [`named`] field's values and their choices, rebuilt for each.
+    /// A [`named`] field's values, their names, and the values as text,
+    /// rebuilt for each.
     values: Vec<u16>,
-    choices: Vec<Choice<'static>>,
+    names: Vec<&'static str>,
+    details: Vec<String>,
     scratch: String,
     /// Which segment the format's view switch is on.
     pub view: u16,
@@ -352,14 +354,22 @@ pub fn named(
         ui.element(row, |ui| {
             let key = fields.drawn;
             fields.values.clear();
-            fields.choices.clear();
+            fields.names.clear();
+            fields.details.clear();
             for (value, name) in names {
                 fields.values.push(value);
-                fields.choices.push(Choice::new(name));
+                fields.names.push(name);
+                fields.details.push(value.to_string());
             }
+            let mut choices: Vec<Choice> = fields
+                .names
+                .iter()
+                .zip(&fields.details)
+                .map(|(name, detail)| Choice::new(name).detail(detail))
+                .collect();
             let selected = fields.values.iter().position(|&named| named == value);
             let selected = selected.unwrap_or_else(|| {
-                fields.choices.push(Choice::new("Custom"));
+                choices.push(Choice::new("Custom"));
                 fields.values.len()
             });
             let mut menu = fields
@@ -370,7 +380,7 @@ pub fn named(
                 title: label,
                 placeholder: "Search",
             };
-            let chosen = dropdown(ui, &mut menu, &fields.choices, selected, Some(search));
+            let chosen = dropdown(ui, &mut menu, &choices, selected, Some(search));
             if menu.is_open() {
                 fields.menu = Some((key, menu));
             }
