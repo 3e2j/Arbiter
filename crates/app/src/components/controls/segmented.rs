@@ -39,7 +39,7 @@ pub fn segmented(ui: &mut Ui, labels: &[&str], at: u16) -> Option<u16> {
         for (n, label) in (0..).zip(labels) {
             ui.element(segment, |ui| {
                 let on = n == at;
-                ui.style().background = on.then_some(c.selected);
+                ui.style().background = on.then_some(c.raised);
                 let color = if on || ui.hovered() { c.text } else { c.dim };
                 let style = TextStyle {
                     size: s.text - 1.,

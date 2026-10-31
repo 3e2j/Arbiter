@@ -29,7 +29,7 @@ pub fn chip_on(ui: &mut Ui, label: &str, swatch: Option<Swatch>, background: Opt
     let theme = theme::current();
     let Some(swatch) = swatch else {
         let element = Element {
-            background: background.or(Some(theme.color.selected)),
+            background: background.or(Some(theme.color.raised)),
             ..pill(&theme)
         };
         ui.element(element, |ui| {
@@ -118,6 +118,6 @@ fn pill(theme: &Theme) -> Element {
 fn label_style(theme: &Theme) -> TextStyle {
     TextStyle {
         size: theme.size.text - 2.,
-        ..theme.ui_text(theme.color.text)
+        ..theme.ui_text(theme.color.dim)
     }
 }

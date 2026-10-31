@@ -57,7 +57,8 @@ pub struct ThemeColors {
     pub text: Color,
     /// Icons and secondary text.
     pub dim: Color,
-    /// Raised off a surface: under the pointer, and buttons at rest.
+    /// Raised off a surface: under the pointer, buttons at rest, the chosen
+    /// segment, tag chips.
     pub raised: Color,
     /// The selected row and buttons under the pointer.
     pub selected: Color,
