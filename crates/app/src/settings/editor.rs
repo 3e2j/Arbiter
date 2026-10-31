@@ -1,22 +1,12 @@
 //! How editing behaves: for now, what a middle click does.
 
-use crate::components::{notice, switch};
-use gui::{
-    clipboard::Clipboard,
-    ui::{
-        Align, Direction, Element, Length, Ui,
-        anim::{Tween, ease_in_out},
-    },
-};
+use crate::components::notice;
+use gui::{clipboard::Clipboard, ui::Ui, ui::anim::Tween};
 
 use serde::{Deserialize, Serialize};
 
 use super::saved::{OnByDefault, lenient};
-use super::widgets::{beside, setting, sized};
-use crate::theme;
-
-/// How long the switch's knob takes to cross.
-const SLIDE_SECONDS: f32 = 0.16;
+use super::widgets::switch_setting;
 
 /// What's kept of the page in the settings file.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -59,31 +49,13 @@ impl Editor {
             notice(ui, "Nothing to set here yet.");
             return;
         }
-        let changed = self.middle_click_paste != OnByDefault::default().0;
-        self.slide.go(self.middle_click_paste);
-        let on = ease_in_out(self.slide.step(ui, SLIDE_SECONDS));
-        let state = if self.middle_click_paste { "On" } else { "Off" };
-        let end = Element {
-            direction: Direction::LeftToRight,
-            size: [Length::Grow, Length::Fit],
-            gap: 10.,
-            align: [Align::End, Align::Center],
-            ..Element::DEFAULT
-        };
-        setting(ui, |ui| {
-            let desc = Some("Pastes the primary selection.");
-            let (reset, flipped) = beside(ui, "Middle-click paste", desc, changed, |ui| {
-                ui.element(end, |ui| {
-                    let theme = theme::current();
-                    ui.text(sized(&theme, -1., theme.color.dim), state);
-                    switch(ui, on)
-                })
-            });
-            if reset {
-                self.middle_click_paste = OnByDefault::default().0;
-            } else if flipped {
-                self.middle_click_paste = !self.middle_click_paste;
-            }
-        });
+        switch_setting(
+            ui,
+            "Middle-click paste",
+            Some("Pastes the primary selection."),
+            &mut self.middle_click_paste,
+            OnByDefault::default().0,
+            &mut self.slide,
+        );
     }
 }

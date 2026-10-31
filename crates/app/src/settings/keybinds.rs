@@ -22,7 +22,7 @@ use gui::{
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use super::widgets::{DOT, DOT_GAP, dot, key_cap, key_cap_width, setting, sized};
+use super::widgets::{DOT, DOT_GAP, dot, heading, key_cap, key_cap_width, setting, sized};
 use crate::assets::Icon;
 use crate::commands::{self, Command};
 use crate::theme;
@@ -310,19 +310,6 @@ fn clash(all: &[Vec<Chord>], command: &Command, chords: &[Chord]) -> Option<(&'s
         let shared = theirs.iter().find(|chord| chords.contains(chord))?;
         Some((other.name, *shared))
     })
-}
-
-/// A group's name over its rows, lined up with their names.
-fn heading(ui: &mut Ui, name: &str) {
-    let theme = theme::current();
-    let element = Element {
-        size: [Length::Grow, Length::Fit],
-        padding: [0., 18., 0., 2.],
-        ..Element::DEFAULT
-    };
-    ui.element(element, |ui| {
-        ui.text(sized(&theme, -1., theme.color.accent), name);
-    });
 }
 
 /// What the keys did while recording, as far as [`take`] has seen.

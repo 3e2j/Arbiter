@@ -1,9 +1,12 @@
 //! What the pages build their rows from.
 
-use crate::components::{IconState, icon_button};
+use crate::components::{IconState, icon_button, switch};
 use gui::{
     canvas::Color,
-    ui::{Align, Direction, Element, Length, TextStyle, Ui},
+    ui::{
+        Align, Direction, Element, Length, TextStyle, Ui,
+        anim::{Tween, ease_in_out},
+    },
 };
 
 use crate::assets::Icon;
@@ -54,6 +57,59 @@ pub fn setting(ui: &mut Ui, body: impl FnOnce(&mut Ui)) {
         ..Element::DEFAULT
     };
     ui.element(element, body);
+}
+
+/// A group's name over its rows, lined up with their names.
+pub fn heading(ui: &mut Ui, name: &str) {
+    let theme = theme::current();
+    let element = Element {
+        size: [Length::Grow, Length::Fit],
+        padding: [0., 18., 0., 2.],
+        ..Element::DEFAULT
+    };
+    ui.element(element, |ui| {
+        ui.text(sized(&theme, -1., theme.color.accent), name);
+    });
+}
+
+/// How long a switch's knob takes to cross.
+const SLIDE_SECONDS: f32 = 0.16;
+
+/// A setting that's on or off, as a switch beside its name whose knob
+/// `slide` carries. Reset puts back `default`.
+pub fn switch_setting(
+    ui: &mut Ui,
+    name: &str,
+    desc: Option<&str>,
+    on: &mut bool,
+    default: bool,
+    slide: &mut Tween,
+) {
+    let changed = *on != default;
+    slide.go(*on);
+    let shown = ease_in_out(slide.step(ui, SLIDE_SECONDS));
+    let state = if *on { "On" } else { "Off" };
+    let end = Element {
+        direction: Direction::LeftToRight,
+        size: [Length::Grow, Length::Fit],
+        gap: 10.,
+        align: [Align::End, Align::Center],
+        ..Element::DEFAULT
+    };
+    setting(ui, |ui| {
+        let (reset, flipped) = beside(ui, name, desc, changed, |ui| {
+            ui.element(end, |ui| {
+                let theme = theme::current();
+                ui.text(sized(&theme, -1., theme.color.dim), state);
+                switch(ui, shown)
+            })
+        });
+        if reset {
+            *on = default;
+        } else if flipped {
+            *on = !*on;
+        }
+    });
 }
 
 /// How wide a control beside its label is, so they line up down a page.
