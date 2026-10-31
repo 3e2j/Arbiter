@@ -35,8 +35,6 @@ const LABEL_SHARE: f32 = 0.38;
 const LABEL_MIN: f32 = 64.;
 /// A number box beside a dropdown of names.
 const NUMBER_WIDTH: f32 = 68.;
-/// Bytes to a row of a [`byte_grid`].
-const GRID_COLUMNS: usize = 8;
 
 pub struct Inspector {
     locked: bool,
@@ -383,7 +381,8 @@ pub fn named(
     (hovered, set)
 }
 
-/// A box per byte of `bytes`, in hex, eight to a row under their offsets.
+/// A box per byte of `bytes`, in hex, eight to a row under their offsets,
+/// or four or two when eight don't fit.
 /// Returns the byte under the pointer, and the byte typed with where.
 #[track_caller]
 pub fn byte_grid(
@@ -415,12 +414,19 @@ pub fn byte_grid(
         size: s.text - 3.,
         ..theme.ui_text(c.dim)
     };
+    // Two digits, the field's padding, and its caret and border.
+    let cell_width = ui.measure(theme.ui_text(c.text), "FF")[0] + s.gap + 4.;
     let (over, typed, refused) = ui.element(grid, |ui| {
+        let width = ui.rect().map_or(f32::INFINITY, |rect| rect.w - 2. * s.gap);
+        let columns = [(8, 8.), (4, 4.), (2, 2.)]
+            .into_iter()
+            .find(|&(_, count)| count * cell_width + (count - 1.) * s.gap / 2. <= width)
+            .map_or(2, |(columns, _)| columns);
         let (mut over, mut typed, mut refused) = (None, None, None);
         let mut offset = String::new();
-        for (row_at, chunk) in (0..).step_by(GRID_COLUMNS).zip(bytes.chunks(GRID_COLUMNS)) {
+        for (row_at, chunk) in (0..).step_by(columns).zip(bytes.chunks(columns)) {
             ui.element(row, |ui| {
-                for column in 0..GRID_COLUMNS {
+                for column in 0..columns {
                     ui.element(cell, |ui| {
                         let Some(&byte) = chunk.get(column) else {
                             return;
