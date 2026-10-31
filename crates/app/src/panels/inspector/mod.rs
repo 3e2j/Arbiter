@@ -23,7 +23,7 @@ use super::{Context, Kind, MessageText, Request, Selection, file_name};
 use crate::assets::Icon;
 use crate::components::{
     Choice, Dropdown, IconState, Scroll, Search, TextField, Tooltip, dropdown, icon_button, notice,
-    rule, scroll, segmented, text_field, tooltip,
+    row, rule, scroll, segmented, text_field, tooltip,
 };
 use crate::documents::Document;
 use crate::edit;
@@ -65,6 +65,8 @@ pub struct Fields {
     scratch: String,
     /// Which segment the format's view switch is on.
     pub view: u16,
+    /// The titles of the sections closed, kept across selections.
+    closed: Vec<&'static str>,
     /// Boxed, as it's most of an inspector's size.
     pub message: Box<MessageText>,
 }
@@ -226,9 +228,11 @@ fn header<'a>(ui: &mut Ui, crumbs: impl Iterator<Item = &'a str>, locked: bool) 
     })
 }
 
-/// A section's heading in small capitals, under a rule.
+/// A section's heading in small capitals under a rule, after a chevron.
+/// Clicking it opens or closes the section, kept in `fields` by `title`.
+/// Returns whether it's open.
 #[track_caller]
-pub fn section(ui: &mut Ui, title: &str) {
+pub fn section(ui: &mut Ui, fields: &mut Fields, title: &'static str) -> bool {
     let theme = theme::current();
     let (c, s) = (theme.color, theme.size);
     let style = TextStyle {
@@ -237,10 +241,29 @@ pub fn section(ui: &mut Ui, title: &str) {
     };
     let element = Element {
         padding: [s.gap, 0., s.gap, 0.],
+        gap: s.icon_gap,
         ..Element::line(s.row + s.gap / 2.)
     };
+    let open = !fields.closed.contains(&title);
+    let icon = if open {
+        Icon::ChevronDown
+    } else {
+        Icon::ChevronRight
+    };
     rule(ui);
-    ui.element(element, |ui| ui.text(style, &title.to_uppercase()));
+    let (clicked, ()) = row(ui, element, false, |ui| {
+        ui.icon(icon, style.size, c.dim);
+        ui.text(style, &title.to_uppercase());
+    });
+    if !clicked {
+        return open;
+    }
+    if open {
+        fields.closed.push(title);
+    } else {
+        fields.closed.retain(|&closed| closed != title);
+    }
+    !open
 }
 
 /// A switch between `labels`, views of the section above, setting

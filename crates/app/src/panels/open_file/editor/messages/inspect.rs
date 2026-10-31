@@ -39,31 +39,35 @@ impl MessagesDoc {
         let key = message.key;
         let mut over = None;
         let mut value = String::new();
-        section(ui, "File");
-        let _ = write!(value, "{index}");
-        field(ui, "Position", &value);
-        if self.bmg.mid1.is_some() {
-            value.clear();
-            let _ = write!(value, "{}", message.id);
-            if field(ui, "ID", &value) {
-                over = Some(("ID", "From MID1, what the game looks it up by".to_owned()));
+        if section(ui, fields, "File") {
+            let _ = write!(value, "{index}");
+            field(ui, "Position", &value);
+            if self.bmg.mid1.is_some() {
+                value.clear();
+                let _ = write!(value, "{}", message.id);
+                if field(ui, "ID", &value) {
+                    over = Some(("ID", "From MID1, what the game looks it up by".to_owned()));
+                }
             }
         }
-        section(ui, "Text");
-        let (help, typed) = fields
-            .message
-            .ui(ui, message, self.bmg.encoding, self.version);
-        if let Some(help) = help {
-            over = Some(("Text", help.to_owned()));
+        if section(ui, fields, "Text") {
+            let (help, typed) = fields
+                .message
+                .ui(ui, message, self.bmg.encoding, self.version);
+            if let Some(help) = help {
+                over = Some(("Text", help.to_owned()));
+            }
+            if let Some(text) = typed {
+                // As with attributes, the undo edit waits for history.
+                self.bmg.apply(BmgEdit::Text { message: key, text });
+                self.edits = self.edits.wrapping_add(1);
+                self.lines = super::lines(&self.bmg, self.version);
+            }
         }
-        if let Some(text) = typed {
-            // As with attributes, the undo edit waits for history.
-            self.bmg.apply(BmgEdit::Text { message: key, text });
-            self.edits = self.edits.wrapping_add(1);
-            self.lines = super::lines(&self.bmg, self.version);
+        if !section(ui, fields, "Attributes") {
+            return over;
         }
         let message = self.bmg.messages.get(index)?;
-        section(ui, "Attributes");
         let tables = self
             .version
             .and_then(|version| Some((version, layout(version, self.bmg.attributes_len + 4)?)));
@@ -102,7 +106,9 @@ fn attribute_fields(
 ) -> Option<(usize, Box<[u8]>)> {
     let mut set = None;
     for section_layout in layout.sections {
-        section(ui, section_layout.title);
+        if !section(ui, fields, section_layout.title) {
+            continue;
+        }
         for record_field in section_layout.fields {
             let (Some(start), Some(read)) = (record_field.start(), record_field.read(attributes))
             else {
