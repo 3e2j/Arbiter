@@ -5,8 +5,9 @@
 use gui::canvas::Color;
 use gui::ui::Ui;
 
+use super::tag_tint;
 use crate::assets::Icon;
-use crate::components::{self, Atom, Chip, line_box, wrapped};
+use crate::components::{self, Atom, Chip, Swatch, line_box, wrapped};
 use crate::theme;
 
 #[derive(Default)]
@@ -31,12 +32,8 @@ struct Run {
 pub enum RunKind {
     Text,
     Chip,
-    /// A color tag's chip, and the color text after it draws in, plain when
-    /// `None`.
-    Color {
-        swatch: Color,
-        tint: Option<Color>,
-    },
+    /// A color tag's chip.
+    Color(Swatch),
     /// A line break, without text.
     Break,
 }
@@ -71,9 +68,9 @@ impl Lines {
     }
 
     /// A color tag's chip, as [`RunKind::Color`].
-    pub fn color(&mut self, label: impl FnOnce(&mut String), swatch: Color, tint: Option<Color>) {
+    pub fn color(&mut self, label: impl FnOnce(&mut String), swatch: Swatch) {
         label(&mut self.text);
-        self.push(RunKind::Color { swatch, tint });
+        self.push(RunKind::Color(swatch));
     }
 
     /// How many lines there are.
@@ -215,7 +212,7 @@ pub fn line(ui: &mut Ui, lines: &Lines, index: usize, height: f32) {
     let text = runs.map(|(kind, run)| match kind {
         RunKind::Text => components::Run::Text(run),
         RunKind::Chip => components::Run::Atom(Mark::Chip, run),
-        RunKind::Color { swatch, tint } => components::Run::Atom(Mark::Color(swatch, tint), run),
+        RunKind::Color(swatch) => components::Run::Atom(Mark::Color(swatch), run),
         RunKind::Break => components::Run::Atom(Mark::Break, run),
     });
     wrapped(ui, theme.ui_text(c.text), height, text);
@@ -225,8 +222,7 @@ pub fn line(ui: &mut Ui, lines: &Lines, index: usize, height: f32) {
 #[derive(Clone, Copy)]
 enum Mark {
     Chip,
-    /// Its swatch, and the color text after it draws in, plain when `None`.
-    Color(Color, Option<Color>),
+    Color(Swatch),
     Break,
 }
 
@@ -234,7 +230,7 @@ impl Atom for Mark {
     fn width(self, ui: &mut Ui, label: &str) -> f32 {
         match self {
             Self::Chip => Chip(None).width(ui, label),
-            Self::Color(swatch, _) => Chip(Some(swatch)).width(ui, label),
+            Self::Color(swatch) => Chip(Some(swatch)).width(ui, label),
             Self::Break => theme::current().size.icon,
         }
     }
@@ -242,7 +238,7 @@ impl Atom for Mark {
     fn draw(self, ui: &mut Ui, label: &str) {
         match self {
             Self::Chip => Chip(None).draw(ui, label),
-            Self::Color(swatch, _) => Chip(Some(swatch)).draw(ui, label),
+            Self::Color(swatch) => Chip(Some(swatch)).draw(ui, label),
             Self::Break => {
                 let theme = theme::current();
                 ui.icon(Icon::CornerDownLeft, theme.size.icon, theme.color.dim);
@@ -252,7 +248,7 @@ impl Atom for Mark {
 
     fn text_color(self, style: Color) -> Option<Color> {
         match self {
-            Self::Color(_, tint) => Some(tint.unwrap_or(style)),
+            Self::Color(swatch) => Some(tag_tint(swatch).unwrap_or(style)),
             Self::Chip | Self::Break => None,
         }
     }

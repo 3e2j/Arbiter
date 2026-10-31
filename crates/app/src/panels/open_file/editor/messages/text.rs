@@ -28,7 +28,7 @@ use gui::ui::{Align, Anchor, Element, Length, TextCaret, TextHighlight, TextStyl
 
 use super::{push_tag, tag_swatch, tag_tint};
 use crate::components::{
-    Atom, Chip, Choice, Dropdown, Run, Search, chip_on, choice_list, segmented, wrap,
+    Atom, Chip, Choice, Dropdown, Run, Search, Swatch, chip_on, choice_list, segmented, wrap,
 };
 use crate::edit::{self, Edit, Lines, Motion, Selection};
 use crate::keymap::{self, ChordAction, KeyContext};
@@ -57,7 +57,7 @@ pub struct MessageText {
     labels: String,
     label_ends: Vec<usize>,
     /// Each tag's chip swatch.
-    swatches: Vec<Option<Color>>,
+    swatches: Vec<Option<Swatch>>,
     /// Laid out to the box's width, in order, and each line's.
     pieces: Vec<Piece>,
     lines: Vec<Line>,
@@ -335,7 +335,7 @@ impl MessageText {
         }
     }
 
-    fn swatch(&self, index: usize) -> Option<Color> {
+    fn swatch(&self, index: usize) -> Option<Swatch> {
         self.swatches.get(index).copied().flatten()
     }
 
@@ -834,20 +834,14 @@ impl MessageText {
                     let here = caret.filter(|_| !drawn);
                     if let Some(index) = piece.tag {
                         if let Some(swatch) = self.swatch(index) {
-                            let args = self.tags.get(index).map(|tag| &*tag.args);
-                            tint =
-                                tag_tint(swatch, args.unwrap_or_default()).unwrap_or(style.color);
+                            tint = tag_tint(swatch).unwrap_or(style.color);
                         }
                         if here == Some(piece.start) {
                             ui.text_layered(style, "", &[], Some(bar(0)));
                             drawn = true;
                         }
                         let selected = range.start <= piece.start && piece.end <= range.end;
-                        let fill = if focused && selected {
-                            c.selection
-                        } else {
-                            c.selected
-                        };
+                        let fill = (focused && selected).then_some(c.selection);
                         chip_on(ui, self.label(index), self.swatch(index), fill);
                         continue;
                     }

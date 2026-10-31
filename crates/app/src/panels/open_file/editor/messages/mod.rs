@@ -26,7 +26,8 @@ use gui::canvas::Color;
 use gui::ui::{Direction, Element, Length, TextStyle, Ui};
 
 use crate::components::{
-    ListScroll, TextField, fit_list, line_box, notice, row, rule, text_field, toggle, toolbar,
+    ListScroll, Swatch, TextField, fit_list, line_box, notice, row, rule, text_field, toggle,
+    toolbar,
 };
 use crate::theme;
 use lines::{Find, Lines, line};
@@ -261,7 +262,7 @@ fn lines(bmg: &Bmg, version: Option<Version>) -> Lines {
                 } => {
                     let label = |out: &mut String| push_tag(out, version, group, code, args);
                     match tag_swatch(version, group, code, args) {
-                        Some(swatch) => lines.color(label, swatch, tag_tint(swatch, args)),
+                        Some(swatch) => lines.color(label, swatch),
                         None => lines.chip(label),
                     }
                 }
@@ -308,20 +309,24 @@ fn push_tag(out: &mut String, version: Option<Version>, group: u8, code: u16, ar
     }
 }
 
-/// The dot a tag's chip shows: the color it sets text to.
-fn tag_swatch(version: Option<Version>, group: u8, code: u16, args: &[u8]) -> Option<Color> {
+/// What a color tag's chip shows: the color it sets text to, or a ring for
+/// Default, the box kind's own.
+fn tag_swatch(version: Option<Version>, group: u8, code: u16, args: &[u8]) -> Option<Swatch> {
     let tag = find_tag(version?, group, code)?;
     match (tag.args, args) {
-        (Args::Color, &[index]) => Some(Color::hex(text_color(index))),
+        (Args::Color, [0]) => Some(Swatch::Ring),
+        (Args::Color, &[index]) => Some(Swatch::Dot(Color::hex(text_color(index)))),
         _ => None,
     }
 }
 
-/// The color text after a color tag with `swatch` and `args` draws in.
-/// `None` for Default, the box kind's own, which isn't known here, so it
-/// draws as plain text.
-fn tag_tint(swatch: Color, args: &[u8]) -> Option<Color> {
-    (args != [0]).then_some(swatch)
+/// The color text after a color tag with `swatch` draws in, `None` for
+/// Default, which isn't known here, so it draws as plain text.
+const fn tag_tint(swatch: Swatch) -> Option<Color> {
+    match swatch {
+        Swatch::Dot(color) => Some(color),
+        Swatch::Ring => None,
+    }
 }
 
 #[cfg(test)]
