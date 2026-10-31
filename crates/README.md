@@ -7,8 +7,11 @@
 | `gui` | The gui engine: windowing, input, layout, drawing. |
 | `project` | Project storage: file tree, reading and saving, check, build, project management. |
 | `pack` | Unpacking a disc, and building one back. New build targets go here. |
-| `formats` | Bytes to structs and back, and editing them. |
+| `formats` | Bytes to structs and back, and editing them. Game tables included. |
 | `diag` | Diagnostic utility. |
+
+> [!NOTE]
+> Game tables are a best guess, read from the decomp and not tested in game. They only add names, and nothing depends on them.
 
 ## Editing a file
 
