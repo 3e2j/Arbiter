@@ -26,7 +26,7 @@ use gui::canvas::Color;
 use gui::input::{CursorIcon, Key, Modifiers, PointerButton, TypedInput};
 use gui::ui::{Align, Anchor, Element, Length, TextCaret, TextHighlight, TextStyle, Ui};
 
-use super::{push_tag, tag_swatch, tag_tint};
+use super::{push_tag, tag_swatch, tag_tint, tag_value};
 use crate::components::{
     Atom, Chip, Choice, Dropdown, Run, Search, Swatch, chip_on, choice_list, segmented, wrap,
 };
@@ -62,6 +62,8 @@ pub struct MessageText {
     pieces: Vec<Piece>,
     lines: Vec<Line>,
     menu: Option<Menu>,
+    /// The tag whose chip is under the pointer.
+    pointed: Option<usize>,
     /// Where Up and Down aim across, kept while they repeat.
     goal: Option<f32>,
     /// Why the text isn't written.
@@ -119,9 +121,10 @@ struct Line {
 
 impl MessageText {
     /// `message`'s text in an editor with a Text and Raw switch over it,
-    /// its tags named by `version`'s tables. Returns its help while it's
-    /// under the pointer and not being typed in, and the text typed, once it
-    /// reads and `encoding` holds it.
+    /// its tags named by `version`'s tables. Returns the title and help of
+    /// the chip under the pointer, or of the box while it's under the
+    /// pointer and not being typed in, and the text typed, once it reads and
+    /// `encoding` holds it.
     #[track_caller]
     pub fn ui(
         &mut self,
@@ -129,7 +132,7 @@ impl MessageText {
         message: &Message,
         encoding: Encoding,
         version: Option<Version>,
-    ) -> (Option<&'static str>, Option<Vec<TextSegment>>) {
+    ) -> (Option<(&'static str, String)>, Option<Vec<TextSegment>>) {
         let theme = theme::current();
         let (c, s) = (theme.color, theme.size);
         let switch = Element {
@@ -173,12 +176,16 @@ impl MessageText {
             };
             ui.element(outer, |ui| ui.text(note, refused));
         }
-        let help = hovered.then_some(match (self.raw, version) {
-            (true, _) => {
-                "A tag is {group:code}, or {group:code:args} with its argument bytes in hex. {{ is a {."
-            }
-            (false, Some(_)) => "Type { to pick a tag, or {{ for a {.",
-            (false, None) => "There are no tag tables for this game. Add tags in the Raw view.",
+        let pointed = self.pointed.and_then(|index| self.tags.get(index));
+        let help = pointed.map(|tag| tag.help(version)).or_else(|| {
+            let help = match (self.raw, version) {
+                (true, _) => {
+                    "A tag is {group:code}, or {group:code:args} with its argument bytes in hex. {{ is a {."
+                }
+                (false, Some(_)) => "Type { to pick a tag, or {{ for a {.",
+                (false, None) => "There are no tag tables for this game. Add tags in the Raw view.",
+            };
+            hovered.then(|| ("Text", help.to_owned()))
         });
         if !typed {
             return (help, None);
@@ -240,6 +247,10 @@ impl MessageText {
             self.lay_out(ui, style, width);
         }
         self.draw(ui, style, focused);
+        self.pointed = origin
+            .zip(ui.input().pointer())
+            .filter(|_| ui.hovered() && self.menu.is_none())
+            .and_then(|([left, top], [x, y])| self.tag_at([x - left, y - top]));
         // Not on the pass it opens, which would search for its `{`.
         if focused && opened && self.menu.is_some() {
             changed |= self.menu(ui, version, [padding; 2]);
@@ -1026,6 +1037,36 @@ impl RawTag {
         Some(Self { group, code, args })
     }
 
+    /// Its name in `version`'s tables, or "Tag" when they don't name it,
+    /// and its notes and its value's, then how it's written raw.
+    fn help(&self, version: Option<Version>) -> (&'static str, String) {
+        let mut help = String::new();
+        let named =
+            version.and_then(|version| Some((version, find_tag(version, self.group, self.code)?)));
+        if let Some((version, tag)) = named {
+            if let Some(notes) = tag.notes {
+                let _ = write!(help, "{notes}. ");
+            }
+            let entry = tag
+                .values
+                .zip(tag_value(tag, &self.args))
+                .and_then(|(table, value)| {
+                    values(version, table).find(|entry| u32::from(entry.value) == value)
+                });
+            if let Some(Entry {
+                name,
+                notes: Some(notes),
+                ..
+            }) = entry
+            {
+                let _ = write!(help, "{name}: {notes}. ");
+            }
+        }
+        help.push_str("Raw: ");
+        self.write(&mut help);
+        (named.map_or("Tag", |(_, tag)| tag.name), help)
+    }
+
     /// As [`Self::read`] reads it, in braces, onto `out`.
     fn write(&self, out: &mut String) {
         let _ = write!(out, "{{{}:{}", self.group, self.code);
@@ -1119,6 +1160,31 @@ mod tests {
             Some(Version::GcnUsa),
         );
         text
+    }
+
+    #[test]
+    fn a_chips_help_names_it_and_its_value_then_writes_it_raw() {
+        let tag = |group, code, args: &[u8]| RawTag {
+            group,
+            code,
+            args: args.into(),
+        };
+        let version = Some(Version::GcnUsa);
+        let pause = tag(0, 7, &[0, 30]).help(version);
+        assert_eq!(
+            pause,
+            (
+                "Pause",
+                "Pauses typing for the frames. Raw: {0:7:001E}".to_owned()
+            )
+        );
+        let (title, help) = tag(255, 0, &[0]).help(version);
+        assert_eq!(title, "Color");
+        assert!(help.contains("Default: White"), "{help}");
+        assert_eq!(
+            tag(255, 0, &[0]).help(None),
+            ("Tag", "Raw: {255:0:00}".to_owned())
+        );
     }
 
     #[test]

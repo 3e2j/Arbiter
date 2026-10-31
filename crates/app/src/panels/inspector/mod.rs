@@ -43,8 +43,9 @@ pub struct Inspector {
     /// What's shown's name, the tab's title while locked.
     name: String,
     scroll: Scroll,
-    /// Keyed by the field's label.
-    tooltip: Tooltip<&'static str>,
+    /// Keyed by the field's label and help, so it moves between fields or
+    /// chips that share a label.
+    tooltip: Tooltip<(&'static str, String)>,
     fields: Fields,
 }
 
@@ -178,7 +179,7 @@ impl Inspector {
             fields.drawn = 0;
             over = format.inspect(ui, shown.item, fields);
         });
-        if let Some(at) = tip.rest(ui, over.as_ref().map(|&(label, _)| label))
+        if let Some(at) = tip.rest(ui, over.clone())
             && let Some((label, help)) = &over
         {
             tooltip(ui, at, label, help);

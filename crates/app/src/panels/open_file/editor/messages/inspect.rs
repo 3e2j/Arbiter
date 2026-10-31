@@ -56,8 +56,8 @@ impl MessagesDoc {
             let (help, typed) = fields
                 .message
                 .ui(ui, message, self.bmg.encoding, self.version);
-            if let Some(help) = help {
-                over = Some(("Text", help.to_owned()));
+            if help.is_some() {
+                over = help;
             }
             if let Some(text) = typed {
                 // As with attributes, the undo edit waits for history.

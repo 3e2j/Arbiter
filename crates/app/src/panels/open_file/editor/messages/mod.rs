@@ -19,7 +19,7 @@ use std::fmt::Write;
 
 use diag::Diagnostics;
 use formats::games::tp::Version;
-use formats::games::tp::jsystem::jmessage::{Args, find_tag, text_color, values};
+use formats::games::tp::jsystem::jmessage::{Args, Tag, find_tag, text_color, values};
 use formats::jsystem::jmessage::bmg::{Bmg, TextSegment};
 use formats::{ByteWriter, Decode, Encode};
 use gui::canvas::Color;
@@ -288,13 +288,7 @@ fn push_tag(out: &mut String, version: Option<Version>, group: u8, code: u16, ar
     if tag.any_code {
         let _ = write!(out, " {code}");
     }
-    let value = match (tag.args, args) {
-        (Args::U8 | Args::Color, &[a]) => Some(u32::from(a)),
-        (Args::U16, &[a, b]) => Some(u32::from(u16::from_be_bytes([a, b]))),
-        (Args::U32, &[a, b, c, d]) => Some(u32::from_be_bytes([a, b, c, d])),
-        _ => None,
-    };
-    let Some(value) = value else {
+    let Some(value) = tag_value(tag, args) else {
         return;
     };
     let named = tag
@@ -307,6 +301,16 @@ fn push_tag(out: &mut String, version: Option<Version>, group: u8, code: u16, ar
         None => {
             let _ = write!(out, " {value}");
         }
+    }
+}
+
+/// `tag`'s argument as a number, when `args` holds one.
+fn tag_value(tag: &Tag, args: &[u8]) -> Option<u32> {
+    match (tag.args, args) {
+        (Args::U8 | Args::Color, &[a]) => Some(u32::from(a)),
+        (Args::U16, &[a, b]) => Some(u32::from(u16::from_be_bytes([a, b]))),
+        (Args::U32, &[a, b, c, d]) => Some(u32::from_be_bytes([a, b, c, d])),
+        _ => None,
     }
 }
 
