@@ -36,7 +36,10 @@ pub enum BmgDelta {
         bytes: Vec<u8>,
     },
     /// Written as [`raw`] text, so it reads in the patch file.
-    Text { message: MessageKey, text: String },
+    Text {
+        message: MessageKey,
+        text: String,
+    },
 }
 
 impl Patch for Bmg {
