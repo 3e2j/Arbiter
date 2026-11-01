@@ -27,8 +27,7 @@ pub struct Message {
 }
 
 /// One stretch of a message's text, still encoded.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TextSegment {
     Text(Vec<u8>),
     /// An escape sequence, split the way `JMessage::TProcessor::on_tag_`
