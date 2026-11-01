@@ -21,6 +21,7 @@ use std::fmt::Write;
 use formats::games::Entry;
 use formats::games::tp::Version;
 use formats::games::tp::jsystem::jmessage::{Args, Tag, find_tag, tags, text_color, values};
+use formats::jsystem::jmessage::bmg::raw::{self, RawError, RawPiece};
 use formats::jsystem::jmessage::bmg::{Encoding, Message, MessageKey, TextSegment};
 use gui::canvas::Color;
 use gui::input::{CursorIcon, Key, Modifiers, PointerButton, TypedInput};
@@ -307,29 +308,22 @@ impl MessageText {
         self.menu = None;
         self.goal = None;
         self.refused = None;
-        for segment in &message.text {
-            match segment {
-                TextSegment::Text(bytes) => {
-                    let text = encoding.decode(bytes);
-                    if self.raw {
-                        escape(&text, &mut self.text);
-                    } else {
-                        self.text.push_str(&text);
-                    }
-                }
-                &TextSegment::Tag {
-                    group,
-                    code,
-                    ref args,
-                } => {
-                    let tag = RawTag {
+        if self.raw {
+            raw::write(&message.text, encoding, &mut self.text);
+        } else {
+            for segment in &message.text {
+                match segment {
+                    TextSegment::Text(bytes) => self.text.push_str(&encoding.decode(bytes)),
+                    &TextSegment::Tag {
                         group,
                         code,
-                        args: args.as_slice().into(),
-                    };
-                    if self.raw {
-                        tag.write(&mut self.text);
-                    } else {
+                        ref args,
+                    } => {
+                        let tag = RawTag {
+                            group,
+                            code,
+                            args: args.as_slice().into(),
+                        };
                         self.push_tag(tag, version);
                     }
                 }
@@ -382,64 +376,22 @@ impl MessageText {
 
     /// The text as the file holds it.
     fn segments(&self, encoding: Encoding) -> Result<Vec<TextSegment>, String> {
-        if self.raw {
-            let mut chips = Self::default();
-            chips.read_raw(&self.text, None)?;
-            return chips.segments(encoding);
-        }
-        let mut segments = Vec::new();
-        let mut run = String::new();
-        let flush = |run: &mut String, segments: &mut Vec<TextSegment>| {
-            if run.is_empty() {
-                return Ok(());
-            }
-            let bytes = encoding
-                .encode(run)
-                .ok_or_else(|| unencodable(run, encoding))?;
-            segments.push(TextSegment::Text(bytes));
-            run.clear();
-            Ok::<_, String>(())
-        };
-        for ch in self.text.chars() {
-            let Some(tag) = tag_index(ch).and_then(|at| self.tags.get(at)) else {
-                run.push(ch);
-                continue;
-            };
-            flush(&mut run, &mut segments)?;
-            segments.push(TextSegment::Tag {
-                group: tag.group,
-                code: tag.code,
-                args: tag.args.to_vec(),
-            });
-        }
-        flush(&mut run, &mut segments)?;
-        Ok(segments)
+        let mut text = String::new();
+        self.write_raw(0..self.text.len(), &mut text);
+        raw::read(&text, encoding).map_err(|err| format!("{err} Not written."))
     }
 
     /// `raw` onto the end of the text, its tags as chips.
-    fn read_raw(&mut self, raw: &str, version: Option<Version>) -> Result<(), String> {
-        let mut rest = raw;
-        while let Some(open) = rest.find('{') {
-            self.text.push_str(rest.get(..open).unwrap_or_default());
-            let after = rest.get(open + 1..).unwrap_or_default();
-            if let Some(after) = after.strip_prefix('{') {
-                self.text.push('{');
-                rest = after;
-                continue;
+    fn read_raw(&mut self, raw: &str, version: Option<Version>) -> Result<(), RawError> {
+        for piece in raw::pieces(raw) {
+            match piece? {
+                RawPiece::Text(text) => self.text.push_str(text),
+                RawPiece::Tag { group, code, args } => {
+                    let args = args.into();
+                    self.push_tag(RawTag { group, code, args }, version);
+                }
             }
-            let at = raw.len() - after.len() - 1;
-            let tag = after
-                .find('}')
-                .and_then(|close| Some((RawTag::read(after.get(..close)?)?, close)));
-            let Some((tag, close)) = tag else {
-                return Err(format!(
-                    "The {{ at {at} doesn't open a group:code tag. Write {{{{ for a {{. Not written."
-                ));
-            };
-            self.push_tag(tag, version);
-            rest = after.get(close + 1..).unwrap_or_default();
         }
-        self.text.push_str(rest);
         Ok(())
     }
 
@@ -453,8 +405,8 @@ impl MessageText {
         let mut chunk = [0; 4];
         for ch in text.chars() {
             match tag_index(ch).and_then(|at| self.tags.get(at)) {
-                Some(tag) => tag.write(out),
-                None => escape(ch.encode_utf8(&mut chunk), out),
+                Some(tag) => raw::write_tag(tag.group, tag.code, &tag.args, out),
+                None => raw::escape(ch.encode_utf8(&mut chunk), out),
             }
         }
     }
@@ -1049,23 +1001,6 @@ impl MessageText {
 }
 
 impl RawTag {
-    /// `group:code`, or `group:code:args` with the args in hex, as between
-    /// a raw tag's braces.
-    fn read(text: &str) -> Option<Self> {
-        let mut parts = text.trim().splitn(3, ':');
-        let group = parts.next()?.trim().parse().ok()?;
-        let code = parts.next()?.trim().parse().ok()?;
-        let hex = parts.next().unwrap_or_default().trim();
-        if !hex.len().is_multiple_of(2) {
-            return None;
-        }
-        let args = (0..hex.len())
-            .step_by(2)
-            .map(|at| u8::from_str_radix(hex.get(at..at + 2)?, 16).ok())
-            .collect::<Option<_>>()?;
-        Some(Self { group, code, args })
-    }
-
     /// Its name in `version`'s tables, or "Tag" when they don't name it,
     /// and its notes and its value's, then how it's written raw.
     fn help(&self, version: Option<Version>) -> (&'static str, String) {
@@ -1092,20 +1027,8 @@ impl RawTag {
             }
         }
         help.push_str("Raw: ");
-        self.write(&mut help);
+        raw::write_tag(self.group, self.code, &self.args, &mut help);
         (named.map_or("Tag", |(_, tag)| tag.name), help)
-    }
-
-    /// As [`Self::read`] reads it, in braces, onto `out`.
-    fn write(&self, out: &mut String) {
-        let _ = write!(out, "{{{}:{}", self.group, self.code);
-        if !self.args.is_empty() {
-            out.push(':');
-            for byte in &self.args {
-                let _ = write!(out, "{byte:02X}");
-            }
-        }
-        out.push('}');
     }
 }
 
@@ -1120,16 +1043,6 @@ fn new_args(args: Args, value: u16) -> Box<[u8]> {
     }
 }
 
-/// `text` onto `out` with each `{` doubled, as raw text writes it.
-fn escape(text: &str, out: &mut String) {
-    for piece in text.split_inclusive('{') {
-        out.push_str(piece);
-        if piece.ends_with('{') {
-            out.push('{');
-        }
-    }
-}
-
 fn tag_char(index: usize) -> Option<char> {
     let index = u32::try_from(index).ok().filter(|&index| index < 0xFFFE)?;
     char::from_u32(PLANE + index)
@@ -1140,15 +1053,6 @@ fn tag_index(ch: char) -> Option<usize> {
         .checked_sub(PLANE)
         .filter(|&index| index < 0xFFFE)?;
     usize::try_from(index).ok()
-}
-
-/// Why `run` isn't written.
-fn unencodable(run: &str, encoding: Encoding) -> String {
-    let ch = run
-        .chars()
-        .find(|ch| encoding.encode(ch.encode_utf8(&mut [0; 4])).is_none())
-        .unwrap_or('?');
-    format!("The file's encoding, {encoding:?}, can't hold {ch:?}. Not written.")
 }
 
 #[cfg(test)]

@@ -32,6 +32,7 @@ mod encode;
 mod flow;
 mod message;
 mod patch;
+pub mod raw;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
