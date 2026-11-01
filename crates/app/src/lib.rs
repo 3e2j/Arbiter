@@ -237,6 +237,7 @@ impl App for Editor {
         self.settings.sync(ui);
         let commands = self.commands(ui);
         self.settings.act(&commands);
+        self.documents.act(&commands);
         if let Some(panel) = self.workspace.focused() {
             panel.act(ui, &commands, &mut self.documents);
         }

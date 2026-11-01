@@ -62,21 +62,22 @@ pub fn patch_path(changes: &Path, path: &str) -> PathBuf {
     changes.join(format!("{path}.patch"))
 }
 
-/// The base file's `bytes` decoded, with the patch at `patch` applied if
-/// there is one. Deltas that don't fit, and a base that has changed since
-/// the patch was saved, go to `diag`.
+/// The base file's `bytes` decoded, then again with the patch at `patch`
+/// applied if there is one. Deltas that don't fit, and a base that has
+/// changed since the patch was saved, go to `diag`.
 ///
 /// # Errors
 ///
 /// If the base doesn't decode, or the patch can't be read.
-pub fn open<T: Decode + Patch>(
+pub fn open<T: Decode + Patch + Clone>(
     patch: &Path,
     bytes: &[u8],
     diag: &mut Diagnostics,
-) -> Result<T, ChangeError> {
-    let mut document = T::decode(bytes, diag)?;
+) -> Result<(T, T), ChangeError> {
+    let base = T::decode(bytes, diag)?;
+    let mut document = base.clone();
     let text = match fs::read_to_string(patch) {
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(document),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok((base, document)),
         text => text.map_err(disk::io_err(patch))?,
     };
     let file: PatchFile<T::Delta> = toml::from_str(&text).map_err(|source| ChangeError::Read {
@@ -90,16 +91,16 @@ pub fn open<T: Decode + Patch>(
         ));
     }
     document.patch(&file.deltas, diag);
-    Ok(document)
+    Ok((base, document))
 }
 
-/// Writes what turns `base` into `edited` to `patch`, or removes it when
-/// they're the same. `bytes` are the base file's, for its hash.
+/// Writes what turns `base` into `edited` to `patch`, with `hash`, the base
+/// file's, or removes it when they're the same.
 ///
 /// # Errors
 ///
 /// If the patch can't be written or removed.
-pub fn save<T: Patch>(patch: &Path, bytes: &[u8], base: &T, edited: &T) -> Result<(), ChangeError> {
+pub fn save<T: Patch>(patch: &Path, hash: Hash, base: &T, edited: &T) -> Result<(), ChangeError> {
     let deltas = T::diff(base, edited);
     if deltas.is_empty() {
         return match fs::remove_file(patch) {
@@ -109,10 +110,7 @@ pub fn save<T: Patch>(patch: &Path, bytes: &[u8], base: &T, edited: &T) -> Resul
             _ => Ok(()),
         };
     }
-    let file = PatchFile {
-        base: Hash::of(bytes),
-        deltas,
-    };
+    let file = PatchFile { base: hash, deltas };
     if let Some(dir) = patch.parent() {
         fs::create_dir_all(dir).map_err(disk::io_err(dir))?;
     }
@@ -165,18 +163,21 @@ mod tests {
         let edited = bmg(b"Hello");
         let bytes = bytes(&base);
 
-        save(&patch, &bytes, &base, &edited).unwrap();
+        let hash = Hash::of(&bytes);
+        save(&patch, hash, &base, &edited).unwrap();
         let text = fs::read_to_string(&patch).unwrap();
         assert!(text.contains("[[delta]]") && text.contains("text = \"Hello\""));
         assert!(!text.contains("Hi"));
 
         let mut diag = Diagnostics::default();
-        assert_eq!(open::<Bmg>(&patch, &bytes, &mut diag).unwrap(), edited);
+        let opened = open::<Bmg>(&patch, &bytes, &mut diag).unwrap();
+        assert_eq!(opened, (base.clone(), edited));
         assert_eq!(diag.items, []);
 
-        save(&patch, &bytes, &base, &base).unwrap();
+        save(&patch, hash, &base, &base).unwrap();
         assert!(!patch.exists());
-        assert_eq!(open::<Bmg>(&patch, &bytes, &mut diag).unwrap(), base);
+        let opened = open::<Bmg>(&patch, &bytes, &mut diag).unwrap();
+        assert_eq!(opened, (base.clone(), base));
     }
 
     #[test]
@@ -184,10 +185,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let patch = patch_path(dir.path(), "zel_00.bmg");
         let base = bmg(b"Hi");
-        save(&patch, &bytes(&base), &base, &bmg(b"Hello")).unwrap();
+        save(&patch, Hash::of(&bytes(&base)), &base, &bmg(b"Hello")).unwrap();
 
         let mut diag = Diagnostics::default();
-        let opened = open::<Bmg>(&patch, &bytes(&bmg(b"Hey")), &mut diag).unwrap();
+        let (_, opened) = open::<Bmg>(&patch, &bytes(&bmg(b"Hey")), &mut diag).unwrap();
         assert_eq!(opened, bmg(b"Hello"));
         assert_eq!(diag.items.len(), 1);
         assert_eq!(diag.items[0].code, &BASE_CHANGED);

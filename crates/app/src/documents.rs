@@ -1,15 +1,24 @@
 //! Every open file, read and decoded once and kept by its path, for each tab
 //! that shows it. A file no tab shows any more is dropped.
+//!
+//! A base file opens with its patch over it, and saving writes its edits
+//! back to that patch.
 
 use std::collections::HashMap;
 use std::io;
+use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use formats::games::tp::Version;
+use gui::input::{Key, Modifiers};
 use project::Project;
 
+use crate::commands::Command;
 use crate::fs::{FileLoader, Loaded};
+use crate::keymap::{AppCommand, Chord, KeyContext};
 use crate::panels::Format;
+
+const SAVE: AppCommand = AppCommand("documents.save");
 
 pub struct Documents {
     /// Unless its thread couldn't start.
@@ -19,8 +28,9 @@ pub struct Documents {
 }
 
 pub enum Document {
-    /// Asked of the [`FileLoader`], with the TP version whose base it's in.
-    Loading(Receiver<Loaded>, Option<Version>),
+    /// Asked of the [`FileLoader`], with the TP version whose base it's in
+    /// and its patch.
+    Loading(Receiver<Loaded>, Option<Version>, Option<PathBuf>),
     /// Why it couldn't be read.
     Failed(String),
     /// Bytes no format claims.
@@ -29,6 +39,13 @@ pub enum Document {
 }
 
 impl Documents {
+    pub const COMMANDS: [Command; 1] = [Command {
+        id: SAVE,
+        name: "Save",
+        context: KeyContext::GLOBAL,
+        chords: &[Chord::new(Key::Char('s'), Modifiers::COMMAND)],
+    }];
+
     pub fn new(loader: Option<FileLoader>) -> Self {
         Self {
             loader,
@@ -42,7 +59,8 @@ impl Documents {
         if !self.open.contains_key(path) {
             let (project, loader) = (project?, self.loader.as_ref()?);
             let loading = loader.ask(project.root.join(path));
-            let document = Document::Loading(loading, version(project, path));
+            let patch_file = project.patch_of(path);
+            let document = Document::Loading(loading, version(project, path), patch_file);
             self.open.insert(path.to_owned(), document);
         }
         self.open.get_mut(path)
@@ -60,7 +78,7 @@ impl Documents {
     /// it.
     pub fn poll(&mut self) {
         for (path, document) in &mut self.open {
-            let Document::Loading(loading, version) = document else {
+            let Document::Loading(loading, version, patch_file) = document else {
                 continue;
             };
             let read = match loading.try_recv() {
@@ -69,12 +87,26 @@ impl Documents {
                 Err(TryRecvError::Disconnected) => Err(io::Error::other("the loader stopped")),
             };
             *document = match read {
-                Ok(bytes) => match Format::open(path, &bytes, *version) {
+                Ok(bytes) => match Format::open(path, &bytes, *version, patch_file.take()) {
                     Some(format) => Document::Decoded(format),
                     None => Document::Raw(bytes),
                 },
                 Err(err) => Document::Failed(format!("Can't read {path}: {err}")),
             };
+        }
+    }
+
+    /// Does `commands`: saving writes every edited file to its patch.
+    pub fn act(&mut self, commands: &[AppCommand]) {
+        if !commands.contains(&SAVE) {
+            return;
+        }
+        for (path, document) in &mut self.open {
+            if let Document::Decoded(format) = document
+                && let Err(err) = format.save()
+            {
+                tracing::warn!("can't save {path}: {err}");
+            }
         }
     }
 

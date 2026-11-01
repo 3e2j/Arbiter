@@ -16,6 +16,7 @@ mod lines;
 mod text;
 
 use std::fmt::Write;
+use std::path::PathBuf;
 use std::time::Instant;
 
 use diag::Diagnostics;
@@ -25,6 +26,8 @@ use formats::jsystem::jmessage::bmg::{Bmg, BmgEdit, TextSegment};
 use formats::{ByteWriter, Decode, Encode};
 use gui::canvas::Color;
 use gui::ui::{Direction, Element, Length, TextStyle, Ui};
+use project::changes::{self, ChangeError};
+use project::hash::Hash;
 
 use crate::components::{
     ListScroll, Swatch, TextField, fit_list, line_box, notice, row, rule, text_field, toggle,
@@ -53,6 +56,17 @@ pub struct MessagesDoc {
     history: History<BmgEdit, Selection>,
     /// How many edits it's had, counting undo and redo.
     pub edits: u32,
+    /// `None` outside a mod's base, where there's nothing to patch.
+    base: Option<Base>,
+    /// `edits` when it was last saved.
+    saved: u32,
+}
+
+/// The unpatched file a mod's edits are saved against.
+struct Base {
+    bmg: Bmg,
+    hash: Hash,
+    patch: PathBuf,
 }
 
 /// How one tab looks at a [`MessagesDoc`].
@@ -75,19 +89,38 @@ pub struct MessagesView {
 }
 
 impl MessagesDoc {
-    /// `bytes` as messages, or `None` when they aren't a message file or
-    /// don't decode. Logs what decoding noticed, with `path`.
-    pub fn open(path: &str, bytes: &[u8], version: Option<Version>) -> Option<Self> {
+    /// `bytes` as messages, with the patch at `patch_file` over them when it's
+    /// given, or `None` when they aren't a message file or don't decode.
+    /// Logs what decoding and patching noticed, with `path`.
+    pub fn open(
+        path: &str,
+        bytes: &[u8],
+        version: Option<Version>,
+        patch_file: Option<PathBuf>,
+    ) -> Option<Self> {
         if !Bmg::detect(bytes) {
             return None;
         }
         let mut diag = Diagnostics::default();
-        match Bmg::decode(bytes, &mut diag) {
-            Ok(bmg) => {
+        let opened = match &patch_file {
+            Some(patch_file) => changes::open::<Bmg>(patch_file, bytes, &mut diag)
+                .map(|(base, bmg)| (Some(base), bmg)),
+            None => Bmg::decode(bytes, &mut diag)
+                .map(|bmg| (None, bmg))
+                .map_err(ChangeError::from),
+        };
+        match opened {
+            Ok((base, bmg)) => {
                 for item in &diag.items {
                     tracing::warn!("{path}: {}", item.message);
                 }
-                Some(Self::new(bmg, version))
+                let mut doc = Self::new(bmg, version);
+                doc.base = base.zip(patch_file).map(|(bmg, patch)| Base {
+                    bmg,
+                    hash: Hash::of(bytes),
+                    patch,
+                });
+                Some(doc)
             }
             Err(err) => {
                 tracing::warn!("can't read {path} as a message file: {err}");
@@ -106,7 +139,22 @@ impl MessagesDoc {
             lines,
             history: History::default(),
             edits: 0,
+            base: None,
+            saved: 0,
         }
+    }
+
+    /// Writes its edits to its patch, when it has one and has been edited
+    /// since last saved.
+    pub fn save(&mut self) -> Result<(), ChangeError> {
+        let Some(base) = &self.base else {
+            return Ok(());
+        };
+        if self.saved != self.edits {
+            changes::save(&base.patch, base.hash, &base.bmg, &self.bmg)?;
+            self.saved = self.edits;
+        }
+        Ok(())
     }
 
     /// `edit` as a step of its history, or part of the last step while

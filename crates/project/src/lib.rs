@@ -185,6 +185,31 @@ impl Project {
             .map(|(id, edition)| (id.as_str(), edition))
     }
 
+    /// The patch of the base file at `path`, relative to the root, which
+    /// sits at the same place under `changes/`. `None` outside the base.
+    #[must_use]
+    pub fn patch_of(&self, path: &str) -> Option<PathBuf> {
+        self.edition_of(path)?;
+        let (_, rest) = path.split_once('/')?.1.split_once('/')?;
+        Some(changes::patch_path(&self.root.join(changes::DIR), rest))
+    }
+
+    /// The base file a patch at `path`, relative to the root, applies to: in
+    /// the first target edition that holds it.
+    #[must_use]
+    pub fn base_of(&self, path: &str) -> Option<String> {
+        let rest = path
+            .strip_prefix(changes::DIR)?
+            .strip_prefix('/')?
+            .strip_suffix(".patch")?;
+        self.config
+            .editions
+            .keys()
+            .filter(|id| self.config.is_target(id))
+            .map(|id| format!("{}/{id}/{rest}", base::DIR))
+            .find(|base| self.root.join(base).is_file())
+    }
+
     fn save(&self) -> Result<(), ProjectError> {
         let path = self.root.join(config::FILE);
         let text = toml::to_string(&self.config).map_err(|source| base::BaseError::Toml {
@@ -339,6 +364,23 @@ mod tests {
         assert_eq!(id("base/GZ2E01"), None);
         assert_eq!(id("changes/res/Msgus/zel_00.bmg"), None);
         assert_eq!(id("based/GZ2E01/a.bmg"), None);
+    }
+
+    #[test]
+    fn a_base_file_and_its_patch_find_each_other() {
+        let (_dir, mut project) = fresh();
+        let staged = stage_fake(&project, "GZ2E01", 0, b"file");
+        project.commit(staged, true).unwrap();
+
+        let patch = project.root.join("changes/a.arc.patch");
+        assert_eq!(project.patch_of("base/GZ2E01/a.arc"), Some(patch));
+        assert_eq!(project.patch_of("base/GZ2P01/a.arc"), None);
+        assert_eq!(project.patch_of("changes/a.arc"), None);
+
+        let base = Some("base/GZ2E01/a.arc".to_owned());
+        assert_eq!(project.base_of("changes/a.arc.patch"), base);
+        assert_eq!(project.base_of("changes/b.arc.patch"), None);
+        assert_eq!(project.base_of("changes/a.arc"), None);
     }
 
     #[test]

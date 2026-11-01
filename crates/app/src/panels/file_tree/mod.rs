@@ -412,6 +412,9 @@ impl FileTree {
                     Tab::Game => opened.trees.game_file(id, &mut path),
                     Tab::Project => {
                         tree.path(id, &mut path);
+                        if let Some(base) = cx.project.and_then(|project| project.base_of(&path)) {
+                            path = base;
+                        }
                         true
                     }
                 };

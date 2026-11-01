@@ -4,8 +4,11 @@
 
 mod messages;
 
+use std::path::PathBuf;
+
 use formats::games::tp::Version;
 use gui::ui::Ui;
+use project::changes::ChangeError;
 
 use crate::panels::inspector::Fields;
 use crate::settings::twilight_princess;
@@ -17,11 +20,23 @@ pub enum Format {
 }
 
 impl Format {
-    /// `bytes` decoded, their values named by `version`'s tables when given.
-    /// `None` when no format claims them or they don't decode, which leaves
-    /// them to hex.
-    pub fn open(path: &str, bytes: &[u8], version: Option<Version>) -> Option<Self> {
-        MessagesDoc::open(path, bytes, version).map(|doc| Self::Messages(Box::new(doc)))
+    /// `bytes` decoded with the patch at `patch_file` over them, their values
+    /// named by `version`'s tables when given. `None` when no format claims
+    /// them or they don't decode, which leaves them to hex.
+    pub fn open(
+        path: &str,
+        bytes: &[u8],
+        version: Option<Version>,
+        patch_file: Option<PathBuf>,
+    ) -> Option<Self> {
+        MessagesDoc::open(path, bytes, version, patch_file).map(|doc| Self::Messages(Box::new(doc)))
+    }
+
+    /// Writes its edits to its patch, if it has one.
+    pub fn save(&mut self) -> Result<(), ChangeError> {
+        match self {
+            Self::Messages(doc) => doc.save(),
+        }
     }
 
     /// Its editor's name on the switch.

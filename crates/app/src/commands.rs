@@ -2,6 +2,7 @@
 //! do it until the user says otherwise. The keymap and the keybinds page both
 //! read them from here.
 
+use crate::documents::Documents;
 use crate::keymap::{AppCommand, Chord, ChordAction, KeyContext, Keymap};
 
 use crate::panels::FileTree;
@@ -18,8 +19,9 @@ pub struct Command {
 }
 
 /// Every command, by the part of the app it works in.
-pub static GROUPS: [(&str, &[Command]); 4] = [
+pub static GROUPS: [(&str, &[Command]); 5] = [
     ("General", &Settings::COMMANDS),
+    ("Files", &Documents::COMMANDS),
     ("File tree", &FileTree::COMMANDS),
     ("Hex view", &Hex::COMMANDS),
     ("Inspector", &Inspector::COMMANDS),
