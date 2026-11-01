@@ -31,6 +31,7 @@ mod edit;
 mod encode;
 mod flow;
 mod message;
+mod patch;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -44,6 +45,7 @@ use crate::{Be32, ByteWriter, Decode, Encode, FormatError, Result, record};
 pub use edit::BmgEdit;
 pub use flow::{Flow, Node, NodeId, Root};
 pub use message::{Message, MessageKey, Mid1Header, TextSegment};
+pub use patch::BmgDelta;
 
 /// A message file taken apart.
 #[derive(Debug, Clone, PartialEq, Eq)]

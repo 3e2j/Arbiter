@@ -2,12 +2,15 @@
 //! in INF1, the text that record points at in DAT1, and its id at the same
 //! position in MID1.
 
+use serde::{Deserialize, Serialize};
+
 use super::{malformed, too_large};
 use crate::{Be16, Be32, ByteReader, ByteWriter, Record, Result, record};
 
 /// Internal stable handle for a message, held by whatever refers to one.
 /// Initially assigned from the message's position, and kept as messages move.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct MessageKey(pub u32);
 
 /// One message: what it's called, how it's displayed, and what it says.
@@ -24,7 +27,8 @@ pub struct Message {
 }
 
 /// One stretch of a message's text, still encoded.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TextSegment {
     Text(Vec<u8>),
     /// An escape sequence, split the way `JMessage::TProcessor::on_tag_`
