@@ -7,7 +7,7 @@
 //! Every format implements [`Decode`] and [`Encode`].
 //! One that can be edited implements:
 //! - [`Editable`], in either project kind.
-//! - [`Patch`], which stores the edits as changes against the base (for mods).
+//! - [`Patch`], which stores the edits as deltas against the base (for mods).
 //!
 //! Data is big-endian, read through [`ByteReader`] and written through [`ByteWriter`].
 //! Fixed tables are [`record!`] structs, borrowed and copied whole. The types
