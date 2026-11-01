@@ -53,7 +53,7 @@ impl formats::Editable for Packing {
 }
 
 impl formats::Patch for Packing {
-    type Change = PackingEdit;
+    type Delta = PackingEdit;
 
     fn diff(base: &Self, edited: &Self) -> Vec<PackingEdit> {
         if base.compression == edited.compression {
@@ -64,10 +64,10 @@ impl formats::Patch for Packing {
         }]
     }
 
-    /// Every change fits any base, so nothing is reported.
-    fn patch(&mut self, changes: &[PackingEdit], _: &mut Diagnostics) {
-        for &change in changes {
-            formats::Editable::apply(self, change);
+    /// Every delta fits any base, so nothing is reported.
+    fn patch(&mut self, deltas: &[PackingEdit], _: &mut Diagnostics) {
+        for &delta in deltas {
+            formats::Editable::apply(self, delta);
         }
     }
 }
@@ -81,7 +81,7 @@ mod tests {
 
     #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
     struct Stored {
-        change: Vec<PackingEdit>,
+        delta: Vec<PackingEdit>,
     }
 
     #[test]
@@ -105,18 +105,18 @@ mod tests {
         let edited = Packing { compression: None };
         assert_eq!(Packing::diff(&base, &base), []);
 
-        let changes = Packing::diff(&base, &edited);
+        let deltas = Packing::diff(&base, &edited);
         let mut patched = base;
         let mut diag = Diagnostics::default();
-        patched.patch(&changes, &mut diag);
+        patched.patch(&deltas, &mut diag);
         assert_eq!(patched, edited);
         assert_eq!(diag.items, []);
     }
 
     #[test]
-    fn changes_read_back_with_none_omitted() {
+    fn deltas_read_back_with_none_omitted() {
         let stored = Stored {
-            change: vec![
+            delta: vec![
                 PackingEdit::Compression { compression: None },
                 PackingEdit::Compression {
                     compression: Some(Compression::Yay0),
@@ -126,10 +126,10 @@ mod tests {
         let text = toml::to_string(&stored).unwrap();
         assert_eq!(
             text,
-            "[[change]]\n\
+            "[[delta]]\n\
              edit = \"compression\"\n\
              \n\
-             [[change]]\n\
+             [[delta]]\n\
              edit = \"compression\"\n\
              compression = \"yay0\"\n"
         );

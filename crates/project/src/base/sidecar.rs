@@ -203,19 +203,19 @@ impl formats::Editable for Sidecar {
 }
 
 impl formats::Patch for Sidecar {
-    type Change = SidecarEdit;
+    type Delta = SidecarEdit;
 
     /// Members matched by path. One added or removed is a change to the
     /// archive's files, not to how it packs, so it makes no change here.
     fn diff(base: &Self, edited: &Self) -> Vec<SidecarEdit> {
-        let mut changes = Vec::new();
+        let mut deltas = Vec::new();
         if base.root != edited.root {
-            changes.push(SidecarEdit::Root {
+            deltas.push(SidecarEdit::Root {
                 root: edited.root.clone(),
             });
         }
         if base.compression != edited.compression {
-            changes.push(SidecarEdit::Compression {
+            deltas.push(SidecarEdit::Compression {
                 compression: edited.compression,
             });
         }
@@ -230,25 +230,25 @@ impl formats::Patch for Sidecar {
                 continue;
             };
             if old.compression != member.compression {
-                changes.push(SidecarEdit::MemberCompression {
+                deltas.push(SidecarEdit::MemberCompression {
                     path: member.path.clone(),
                     compression: member.compression,
                 });
             }
             if old.preload != member.preload {
-                changes.push(SidecarEdit::Preload {
+                deltas.push(SidecarEdit::Preload {
                     path: member.path.clone(),
                     preload: member.preload,
                 });
             }
         }
-        changes
+        deltas
     }
 
-    fn patch(&mut self, changes: &[SidecarEdit], diag: &mut Diagnostics) {
-        for change in changes {
-            let (_, touched) = formats::Editable::apply(self, change.clone());
-            if let (Some(path), true) = (change.member(), touched.is_empty()) {
+    fn patch(&mut self, deltas: &[SidecarEdit], diag: &mut Diagnostics) {
+        for delta in deltas {
+            let (_, touched) = formats::Editable::apply(self, delta.clone());
+            if let (Some(path), true) = (delta.member(), touched.is_empty()) {
                 diag.push(
                     Diagnostic::new(
                         &MISSING_MEMBER,
@@ -341,11 +341,11 @@ mod tests {
         }
         assert_eq!(Sidecar::diff(&base, &base), []);
 
-        let changes = Sidecar::diff(&base, &edited);
-        assert_eq!(changes, edits());
+        let deltas = Sidecar::diff(&base, &edited);
+        assert_eq!(deltas, edits());
         let mut patched = base;
         let mut diag = Diagnostics::default();
-        patched.patch(&changes, &mut diag);
+        patched.patch(&deltas, &mut diag);
         assert_eq!(patched, edited);
         assert_eq!(diag.items, []);
     }
@@ -372,29 +372,29 @@ mod tests {
     }
 
     #[test]
-    fn changes_read_back_with_none_omitted() {
+    fn deltas_read_back_with_none_omitted() {
         #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
         struct Stored {
-            change: Vec<SidecarEdit>,
+            delta: Vec<SidecarEdit>,
         }
 
-        let stored = Stored { change: edits() };
+        let stored = Stored { delta: edits() };
         let text = toml::to_string(&stored).unwrap();
         assert_eq!(
             text,
-            "[[change]]\n\
+            "[[delta]]\n\
              edit = \"root\"\n\
              root = \"renamed\"\n\
              \n\
-             [[change]]\n\
+             [[delta]]\n\
              edit = \"compression\"\n\
              \n\
-             [[change]]\n\
+             [[delta]]\n\
              edit = \"member_compression\"\n\
              path = \"zel_00.bmg\"\n\
              compression = \"yay0\"\n\
              \n\
-             [[change]]\n\
+             [[delta]]\n\
              edit = \"preload\"\n\
              path = \"sub/a.bmd\"\n\
              preload = \"aram\"\n"
