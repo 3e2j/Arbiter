@@ -134,7 +134,7 @@ impl Manifest {
 }
 
 /// `value` as TOML, for writing to `path`.
-fn to_toml(value: &impl Serialize, path: &Path) -> Result<String, BaseError> {
+pub(crate) fn to_toml(value: &impl Serialize, path: &Path) -> Result<String, BaseError> {
     toml::to_string(value).map_err(|source| BaseError::Toml {
         path: path.to_path_buf(),
         source,
