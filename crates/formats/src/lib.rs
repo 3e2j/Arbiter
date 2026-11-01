@@ -97,16 +97,16 @@ pub trait Editable {
     }
 }
 
-/// A document stored in a mod as its deltas against the base.
+/// A document stored in a mod as its delta against the base.
 pub trait Patch: Sized {
-    /// One difference from the base, keyed by a stable id as
-    /// [`Editable::Edit`] is.
-    type Delta: Serialize + DeserializeOwned;
+    /// Every difference from the base, keyed by stable ids as
+    /// [`Editable::Edit`] is. Its default is no difference.
+    type Delta: Serialize + DeserializeOwned + Default + PartialEq;
 
     /// What turns `base` into `edited`.
-    fn diff(base: &Self, edited: &Self) -> Vec<Self::Delta>;
+    fn diff(base: &Self, edited: &Self) -> Self::Delta;
 
-    /// Applies `deltas` to the base. One that no longer fits it, such as one
-    /// naming something removed since, is skipped and reported to `diag`.
-    fn patch(&mut self, deltas: &[Self::Delta], diag: &mut Diagnostics);
+    /// Applies `delta` to the base. A part that no longer fits it, such as
+    /// one naming something removed since, is skipped and reported to `diag`.
+    fn patch(&mut self, delta: &Self::Delta, diag: &mut Diagnostics);
 }

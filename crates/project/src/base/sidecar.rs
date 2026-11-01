@@ -203,7 +203,7 @@ impl formats::Editable for Sidecar {
 }
 
 impl formats::Patch for Sidecar {
-    type Delta = SidecarEdit;
+    type Delta = Vec<SidecarEdit>;
 
     /// Members matched by path. One added or removed is a change to the
     /// archive's files, not to how it packs, so it makes no change here.
@@ -245,7 +245,7 @@ impl formats::Patch for Sidecar {
         deltas
     }
 
-    fn patch(&mut self, deltas: &[SidecarEdit], diag: &mut Diagnostics) {
+    fn patch(&mut self, deltas: &Vec<SidecarEdit>, diag: &mut Diagnostics) {
         for delta in deltas {
             let (_, touched) = formats::Editable::apply(self, delta.clone());
             if let (Some(path), true) = (delta.member(), touched.is_empty()) {
@@ -362,7 +362,7 @@ mod tests {
         assert_eq!(sidecar, archive());
 
         let mut diag = Diagnostics::default();
-        sidecar.patch(&[edit], &mut diag);
+        sidecar.patch(&vec![edit], &mut diag);
         assert_eq!(sidecar, archive());
         let [found] = diag.items.as_slice() else {
             panic!("expected one diagnostic, got {:?}", diag.items);

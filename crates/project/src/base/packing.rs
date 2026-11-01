@@ -53,7 +53,7 @@ impl formats::Editable for Packing {
 }
 
 impl formats::Patch for Packing {
-    type Delta = PackingEdit;
+    type Delta = Vec<PackingEdit>;
 
     fn diff(base: &Self, edited: &Self) -> Vec<PackingEdit> {
         if base.compression == edited.compression {
@@ -65,7 +65,7 @@ impl formats::Patch for Packing {
     }
 
     /// Every delta fits any base, so nothing is reported.
-    fn patch(&mut self, deltas: &[PackingEdit], _: &mut Diagnostics) {
+    fn patch(&mut self, deltas: &Vec<PackingEdit>, _: &mut Diagnostics) {
         for &delta in deltas {
             formats::Editable::apply(self, delta);
         }

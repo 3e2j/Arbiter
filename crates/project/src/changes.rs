@@ -1,14 +1,13 @@
 //! `changes/`: what the mod changes, stored against `base/`.
 //!
-//! A `.patch` holds an edited file's deltas against its base file, with the
+//! A `.patch` holds an edited file's delta against its base file, after the
 //! base's hash to tell when that has moved on:
 //!
 //! ```toml
 //! base = "xxh3:…"
 //!
-//! [[delta]]
-//! edit = "text"
-//! message = 12
+//! [[message]]
+//! key = 12
 //! text = "Hello, {0:0}!"
 //! ```
 
@@ -49,11 +48,12 @@ pub enum ChangeError {
     Format(#[from] FormatError),
 }
 
+/// The format's delta sits beside `base`, so it must be a struct.
 #[derive(Serialize, Deserialize)]
 struct PatchFile<D> {
     base: Hash,
-    #[serde(rename = "delta")]
-    deltas: Vec<D>,
+    #[serde(flatten)]
+    delta: D,
 }
 
 /// Where the patch for the game file at `path` sits under `changes`.
@@ -90,7 +90,7 @@ pub fn open<T: Decode + Patch + Clone>(
             "the base file has changed since this patch was saved, so its deltas may not land where they were made",
         ));
     }
-    document.patch(&file.deltas, diag);
+    document.patch(&file.delta, diag);
     Ok((base, document))
 }
 
@@ -101,8 +101,8 @@ pub fn open<T: Decode + Patch + Clone>(
 ///
 /// If the patch can't be written or removed.
 pub fn save<T: Patch>(patch: &Path, hash: Hash, base: &T, edited: &T) -> Result<(), ChangeError> {
-    let deltas = T::diff(base, edited);
-    if deltas.is_empty() {
+    let delta = T::diff(base, edited);
+    if delta == T::Delta::default() {
         return match fs::remove_file(patch) {
             Err(err) if err.kind() != io::ErrorKind::NotFound => {
                 Err(disk::io_err(patch)(err).into())
@@ -110,7 +110,7 @@ pub fn save<T: Patch>(patch: &Path, hash: Hash, base: &T, edited: &T) -> Result<
             _ => Ok(()),
         };
     }
-    let file = PatchFile { base: hash, deltas };
+    let file = PatchFile { base: hash, delta };
     if let Some(dir) = patch.parent() {
         fs::create_dir_all(dir).map_err(disk::io_err(dir))?;
     }
@@ -166,7 +166,7 @@ mod tests {
         let hash = Hash::of(&bytes);
         save(&patch, hash, &base, &edited).unwrap();
         let text = fs::read_to_string(&patch).unwrap();
-        assert!(text.contains("[[delta]]") && text.contains("text = \"Hello\""));
+        assert!(text.contains("[[message]]") && text.contains("text = \"Hello\""));
         assert!(!text.contains("Hi"));
 
         let mut diag = Diagnostics::default();
